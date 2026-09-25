@@ -1,0 +1,400 @@
+datasource db {
+  provider = "sqlite"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  OWNER
+  STAFF
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+  DISABLED
+  DELETED
+}
+
+enum AccessType {
+  RESERVED
+  UNRESERVED
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  ENDED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+}
+
+model Branch {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users     User[]
+  students  Student[]
+  seats     Seat[]
+  shifts    Shift[]
+  feePlans  FeePlan[]
+  expenses          Expense[]
+  admissionRequests AdmissionRequest[]
+  paymentModes      PaymentMode[]
+
+  @@map("branches")
+}
+
+model User {
+  id                  Int           @id @default(autoincrement())
+  name                String
+  email               String        @unique
+  passwordHash        String        @map("password_hash")
+  role                Role          @default(STAFF)
+  isActive            Boolean       @default(true) @map("is_active")
+  branchId            Int?          @map("branch_id")
+  
+  failedLoginAttempts Int           @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?     @map("locked_until")
+  lastLogin           DateTime?     @map("last_login")
+  firstLoginAt        DateTime?     @map("first_login_at")
+  passwordChangedAt   DateTime?     @map("password_changed_at")
+  mustChangePassword  Boolean       @default(false) @map("must_change_password")
+
+  // Session & Device security fields
+  isLoggedIn          Boolean       @default(false) @map("is_logged_in")
+  ipAddress           String?       @map("ip_address")
+  os                  String?       @map("os")
+  browser             String?       @map("browser")
+  deviceId            String?       @map("device_id")
+
+  subscriptionTier    String        @default("FREE") @map("subscription_tier")
+  subscriptionExpiry  DateTime?     @map("subscription_expiry")
+  pendingTier         String?       @map("pending_tier")
+  pendingExpiryDays   Int?          @map("pending_expiry_days")
+
+  // Password reset
+  passwordResetToken  String?       @map("password_reset_token")
+  passwordResetExpiry DateTime?     @map("password_reset_expiry")
+
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  deletedAt           DateTime?     @map("deleted_at")
+
+  branch              Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  studentsCreated     Student[]     @relation("CreatedByRelation")
+  auditLogs           AuditLog[]
+  securityEvents      SecurityEvent[]
+  sessions            UserSession[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  deviceId   String   @unique @map("device_id")
+  ipAddress  String?  @map("ip_address")
+  os         String?  @map("os")
+  browser    String?  @map("browser")
+  isActive   Boolean  @default(true) @map("is_active")
+  lastActive DateTime @default(now()) @map("last_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@map("user_sessions")
+}
+
+model Student {
+  id               Int           @id @default(autoincrement())
+  studentCode      String        @map("student_code")
+  regNo            String?       @map("reg_no")
+  fullName         String        @map("full_name")
+  email            String        @default("")
+  mobile           String
+  gender           Gender
+  dob              DateTime?     // Store as native DateTime for cross-DB compatibility
+  address          String?
+  aadharNumber     String?       @map("aadhar_number")
+  admissionDate    DateTime      @map("admission_date") // Store as native DateTime
+  profilePhotoUrl  String?       @map("profile_photo_url")
+  accountStatus    AccountStatus @default(ACTIVE) @map("account_status")
+  createdBy        Int?          @map("created_by")
+  branchId         Int?          @map("branch_id")
+  
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  deletedAt        DateTime?     @map("deleted_at")
+
+  creator          User?         @relation("CreatedByRelation", fields: [createdBy], references: [id], onDelete: SetNull)
+  branch           Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  validities       StudentValidity[]
+
+  // Branch-isolated unique constraints & indexes for high performance lookup
+  @@unique([studentCode, branchId])
+  @@unique([regNo, branchId])
+  @@index([mobile])
+  @@index([mobile, branchId])
+  @@index([email, branchId])
+  @@index([aadharNumber, branchId])
+  @@index([accountStatus])
+  @@index([deletedAt])
+  @@map("students")
+}
+
+model FeePlan {
+  id              Int       @id @default(autoincrement())
+  planName        String    @map("plan_name")
+  durationDays    Int       @map("duration_days")
+  amount          Decimal   @map("amount") // Prevent floating-point inaccuracy
+  registrationFee Decimal   @default(0) @map("registration_fee") // One-time fee at admission
+  isActive        Boolean   @default(true) @map("is_active")
+  branchId        Int?      @map("branch_id")
+  planType        String    @default("RESERVED") @map("plan_type")
+  
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  branch       Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  validities   StudentValidity[]
+
+  @@unique([planName, branchId])
+  @@map("fee_plans")
+}
+
+model LibrarySetting {
+  id          Int      @id @default(1)
+  libraryName String   @map("library_name")
+  address     String?
+  phone       String?
+  email       String?
+  logoUrl     String?  @map("logo_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("library_settings")
+}
+
+model PaymentMode {
+  id        Int       @id @default(autoincrement())
+  modeName  String    @map("mode_name")
+  isActive  Boolean   @default(true) @map("is_active")
+  branchId  Int?      @map("branch_id")
+  
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  branch    Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  payments  Payment[]
+
+  @@unique([modeName, branchId])
+  @@map("payment_modes")
+}
+
+model StudentValidity {
+  id          Int        @id @default(autoincrement())
+  studentId   Int        @unique @map("student_id")
+  feePlanId   Int?       @map("fee_plan_id")
+  startDate   DateTime   @map("start_date")
+  endDate     DateTime   @map("end_date")
+  totalAmount Decimal    @map("total_amount") // Decimal for financial precision
+  accessType  AccessType @default(UNRESERVED) @map("access_type")
+  
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  student     Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  feePlan     FeePlan?   @relation(fields: [feePlanId], references: [id], onDelete: SetNull)
+  payments    Payment[]
+  assignments StudentShiftAssignment[]
+
+  @@map("student_validities")
+}
+
+model Payment {
+  id             Int             @id @default(autoincrement())
+  validityId     Int             @map("validity_id")
+  paymentModeId  Int             @map("payment_mode_id")
+  invoiceNo      String          @unique @map("invoice_no")
+  amountReceived Decimal         @map("amount_received") // Decimal for precision
+  paymentDate    DateTime        @map("payment_date")
+  remarks        String?
+  utrNumber      String?         @map("utr_number")
+  
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  validity       StudentValidity @relation(fields: [validityId], references: [id], onDelete: Cascade)
+  paymentMode    PaymentMode     @relation(fields: [paymentModeId], references: [id], onDelete: Restrict)
+
+  @@index([paymentDate])
+  @@index([validityId])
+  @@map("payments")
+}
+
+model Seat {
+  id         Int       @id @default(autoincrement())
+  seatNumber String    @map("seat_number")
+  floor      String?   @map("floor")
+  room       String?   @map("room")
+  section    String?   @map("section")
+  isActive   Boolean   @default(true) @map("is_active")
+  branchId   Int?      @map("branch_id")
+  
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  branch     Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  assignments StudentShiftAssignment[]
+
+  @@unique([seatNumber, branchId])
+  @@map("seats")
+}
+
+model Shift {
+  id        Int       @id @default(autoincrement())
+  shiftName String    @map("shift_name")
+  startTime String    @map("start_time") // HH:MM
+  endTime   String    @map("end_time")   // HH:MM
+  isActive  Boolean   @default(true) @map("is_active")
+  branchId  Int?      @map("branch_id")
+  
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  branch     Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  assignments StudentShiftAssignment[]
+
+  @@unique([shiftName, branchId])
+  @@map("shifts")
+}
+
+model StudentShiftAssignment {
+  id               Int              @id @default(autoincrement())
+  validityId       Int              @map("validity_id")
+  shiftId          Int              @map("shift_id")
+  seatId           Int?             @map("seat_id")
+  assignmentStatus AssignmentStatus @default(ACTIVE) @map("assignment_status")
+  
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  validity         StudentValidity  @relation(fields: [validityId], references: [id], onDelete: Cascade)
+  shift            Shift            @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  seat             Seat?            @relation(fields: [seatId], references: [id], onDelete: SetNull)
+  attendance       Attendance[]
+
+  @@index([validityId])
+  @@index([shiftId, assignmentStatus])
+  @@index([seatId, assignmentStatus])
+  @@map("student_shift_assignments")
+}
+
+model Attendance {
+  id                Int              @id @default(autoincrement())
+  shiftAssignmentId Int              @map("shift_assignment_id")
+  attendanceDate    DateTime         @map("attendance_date") // Date type
+  status            AttendanceStatus @default(PRESENT) @map("status")
+  checkInTime       String?          @map("check_in_time") // HH:MM
+  checkOutTime      String?          @map("check_out_time") // HH:MM
+  shiftStartTime    String?          @map("shift_start_time") // HH:MM snapshot at check-in
+  shiftEndTime      String?          @map("shift_end_time") // HH:MM snapshot at check-in
+  remarks           String?
+  
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  shiftAssignment   StudentShiftAssignment @relation(fields: [shiftAssignmentId], references: [id], onDelete: Cascade)
+
+  @@unique([shiftAssignmentId, attendanceDate])
+  @@index([attendanceDate])
+  @@map("attendance")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  action     String   // e.g. "CREATE_STUDENT", "UPDATE_PAYMENT", "DELETE_SEAT"
+  tableName  String   @map("table_name")
+  recordId   Int      @map("record_id")
+  oldValues  String?  @map("old_values") // JSON string
+  newValues  String?  @map("new_values") // JSON string
+  userId     Int?     @map("user_id")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model SecurityEvent {
+  id         Int      @id @default(autoincrement())
+  eventType  String   @map("event_type") // e.g. "LOGIN_FAILED", "LOGIN_SUCCESS", "RATE_LIMIT_EXCEEDED"
+  email      String?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+  userId     Int?     @map("user_id")
+
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("security_events")
+}
+
+model AdmissionRequest {
+  id              Int      @id @default(autoincrement())
+  fullName        String   @map("full_name")
+  email           String
+  mobile          String
+  gender          Gender
+  dob             DateTime?
+  address         String?
+  aadharNumber    String?  @map("adhar_number")
+  profilePhotoUrl String?  @map("profile_photo_url")
+  branchId        Int?     @map("branch_id")
+  status          String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  branch          Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@map("admission_requests")
+}
+
+model Expense {
+  id          Int      @id @default(autoincrement())
+  category    String   // Rent, Electricity, Internet, Maintenance, Other
+  description String
+  date        DateTime
+  amount      Decimal
+  branchId    Int?     @map("branch_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  branch      Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@map("expenses")
+}

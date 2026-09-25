@@ -1,0 +1,663 @@
+import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+import { useEffect, useState, useRef } from "react";
+import api from "../api/axios";
+import { useTheme } from "../context/ThemeContext";
+const getTodayStr = () => {
+  const d = /* @__PURE__ */ new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+const Payments = () => {
+  const user = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("lms_user") || "{}");
+    } catch {
+      return {};
+    }
+  })();
+  const [payments, setPayments] = useState([]);
+  const [paymentModes, setPaymentModes] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [showResults, setShowResults] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [currentValidity, setCurrentValidity] = useState(null);
+  const [validityLoading, setValidityLoading] = useState(false);
+  const searchRef = useRef(null);
+  const [paymentMode, setPaymentMode] = useState("");
+  const [utrNumber, setUtrNumber] = useState("");
+  const [paymentDate, setPaymentDate] = useState(getTodayStr());
+  const [amountReceived, setAmountReceived] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [dateFilter, setDateFilter] = useState("all");
+  const [customDate, setCustomDate] = useState("");
+  const { darkMode } = useTheme();
+  const DATE_FILTERS = [
+    { label: "All time", value: "all" },
+    { label: "Today", value: "today" },
+    { label: "30 Days", value: "30d" },
+    { label: "3 Months", value: "3m" },
+    { label: "6 Months", value: "6m" },
+    { label: "1 Year", value: "1y" },
+    { label: "\u{1F4C5} Custom", value: "custom" }
+  ];
+  const getFilterDate = (filter) => {
+    const now = /* @__PURE__ */ new Date();
+    switch (filter) {
+      case "today": {
+        const d = new Date(now);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      }
+      case "30d":
+        return new Date(now - 30 * 24 * 60 * 60 * 1e3);
+      case "3m":
+        return new Date(now - 90 * 24 * 60 * 60 * 1e3);
+      case "6m":
+        return new Date(now - 180 * 24 * 60 * 60 * 1e3);
+      case "1y":
+        return new Date(now - 365 * 24 * 60 * 60 * 1e3);
+      case "custom": {
+        if (!customDate) return null;
+        const d = new Date(customDate);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      }
+      default:
+        return null;
+    }
+  };
+  const fetchData = async () => {
+    try {
+      const [paymentRes, modeRes] = await Promise.all([
+        api.get("/payments"),
+        api.get("/payment-modes")
+      ]);
+      setPayments(paymentRes.data.data);
+      setPaymentModes(modeRes.data.data);
+    } catch (error) {
+      console.log("Payments fetch error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    fetchData();
+  }, []);
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) {
+        setShowResults(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+  const handleSearch = async (query) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults([]);
+      setShowResults(false);
+      return;
+    }
+    try {
+      const res = await api.get(`/students/search?q=${encodeURIComponent(query)}`);
+      setSearchResults(res.data.data);
+      setShowResults(true);
+    } catch {
+      setSearchResults([]);
+    }
+  };
+  const selectStudent = async (student) => {
+    setSelectedStudent(student);
+    setSearchQuery(`${student.student_code} - ${student.full_name}`);
+    setShowResults(false);
+    setSearchResults([]);
+    setCurrentValidity(null);
+    setAmountReceived("");
+    setValidityLoading(true);
+    try {
+      const res = await api.get(`/students/${student.id}/profile`);
+      const validity = res.data.data.validity;
+      if (validity) {
+        setCurrentValidity(validity);
+        const renewalFee = validity.plan_amount !== void 0 && validity.plan_amount !== null ? validity.plan_amount : validity.total_amount;
+        setAmountReceived(renewalFee);
+      }
+    } catch {
+      setCurrentValidity(null);
+    } finally {
+      setValidityLoading(false);
+    }
+  };
+  const clearStudent = () => {
+    setSelectedStudent(null);
+    setSearchQuery("");
+    setCurrentValidity(null);
+    setAmountReceived("");
+  };
+  const resetForm = () => {
+    setSelectedStudent(null);
+    setSearchQuery("");
+    setCurrentValidity(null);
+    setPaymentMode("");
+    setUtrNumber("");
+    setPaymentDate(getTodayStr());
+    setAmountReceived("");
+    setRemarks("");
+    setShowForm(false);
+  };
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedStudent) {
+      alert("Please search and select a member");
+      return;
+    }
+    if (!currentValidity) {
+      alert("No active fee plan found for this member. Please admit the student first.");
+      return;
+    }
+    if (!paymentMode) {
+      alert("Please select a payment mode");
+      return;
+    }
+    const selectedMode = paymentModes.find((m) => String(m.id) === String(paymentMode));
+    const modeNameUpper = selectedMode ? selectedMode.mode_name.toUpperCase() : "";
+    if (modeNameUpper === "UPI" && !utrNumber.trim()) {
+      alert("Please enter UTR number for UPI payment");
+      return;
+    }
+    if (modeNameUpper === "CARD" && !utrNumber.trim()) {
+      alert("Please enter card reference / transaction number");
+      return;
+    }
+    if (!amountReceived || Number(amountReceived) <= 0) {
+      alert("Amount received must be greater than 0");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const selectedMode2 = paymentModes.find((m) => String(m.id) === String(paymentMode));
+      const modeNameUpper2 = selectedMode2 ? selectedMode2.mode_name.toUpperCase() : "";
+      const finalRemarks = remarks.trim() ? remarks.trim() : "(Fee Renewal)";
+      await api.post("/payments", {
+        validity_id: currentValidity.id,
+        payment_mode_id: Number(paymentMode),
+        invoice_no: `INV-${Date.now()}`,
+        amount_received: Number(amountReceived),
+        payment_date: paymentDate,
+        utr_number: modeNameUpper2 === "UPI" || modeNameUpper2 === "CARD" ? utrNumber.trim() : null,
+        remarks: finalRemarks
+      });
+      alert("Payment recorded successfully");
+      resetForm();
+      fetchData();
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to record payment");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const filteredPayments = payments.filter((p) => {
+    if (dateFilter === "custom") {
+      if (!customDate) return true;
+      const recordDate2 = new Date(p.payment_date).toISOString().split("T")[0];
+      return recordDate2 === customDate;
+    }
+    const cutoff = getFilterDate(dateFilter);
+    if (!cutoff) return true;
+    const recordDate = new Date(p.payment_date);
+    return recordDate >= cutoff;
+  });
+  const totalRevenue = filteredPayments.reduce(
+    (sum, p) => sum + Number(p.amount_received),
+    0
+  );
+  if (loading) {
+    return /* @__PURE__ */ jsx("div", { className: "page", children: /* @__PURE__ */ jsx("p", { children: "Loading..." }) });
+  }
+  return /* @__PURE__ */ jsxs("div", { className: "page", children: [
+    /* @__PURE__ */ jsxs("div", { className: "page-title-row", children: [
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("h1", { children: "Payments" }),
+        /* @__PURE__ */ jsxs("p", { children: [
+          "Record and manage member payments \xB7 ",
+          (/* @__PURE__ */ new Date()).toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx("button", { className: "primary-btn", onClick: () => setShowForm(true), children: "Search Payment" })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" }, children: [
+      DATE_FILTERS.map((f) => /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: () => setDateFilter(f.value),
+          style: {
+            padding: "7px 16px",
+            borderRadius: "20px",
+            fontSize: "13px",
+            fontWeight: 600,
+            border: `2px solid ${dateFilter === f.value ? "#2563eb" : darkMode ? "#334155" : "#e2e8f0"}`,
+            background: dateFilter === f.value ? "#eff6ff" : darkMode ? "#1e293b" : "white",
+            color: dateFilter === f.value ? "#2563eb" : darkMode ? "#94a3b8" : "#64748b",
+            cursor: "pointer",
+            transition: "all 0.15s"
+          },
+          children: f.label
+        },
+        f.value
+      )),
+      dateFilter === "custom" && /* @__PURE__ */ jsx(
+        "input",
+        {
+          type: "date",
+          value: customDate,
+          onChange: (e) => setCustomDate(e.target.value),
+          style: {
+            padding: "6px 12px",
+            borderRadius: "8px",
+            fontSize: "13px",
+            fontWeight: 600,
+            border: "2px solid #2563eb",
+            background: darkMode ? "#1e293b" : "white",
+            color: darkMode ? "#e2e8f0" : "#1e293b",
+            cursor: "pointer"
+          }
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "stats-grid", style: { marginBottom: "24px" }, children: [
+      /* @__PURE__ */ jsx("div", { className: "stats-card", children: /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("p", { children: "Total Payments" }),
+        /* @__PURE__ */ jsx("h2", { children: filteredPayments.length })
+      ] }) }),
+      user.role !== "STAFF" && /* @__PURE__ */ jsx("div", { className: "stats-card", children: /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("p", { children: "Total Revenue" }),
+        /* @__PURE__ */ jsxs("h2", { children: [
+          "\u20B9",
+          totalRevenue.toLocaleString()
+        ] })
+      ] }) })
+    ] }),
+    showForm && /* @__PURE__ */ jsxs("div", { className: "form-card", children: [
+      /* @__PURE__ */ jsx("h2", { children: "Record Payment" }),
+      /* @__PURE__ */ jsxs("form", { onSubmit: handleSubmit, className: "student-form", children: [
+        /* @__PURE__ */ jsxs("div", { className: "form-group full-width", ref: searchRef, style: { position: "relative" }, children: [
+          /* @__PURE__ */ jsx("label", { children: "Search Member *" }),
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              type: "text",
+              placeholder: "Search by code, registration no, or name...",
+              value: searchQuery,
+              onChange: (e) => handleSearch(e.target.value),
+              onFocus: () => searchResults.length > 0 && setShowResults(true)
+            }
+          ),
+          showResults && searchResults.length > 0 && /* @__PURE__ */ jsx(
+            "div",
+            {
+              style: {
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                background: "#fff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "8px",
+                boxShadow: "0 8px 25px rgba(0,0,0,0.1)",
+                zIndex: 10,
+                maxHeight: "200px",
+                overflowY: "auto",
+                marginTop: "2px"
+              },
+              children: searchResults.map((s) => /* @__PURE__ */ jsxs(
+                "div",
+                {
+                  onClick: () => selectStudent(s),
+                  style: {
+                    padding: "10px 14px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    borderBottom: "1px solid #f1f5f9",
+                    transition: "background 0.1s"
+                  },
+                  onMouseEnter: (e) => e.currentTarget.style.background = "#f8fafc",
+                  onMouseLeave: (e) => e.currentTarget.style.background = "transparent",
+                  children: [
+                    /* @__PURE__ */ jsx("strong", { children: s.student_code }),
+                    s.reg_no && /* @__PURE__ */ jsxs("span", { children: [
+                      " (",
+                      s.reg_no,
+                      ")"
+                    ] }),
+                    " - ",
+                    s.full_name
+                  ]
+                },
+                s.id
+              ))
+            }
+          )
+        ] }),
+        selectedStudent && /* @__PURE__ */ jsx("div", { className: "form-group full-width", children: /* @__PURE__ */ jsxs(
+          "div",
+          {
+            style: {
+              background: "#f8fafc",
+              padding: "12px 16px",
+              borderRadius: "8px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center"
+            },
+            children: [
+              /* @__PURE__ */ jsxs("div", { children: [
+                /* @__PURE__ */ jsx("span", { style: { fontSize: "13px", color: "#64748b" }, children: "Selected Member:" }),
+                " ",
+                /* @__PURE__ */ jsx("strong", { children: selectedStudent.full_name }),
+                /* @__PURE__ */ jsx("span", { style: { color: "#94a3b8", margin: "0 8px" }, children: "|" }),
+                /* @__PURE__ */ jsx("span", { style: { fontSize: "13px", color: "#64748b" }, children: "Code:" }),
+                " ",
+                selectedStudent.student_code,
+                selectedStudent.reg_no && /* @__PURE__ */ jsxs(Fragment, { children: [
+                  /* @__PURE__ */ jsx("span", { style: { color: "#94a3b8", margin: "0 8px" }, children: "|" }),
+                  /* @__PURE__ */ jsx("span", { style: { fontSize: "13px", color: "#64748b" }, children: "Reg:" }),
+                  " ",
+                  selectedStudent.reg_no
+                ] })
+              ] }),
+              /* @__PURE__ */ jsx(
+                "button",
+                {
+                  type: "button",
+                  onClick: clearStudent,
+                  style: {
+                    border: "none",
+                    background: "#fef2f2",
+                    color: "#dc2626",
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: 600
+                  },
+                  children: "Change"
+                }
+              )
+            ]
+          }
+        ) }),
+        validityLoading && /* @__PURE__ */ jsx("div", { className: "form-group full-width", children: /* @__PURE__ */ jsx("p", { style: { color: "#94a3b8", fontSize: "14px" }, children: "Loading fee plan details..." }) }),
+        currentValidity && !validityLoading && /* @__PURE__ */ jsxs(Fragment, { children: [
+          /* @__PURE__ */ jsx("div", { className: "form-group full-width", children: /* @__PURE__ */ jsx(
+            "div",
+            {
+              style: {
+                background: "#f0fdf4",
+                padding: "14px 16px",
+                borderRadius: "8px",
+                border: "1px solid #bbf7d0"
+              },
+              children: /* @__PURE__ */ jsxs(
+                "div",
+                {
+                  className: "responsive-grid-4-info",
+                  style: {
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr 1fr 1fr",
+                    gap: "12px"
+                  },
+                  children: [
+                    /* @__PURE__ */ jsxs("div", { children: [
+                      /* @__PURE__ */ jsx(
+                        "div",
+                        {
+                          style: {
+                            fontSize: "11px",
+                            color: "#64748b",
+                            textTransform: "uppercase",
+                            fontWeight: 600,
+                            letterSpacing: "0.3px",
+                            marginBottom: "4px"
+                          },
+                          children: "Fee Plan"
+                        }
+                      ),
+                      /* @__PURE__ */ jsx("div", { style: { fontSize: "15px", fontWeight: 600, color: "#1e293b" }, children: currentValidity.plan_name })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { children: [
+                      /* @__PURE__ */ jsx(
+                        "div",
+                        {
+                          style: {
+                            fontSize: "11px",
+                            color: "#64748b",
+                            textTransform: "uppercase",
+                            fontWeight: 600,
+                            letterSpacing: "0.3px",
+                            marginBottom: "4px"
+                          },
+                          children: "Start Date"
+                        }
+                      ),
+                      /* @__PURE__ */ jsx("div", { style: { fontSize: "15px", fontWeight: 600, color: "#1e293b" }, children: currentValidity.start_date })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { children: [
+                      /* @__PURE__ */ jsx(
+                        "div",
+                        {
+                          style: {
+                            fontSize: "11px",
+                            color: "#64748b",
+                            textTransform: "uppercase",
+                            fontWeight: 600,
+                            letterSpacing: "0.3px",
+                            marginBottom: "4px"
+                          },
+                          children: "End Date"
+                        }
+                      ),
+                      /* @__PURE__ */ jsx("div", { style: { fontSize: "15px", fontWeight: 600, color: "#1e293b" }, children: currentValidity.end_date })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { children: [
+                      /* @__PURE__ */ jsx(
+                        "div",
+                        {
+                          style: {
+                            fontSize: "11px",
+                            color: "#64748b",
+                            textTransform: "uppercase",
+                            fontWeight: 600,
+                            letterSpacing: "0.3px",
+                            marginBottom: "4px"
+                          },
+                          children: "Plan Fee"
+                        }
+                      ),
+                      /* @__PURE__ */ jsxs("div", { style: { fontSize: "15px", fontWeight: 600, color: "#1e293b" }, children: [
+                        "\u20B9",
+                        Number(currentValidity.plan_amount !== void 0 && currentValidity.plan_amount !== null ? currentValidity.plan_amount : currentValidity.total_amount).toLocaleString()
+                      ] })
+                    ] })
+                  ]
+                }
+              )
+            }
+          ) }),
+          /* @__PURE__ */ jsxs("div", { className: "form-group", children: [
+            /* @__PURE__ */ jsx("label", { children: "Payment Mode *" }),
+            /* @__PURE__ */ jsxs(
+              "select",
+              {
+                value: paymentMode,
+                onChange: (e) => {
+                  setPaymentMode(e.target.value);
+                  const sel = paymentModes.find((m) => String(m.id) === String(e.target.value));
+                  const nameUpper = sel ? sel.mode_name.toUpperCase() : "";
+                  if (nameUpper !== "UPI" && nameUpper !== "CARD") {
+                    setUtrNumber("");
+                  }
+                },
+                children: [
+                  /* @__PURE__ */ jsx("option", { value: "", children: "Select mode" }),
+                  paymentModes.map((mode) => /* @__PURE__ */ jsx("option", { value: mode.id, children: mode.mode_name }, mode.id))
+                ]
+              }
+            )
+          ] }),
+          (() => {
+            const sel = paymentModes.find((m) => String(m.id) === String(paymentMode));
+            const nameUpper = sel ? sel.mode_name.toUpperCase() : "";
+            if (nameUpper === "UPI") {
+              return /* @__PURE__ */ jsxs("div", { className: "form-group", children: [
+                /* @__PURE__ */ jsx("label", { children: "UTR/Transaction ID *" }),
+                /* @__PURE__ */ jsx(
+                  "input",
+                  {
+                    type: "text",
+                    placeholder: "Enter UPI UTR number",
+                    value: utrNumber,
+                    onChange: (e) => setUtrNumber(e.target.value)
+                  }
+                )
+              ] });
+            }
+            if (nameUpper === "CARD") {
+              return /* @__PURE__ */ jsxs("div", { className: "form-group", children: [
+                /* @__PURE__ */ jsx("label", { children: "Card / Reference Number *" }),
+                /* @__PURE__ */ jsx(
+                  "input",
+                  {
+                    type: "text",
+                    placeholder: "Enter Card Last 4 digits or Ref Number",
+                    value: utrNumber,
+                    onChange: (e) => setUtrNumber(e.target.value)
+                  }
+                )
+              ] });
+            }
+            return null;
+          })(),
+          /* @__PURE__ */ jsxs("div", { className: "form-group", children: [
+            /* @__PURE__ */ jsx("label", { children: "Payment Date" }),
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                type: "date",
+                value: paymentDate,
+                onChange: (e) => setPaymentDate(e.target.value)
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "form-group", children: [
+            /* @__PURE__ */ jsx("label", { children: "Amount Received *" }),
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                type: "number",
+                step: "0.01",
+                value: amountReceived,
+                onChange: (e) => setAmountReceived(e.target.value),
+                placeholder: "0.00"
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "form-group", children: [
+            /* @__PURE__ */ jsx("label", { children: "Remarks / Payment Reason" }),
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                type: "text",
+                value: remarks,
+                onChange: (e) => setRemarks(e.target.value),
+                placeholder: "e.g. (Fee Renewal)"
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "form-actions", children: [
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                type: "submit",
+                className: "primary-btn",
+                disabled: submitting,
+                children: submitting ? "Processing..." : "Amount Received"
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                type: "button",
+                className: "secondary-btn",
+                onClick: resetForm,
+                children: "Cancel"
+              }
+            )
+          ] })
+        ] }),
+        !currentValidity && !validityLoading && selectedStudent && /* @__PURE__ */ jsx("div", { className: "form-group full-width", children: /* @__PURE__ */ jsx(
+          "div",
+          {
+            style: {
+              background: "#fff7ed",
+              padding: "14px 16px",
+              borderRadius: "8px",
+              border: "1px solid #fed7aa",
+              color: "#c2410c",
+              fontSize: "14px"
+            },
+            children: "No active fee plan found for this member. Please admit the student first or assign a fee plan."
+          }
+        ) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "table-card", children: [
+      /* @__PURE__ */ jsx(
+        "div",
+        {
+          style: {
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "16px"
+          },
+          children: /* @__PURE__ */ jsx("h3", { style: { color: "#1e293b", fontSize: "18px" }, children: "Payment History" })
+        }
+      ),
+      /* @__PURE__ */ jsxs("table", { children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Invoice" }),
+          /* @__PURE__ */ jsx("th", { children: "Student" }),
+          /* @__PURE__ */ jsx("th", { children: "Code" }),
+          /* @__PURE__ */ jsx("th", { children: "Mode" }),
+          /* @__PURE__ */ jsx("th", { children: "Reference" }),
+          /* @__PURE__ */ jsx("th", { children: "Amount" }),
+          /* @__PURE__ */ jsx("th", { children: "Date" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: filteredPayments.map((payment) => /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx("strong", { children: payment.invoice_no }) }),
+          /* @__PURE__ */ jsx("td", { children: payment.full_name }),
+          /* @__PURE__ */ jsx("td", { children: payment.student_code }),
+          /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx("span", { className: "status-badge", children: payment.mode_name }) }),
+          /* @__PURE__ */ jsxs("td", { children: [
+            payment.utr_number && /* @__PURE__ */ jsx("div", { style: { fontSize: "12px", color: "#64748b" }, children: payment.utr_number }),
+            /* @__PURE__ */ jsx("span", { style: { fontWeight: 600, color: payment.remarks?.includes("Admission") ? "#2563eb" : "#16a34a" }, children: payment.remarks || "(Fee Renewal)" })
+          ] }),
+          /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs("strong", { children: [
+            "\u20B9",
+            payment.amount_received
+          ] }) }),
+          /* @__PURE__ */ jsx("td", { children: payment.payment_date })
+        ] }, payment.id)) })
+      ] }),
+      filteredPayments.length === 0 && /* @__PURE__ */ jsx("p", { className: "empty-text", children: "No payments found" })
+    ] })
+  ] });
+};
+export default Payments;
