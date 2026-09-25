@@ -23,7 +23,8 @@ import {
   FaCreditCard,
   FaCog,
   FaUser,
-  FaSignOutAlt
+  FaSignOutAlt,
+  FaPhoneAlt
 } from "react-icons/fa";
 
 const DashboardLayout = () => {
@@ -154,6 +155,11 @@ const DashboardLayout = () => {
               <span className="brand-name" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>
                 {user.library_name || "Library System"}
               </span>
+              {user.library_code && (
+                <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 600, fontFamily: "monospace", letterSpacing: "0.5px", display: "block" }}>
+                  {user.library_code}
+                </span>
+              )}
             </div>
           </div>
           <button className="sidebar-close-btn" onClick={() => setIsSidebarOpen(false)}>
@@ -323,6 +329,31 @@ const DashboardLayout = () => {
           >
             <FaSignOutAlt style={{ fontSize: "16px", minWidth: "18px" }} /> Logout
           </button>
+
+          {/* Support Link */}
+          <a
+            href="tel:+919142025447"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              padding: "10px 14px",
+              borderRadius: "8px",
+              border: darkMode ? "1px solid #334155" : "1px solid #e2e8f0",
+              background: darkMode ? "rgba(59,130,246,0.1)" : "#eff6ff",
+              color: "#2563eb",
+              fontSize: "13px",
+              fontWeight: 700,
+              cursor: "pointer",
+              width: "100%",
+              textAlign: "left",
+              marginTop: "8px",
+              textDecoration: "none",
+              transition: "all 0.2s"
+            }}
+          >
+            <FaPhoneAlt style={{ fontSize: "14px", minWidth: "18px" }} /> Support: 9142025447
+          </a>
         </nav>
       </aside>
 
@@ -396,8 +427,13 @@ const DashboardLayout = () => {
                         border: `1px solid ${isExpired ? "#fecaca" : "#bbf7d0"}`,
                         fontSize: "11px"
                       }}>
-                        <div style={{ fontWeight: 700, color: isExpired ? "#dc2626" : "#16a34a" }}>
-                          {user.library_name || "Libraryly Main Branch"}
+                        <div style={{ fontWeight: 700, color: isExpired ? "#dc2626" : "#16a34a", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px" }}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.library_name || "Libraryly Main Branch"}</span>
+                          {user.library_code && (
+                            <span style={{ fontSize: "10px", padding: "1px 6px", borderRadius: "4px", background: "rgba(0,0,0,0.06)", fontFamily: "monospace", letterSpacing: "0.5px", flexShrink: 0 }}>
+                              {user.library_code}
+                            </span>
+                          )}
                         </div>
                         <div style={{ color: "#475569", marginTop: "2px" }}>
                           Expires: <strong>{formattedExpiry}</strong>

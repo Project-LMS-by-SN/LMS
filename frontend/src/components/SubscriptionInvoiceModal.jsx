@@ -1,5 +1,5 @@
-import React, { useRef, useState } from "react";
-import { FaDownload, FaPrint, FaTimes, FaCheckCircle, FaShieldAlt } from "react-icons/fa";
+import { useRef, useState } from "react";
+import { FaDownload, FaPrint, FaTimes, FaShieldAlt } from "react-icons/fa";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -32,13 +32,17 @@ const SubscriptionInvoiceModal = ({ isOpen, onClose, transaction, user }) => {
 
   if (!isOpen || !transaction) return null;
 
-  const invoiceNo = `INV-SN-${new Date(transaction.createdAt || Date.now()).getFullYear()}-${String(transaction.id || 1).padStart(5, "0")}`;
+  // Invoice is only generated for COMPLETED payments
+  const isCompleted = transaction.status === "COMPLETED";
+  const invoiceNo = transaction.createdAt
+    ? `INV-SN-${new Date(transaction.createdAt).getFullYear()}-${String(transaction.id || 1).padStart(5, "0")}`
+    : `INV-SN-0000-${String(transaction.id || 1).padStart(5, "0")}`;
   const libraryName = user?.library_name || "Library Main Branch";
   const tierName = (transaction.tier || "PRO").replace("_", " ");
   const billingCycle = (transaction.billing || "monthly").toUpperCase();
 
   const handleDownloadPdf = async () => {
-    if (!invoiceRef.current) return;
+    if (!invoiceRef.current || !isCompleted) return;
     setDownloading(true);
     try {
       const canvas = await html2canvas(invoiceRef.current, {
@@ -48,9 +52,23 @@ const SubscriptionInvoiceModal = ({ isOpen, onClose, transaction, user }) => {
       });
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
-      const imgWidth = 210;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const imgHeight = (canvas.height * pageWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, pageWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      // Split tall invoices across multiple pages
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, pageWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
       pdf.save(`Invoice_${invoiceNo}.pdf`);
     } catch (err) {
       console.error("PDF download failed:", err);
@@ -61,8 +79,15 @@ const SubscriptionInvoiceModal = ({ isOpen, onClose, transaction, user }) => {
   };
 
   const handlePrint = () => {
+    if (!isCompleted) return;
     window.print();
   };
+
+  const statusBadge = isCompleted
+    ? { bg: "#f0fdf4", border: "#bbf7d0", color: "#16a34a", text: "PAYMENT COMPLETED" }
+    : transaction.status === "PENDING"
+      ? { bg: "#fffbeb", border: "#fde68a", color: "#d97706", text: "PAYMENT PENDING" }
+      : { bg: "#fef2f2", border: "#fecaca", color: "#dc2626", text: `PAYMENT ${transaction.status || "CANCELLED"}` };
 
   return (
     <div style={{
@@ -77,7 +102,7 @@ const SubscriptionInvoiceModal = ({ isOpen, onClose, transaction, user }) => {
         boxShadow: "0 25px 50px -12px rgba(0,0,0,0.35)", overflow: "hidden"
       }}>
         {/* Actions Bar */}
-        <div style={{
+        <div className="no-print" style={{
           padding: "14px 24px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0",
           display: "flex", justifyContent: "space-between", alignItems: "center"
         }}>
@@ -90,11 +115,12 @@ const SubscriptionInvoiceModal = ({ isOpen, onClose, transaction, user }) => {
             <button
               type="button"
               onClick={handlePrint}
+              disabled={!isCompleted}
               style={{
                 display: "inline-flex", alignItems: "center", gap: "6px",
                 background: "#f1f5f9", color: "#334155", border: "1px solid #cbd5e1",
                 padding: "8px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
-                cursor: "pointer"
+                cursor: isCompleted ? "pointer" : "not-allowed", opacity: isCompleted ? 1 : 0.5
               }}
             >
               <FaPrint /> Print
@@ -102,12 +128,14 @@ const SubscriptionInvoiceModal = ({ isOpen, onClose, transaction, user }) => {
             <button
               type="button"
               onClick={handleDownloadPdf}
-              disabled={downloading}
+              disabled={downloading || !isCompleted}
               style={{
                 display: "inline-flex", alignItems: "center", gap: "6px",
-                background: "linear-gradient(135deg, #2563eb, #1d4ed8)", color: "#ffffff",
+                background: isCompleted ? "linear-gradient(135deg, #2563eb, #1d4ed8)" : "#94a3b8",
+                color: "#ffffff",
                 border: "none", padding: "8px 16px", borderRadius: "8px", fontSize: "13px",
-                fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 6px rgba(37,99,235,0.3)"
+                fontWeight: 700, cursor: isCompleted ? "pointer" : "not-allowed",
+                boxShadow: isCompleted ? "0 2px 6px rgba(37,99,235,0.3)" : "none"
               }}
             >
               <FaDownload /> {downloading ? "Generating PDF..." : "Download PDF"}
@@ -127,6 +155,24 @@ const SubscriptionInvoiceModal = ({ isOpen, onClose, transaction, user }) => {
 
         {/* Printable / Renderable Invoice Container */}
         <div style={{ overflowY: "auto", padding: "20px" }}>
+          {!isCompleted ? (
+            /* Invoice is NOT generated for PENDING / CANCELLED transactions */
+            <div style={{
+              textAlign: "center", padding: "50px 20px", border: "1px solid #e2e8f0",
+              borderRadius: "12px", background: "#f8fafc"
+            }}>
+              <div style={{ fontSize: "34px", marginBottom: "10px" }}>⏳</div>
+              <h3 style={{ fontSize: "17px", fontWeight: 700, margin: "0 0 6px 0", color: "#1e293b" }}>
+                Invoice unavailable — payment {transaction.status === "PENDING" ? "pending" : "not completed"}
+              </h3>
+              <p style={{ color: "#64748b", fontSize: "13px", margin: "0 0 8px 0" }}>
+                Invoice is generated only after the payment is completed. Transaction on {formatDateTime(transaction.createdAt)}.
+              </p>
+              <a href="tel:+919142025447" style={{ color: "#2563eb", fontSize: "13px", fontWeight: 700, textDecoration: "none" }}>
+                Support: +91 9142025447
+              </a>
+            </div>
+          ) : (
           <div
             id="subscription-invoice-content"
             ref={invoiceRef}
@@ -156,21 +202,22 @@ const SubscriptionInvoiceModal = ({ isOpen, onClose, transaction, user }) => {
                     </div>
                   </div>
                 </div>
-                <div style={{ fontSize: "12px", color: "#64748b", marginTop: "8px", lineHeight: "1.5" }}>
-                  Software Native Technologies Pvt. Ltd.<br />
-                  Cloud Library Management Solutions<br />
-                  Email: support@softwarenative.com
-                </div>
+              <div style={{ fontSize: "12px", color: "#64748b", marginTop: "8px", lineHeight: "1.5" }}>
+                Software Native Technologies Pvt. Ltd.<br />
+                Cloud Library Management Solutions<br />
+                Email: support@softwarenative.com<br />
+                Support: <a href="tel:+919142025447" style={{ color: "#2563eb", textDecoration: "none" }}>+91 9142025447</a>
+              </div>
               </div>
 
               <div style={{ textAlign: "right" }}>
                 <div style={{
-                  display: "inline-block", background: "#f0fdf4", border: "1px solid #bbf7d0",
-                  color: "#16a34a", padding: "4px 12px", borderRadius: "20px",
+                  display: "inline-block", background: statusBadge.bg, border: `1px solid ${statusBadge.border}`,
+                  color: statusBadge.color, padding: "4px 12px", borderRadius: "20px",
                   fontSize: "12px", fontWeight: 800, textTransform: "uppercase",
                   marginBottom: "8px"
                 }}>
-                  <FaCheckCircle style={{ marginRight: "4px" }} /> PAYMENT COMPLETED
+                  {statusBadge.text}
                 </div>
                 <div style={{ fontSize: "12px", color: "#64748b" }}>
                   Invoice No: <strong style={{ color: "#0f172a" }}>{invoiceNo}</strong>
@@ -205,7 +252,7 @@ const SubscriptionInvoiceModal = ({ isOpen, onClose, transaction, user }) => {
                 <div style={{ fontSize: "13px", color: "#334155", marginTop: "6px", lineHeight: "1.6" }}>
                   <div><strong>Payment Method:</strong> Razorpay Online Payment</div>
                   <div><strong>Order ID:</strong> <code style={{ background: "#e2e8f0", padding: "2px 4px", borderRadius: "4px", fontSize: "11px" }}>{transaction.orderId}</code></div>
-                  <div><strong>Payment ID:</strong> <code style={{ background: "#e2e8f0", padding: "2px 4px", borderRadius: "4px", fontSize: "11px" }}>{transaction.paymentId || "pay_verified"}</code></div>
+                  <div><strong>Payment ID:</strong> <code style={{ background: "#e2e8f0", padding: "2px 4px", borderRadius: "4px", fontSize: "11px" }}>{transaction.paymentId || "N/A"}</code></div>
                   <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "#16a34a", fontWeight: 600, fontSize: "12px", marginTop: "2px" }}>
                     <FaShieldAlt /> 100% Verified Secure Transaction
                   </div>
@@ -293,6 +340,7 @@ const SubscriptionInvoiceModal = ({ isOpen, onClose, transaction, user }) => {
               </p>
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>

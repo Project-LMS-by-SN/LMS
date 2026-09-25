@@ -17,6 +17,7 @@ const {
 
 router.get("/", getPayments);
 router.post("/", createPayment);
+router.post("/create", createPayment);
 router.post("/record", recordPayment);
 
 // Razorpay subscription routes

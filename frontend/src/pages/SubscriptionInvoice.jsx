@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { FaDownload, FaPrint, FaArrowLeft, FaCheckCircle, FaShieldAlt, FaReceipt, FaBuilding } from "react-icons/fa";
 import { useTheme } from "../context/ThemeContext";
@@ -63,24 +63,10 @@ const SubscriptionInvoice = () => {
           const passedTx = location.state?.transaction;
           if (passedTx) {
             setSelectedTx(passedTx);
-          } else if (list.length > 0) {
-            setSelectedTx(list[0]);
           } else {
-            // Synthesize an active invoice from user plan if no transaction row found
-            const currentTier = localUser.subscriptionTier || "PRO_100";
-            if (currentTier !== "FREE") {
-              setSelectedTx({
-                id: 1,
-                orderId: "ord_verified_plan",
-                paymentId: "pay_live_verified",
-                tier: currentTier,
-                billing: "quarterly",
-                amount: currentTier === "STARTER" ? 499 : currentTier === "PRO_200" ? 1499 : 999,
-                status: "COMPLETED",
-                createdAt: localUser.updatedAt || new Date().toISOString(),
-                subscriptionExpiry: localUser.subscriptionExpiry || new Date(Date.now() + 90 * 86400000).toISOString(),
-              });
-            }
+            // Invoice is only generated for COMPLETED payments
+            const firstCompleted = list.find((t) => t.status === "COMPLETED");
+            if (firstCompleted) setSelectedTx(firstCompleted);
           }
         }
       } catch (err) {
@@ -95,14 +81,16 @@ const SubscriptionInvoice = () => {
 
   const activeUser = userData || localUser;
   const libraryName = activeUser.library_name || "Library Main Branch";
-  const invoiceNo = selectedTx
-    ? `INV-SN-${new Date(selectedTx.createdAt || Date.now()).getFullYear()}-${String(selectedTx.id || 1).padStart(5, "0")}`
-    : "INV-SN-2026-00001";
+  // Invoice is valid only for COMPLETED payments — no invoice for PENDING/CANCELLED
+  const isCompleted = selectedTx?.status === "COMPLETED";
+  const invoiceNo = selectedTx?.createdAt
+    ? `INV-SN-${new Date(selectedTx.createdAt).getFullYear()}-${String(selectedTx.id || 1).padStart(5, "0")}`
+    : `INV-SN-0000-${String(selectedTx?.id || 1).padStart(5, "0")}`;
   const tierName = (selectedTx?.tier || activeUser.subscriptionTier || "PRO").replace("_", " ");
   const billingCycle = (selectedTx?.billing || "MONTHLY").toUpperCase();
 
   const handleDownloadPdf = async () => {
-    if (!invoiceRef.current) return;
+    if (!invoiceRef.current || !isCompleted) return;
     setDownloading(true);
     try {
       const canvas = await html2canvas(invoiceRef.current, {
@@ -112,9 +100,23 @@ const SubscriptionInvoice = () => {
       });
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
-      const imgWidth = 210;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const imgHeight = (canvas.height * pageWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, pageWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      // Split tall invoices across multiple pages
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, pageWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
       pdf.save(`Invoice_${invoiceNo}.pdf`);
     } catch (err) {
       console.error("PDF download failed:", err);
@@ -125,13 +127,24 @@ const SubscriptionInvoice = () => {
   };
 
   const handlePrint = () => {
+    if (!isCompleted) return;
     window.print();
   };
+
+  const statusBadge = (() => {
+    if (selectedTx?.status === "COMPLETED") {
+      return { bg: "#f0fdf4", border: "#bbf7d0", color: "#16a34a", text: "PAYMENT COMPLETED", icon: <FaCheckCircle style={{ marginRight: "5px" }} /> };
+    }
+    if (selectedTx?.status === "PENDING") {
+      return { bg: "#fffbeb", border: "#fde68a", color: "#d97706", text: "PAYMENT PENDING", icon: <FaReceipt style={{ marginRight: "5px" }} /> };
+    }
+    return { bg: "#fef2f2", border: "#fecaca", color: "#dc2626", text: `PAYMENT ${selectedTx?.status || "CANCELLED"}`, icon: <FaReceipt style={{ marginRight: "5px" }} /> };
+  })();
 
   return (
     <div className="page" style={{ maxWidth: "1000px", margin: "0 auto", padding: "24px 16px" }}>
       {/* Top Navigation & Controls */}
-      <div style={{
+      <div className="no-print" style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
         flexWrap: "wrap", gap: "16px", marginBottom: "24px"
       }}>
@@ -159,7 +172,7 @@ const SubscriptionInvoice = () => {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          {historyList.length > 1 && (
+          {historyList.filter((t) => t.status === "COMPLETED").length > 1 && (
             <select
               value={selectedTx?.id || ""}
               onChange={(e) => {
@@ -174,7 +187,7 @@ const SubscriptionInvoice = () => {
                 fontSize: "13px"
               }}
             >
-              {historyList.map((tx) => (
+              {historyList.filter((t) => t.status === "COMPLETED").map((tx) => (
                 <option key={tx.id} value={tx.id}>
                   Invoice #{tx.id} — ₹{tx.amount} ({formatDateOnly(tx.createdAt)})
                 </option>
@@ -185,13 +198,15 @@ const SubscriptionInvoice = () => {
           <button
             type="button"
             onClick={handlePrint}
+            disabled={!isCompleted}
             style={{
               display: "inline-flex", alignItems: "center", gap: "6px",
               background: darkMode ? "#1e293b" : "#f8fafc",
               color: darkMode ? "#f8fafc" : "#334155",
               border: darkMode ? "1px solid #334155" : "1px solid #cbd5e1",
               padding: "9px 16px", borderRadius: "10px", fontSize: "13px",
-              fontWeight: 600, cursor: "pointer"
+              fontWeight: 600, cursor: isCompleted ? "pointer" : "not-allowed",
+              opacity: isCompleted ? 1 : 0.5
             }}
           >
             <FaPrint /> Print
@@ -200,13 +215,14 @@ const SubscriptionInvoice = () => {
           <button
             type="button"
             onClick={handleDownloadPdf}
-            disabled={downloading || !selectedTx}
+            disabled={downloading || !selectedTx || !isCompleted}
             style={{
               display: "inline-flex", alignItems: "center", gap: "6px",
-              background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
+              background: isCompleted ? "linear-gradient(135deg, #2563eb, #1d4ed8)" : "#94a3b8",
               color: "#ffffff", border: "none", padding: "9px 18px",
               borderRadius: "10px", fontSize: "13px", fontWeight: 700,
-              cursor: "pointer", boxShadow: "0 2px 8px rgba(37,99,235,0.3)"
+              cursor: isCompleted ? "pointer" : "not-allowed",
+              boxShadow: isCompleted ? "0 2px 8px rgba(37,99,235,0.3)" : "none"
             }}
           >
             <FaDownload /> {downloading ? "Generating PDF..." : "Download PDF Invoice"}
@@ -226,9 +242,30 @@ const SubscriptionInvoice = () => {
         }}>
           <FaReceipt style={{ fontSize: "40px", color: "#94a3b8", marginBottom: "12px" }} />
           <h3 style={{ fontSize: "18px", fontWeight: 700, margin: "0 0 6px 0" }}>No Invoices Found</h3>
-          <p style={{ color: "#64748b", fontSize: "14px", margin: 0 }}>
+          <p style={{ color: "#64748b", fontSize: "14px", margin: "0 0 8px 0" }}>
             You haven't completed any online subscription purchases yet. Upgrade your plan to receive official invoices.
           </p>
+          <a href="tel:+919142025447" style={{ color: "#2563eb", fontSize: "14px", fontWeight: 700, textDecoration: "none" }}>
+            Support: +91 9142025447
+          </a>
+        </div>
+      ) : !isCompleted ? (
+        /* Invoice is NOT generated for PENDING / CANCELLED transactions */
+        <div style={{
+          textAlign: "center", padding: "50px 20px",
+          background: darkMode ? "#1e293b" : "#ffffff",
+          borderRadius: "16px", border: darkMode ? "1px solid #334155" : "1px solid #e2e8f0"
+        }}>
+          <FaReceipt style={{ fontSize: "40px", color: "#d97706", marginBottom: "12px" }} />
+          <h3 style={{ fontSize: "18px", fontWeight: 700, margin: "0 0 6px 0" }}>
+            Invoice unavailable — payment {selectedTx.status === "PENDING" ? "pending" : "not completed"}
+          </h3>
+          <p style={{ color: "#64748b", fontSize: "14px", margin: "0 0 8px 0" }}>
+            Invoice is generated only after the payment is completed. This transaction was made on {formatDateTime(selectedTx.createdAt)}.
+          </p>
+          <a href="tel:+919142025447" style={{ color: "#2563eb", fontSize: "14px", fontWeight: 700, textDecoration: "none" }}>
+            Support: +91 9142025447
+          </a>
         </div>
       ) : (
         /* Invoice Paper Sheet */
@@ -274,18 +311,19 @@ const SubscriptionInvoice = () => {
                 <strong>Software Native Technologies Pvt. Ltd.</strong><br />
                 Cloud Software & Library Automation Solutions<br />
                 GSTIN / Tax ID: 07AAACS1234F1Z8<br />
-                Support Email: support@softwarenative.com
+                Support Email: support@softwarenative.com<br />
+                Support: <a href="tel:+919142025447" style={{ color: "#2563eb", textDecoration: "none" }}>+91 9142025447</a>
               </div>
             </div>
 
             <div style={{ textAlign: "right" }}>
               <div style={{
-                display: "inline-block", background: "#f0fdf4", border: "1px solid #bbf7d0",
-                color: "#16a34a", padding: "6px 14px", borderRadius: "20px",
+                display: "inline-block", background: statusBadge.bg, border: `1px solid ${statusBadge.border}`,
+                color: statusBadge.color, padding: "6px 14px", borderRadius: "20px",
                 fontSize: "12px", fontWeight: 800, textTransform: "uppercase",
                 marginBottom: "10px"
               }}>
-                <FaCheckCircle style={{ marginRight: "5px" }} /> PAYMENT COMPLETED
+                {statusBadge.icon} {statusBadge.text}
               </div>
               <div style={{ fontSize: "13px", color: "#64748b" }}>
                 Invoice No: <strong style={{ color: "#0f172a", fontSize: "14px" }}>{invoiceNo}</strong>
@@ -325,7 +363,7 @@ const SubscriptionInvoice = () => {
               <div style={{ fontSize: "13px", color: "#334155", marginTop: "8px", lineHeight: "1.7" }}>
                 <div><strong>Payment Method:</strong> Razorpay Online Gateway</div>
                 <div><strong>Order ID:</strong> <code style={{ background: "#e2e8f0", padding: "2px 6px", borderRadius: "4px", fontSize: "11px" }}>{selectedTx.orderId}</code></div>
-                <div><strong>Payment ID:</strong> <code style={{ background: "#e2e8f0", padding: "2px 6px", borderRadius: "4px", fontSize: "11px" }}>{selectedTx.paymentId || "pay_verified"}</code></div>
+                <div><strong>Payment ID:</strong> <code style={{ background: "#e2e8f0", padding: "2px 6px", borderRadius: "4px", fontSize: "11px" }}>{selectedTx.paymentId || "N/A"}</code></div>
                 <div style={{ display: "flex", alignItems: "center", gap: "5px", color: "#16a34a", fontWeight: 700, fontSize: "12px", marginTop: "4px" }}>
                   <FaShieldAlt /> 100% Verified Secure Online Transaction
                 </div>

@@ -2,7 +2,7 @@ const prisma = require("../config/prisma");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const emailFrom = process.env.EMAIL_FROM || "noreply@dashurl.in";
-const { formatDateStr, formatDateTimeStr, parsePaymentDate } = require("../utils/format");
+const { formatDateStr, formatDateTimeStr, parsePaymentDate, generateInvoiceNo } = require("../utils/format");
 
 const formatStudent = (s) => ({
   id: s.id,
@@ -1366,7 +1366,7 @@ const admitStudent = async (req, res) => {
           data: {
             validityId: validity.id,
             paymentModeId: parseInt(payment_mode_id),
-            invoiceNo: `INV-${Date.now()}`,
+            invoiceNo: generateInvoiceNo(),
             amountReceived: finalAmount,
             paymentDate: parsePaymentDate(payment_date),
             utrNumber: utr_number || null,
@@ -1406,7 +1406,10 @@ const admitStudent = async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Student admitted with shifts & seat allocated successfully",
-      data: formatStudent(result.student),
+      data: {
+        ...formatStudent(result.student),
+        invoice_no: result.payment ? result.payment.invoiceNo : null,
+      },
     });
 
   } catch (error) {
@@ -1417,6 +1420,12 @@ const admitStudent = async (req, res) => {
         fieldStr = target.join(", ");
       } else if (typeof target === "string" && target.trim()) {
         fieldStr = target;
+      }
+      if (fieldStr.toLowerCase().includes("invoice")) {
+        return res.status(409).json({
+          success: false,
+          message: "Invoice number already exists. Please try again.",
+        });
       }
       return res.status(400).json({
         success: false,

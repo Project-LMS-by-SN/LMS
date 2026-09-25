@@ -3,6 +3,7 @@ const path = require("path");
 const crypto = require("crypto");
 const prisma = require("../config/prisma");
 const authUtil = require("../utils/auth");
+const { generateUniqueLibraryCode, ensureAllBranchesHaveCode } = require("../utils/libraryCode");
 const { Resend } = require("resend");
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const emailFrom = process.env.EMAIL_FROM || "noreply@dashurl.in";
@@ -38,9 +39,9 @@ const seedAdminUser = async () => {
   if (seedAdminUserRan) return;
   try {
     const branchesConfig = [
-      { id: 1, name: "Main Branch", address: "123 Library Head Office, Sector 62, Noida, UP" },
-      { id: 2, name: "Library Branch 100", address: "Sector 18, Noida, UP" },
-      { id: 3, name: "Library Branch 200", address: "Connaught Place, New Delhi" },
+      { id: 1, name: "Main Branch", address: "123 Library Head Office, Sector 62, Noida, UP", code: "MB543210" },
+      { id: 2, name: "Library Branch 100", address: "Sector 18, Noida, UP", code: "ML354862" },
+      { id: 3, name: "Library Branch 200", address: "Connaught Place, New Delhi", code: "LB100003" },
     ];
 
     for (const bConfig of branchesConfig) {
@@ -49,14 +50,22 @@ const seedAdminUser = async () => {
         await prisma.branch.create({
           data: {
             id: bConfig.id,
+            code: bConfig.code,
             name: bConfig.name,
             address: bConfig.address,
             isActive: true,
           },
         });
-        console.log(`✅ Branch ${bConfig.id} (${bConfig.name}) seeded successfully`);
+        console.log(`✅ Branch ${bConfig.id} (${bConfig.name}) seeded successfully with code ${bConfig.code}`);
+      } else if (!existingBranch.code) {
+        await prisma.branch.update({
+          where: { id: existingBranch.id },
+          data: { code: bConfig.code },
+        });
       }
     }
+
+    await ensureAllBranchesHaveCode(prisma);
 
     // 1. Seed admin@admin.com -> Branch 1
     const adminEmail = "admin@admin.com";
@@ -302,9 +311,12 @@ exports.login = async (req, res) => {
           await seedAdminUser();
 
           // Create a new branch for this owner to isolate their data
+          const initialBranchName = `Branch - ${cleanEmail}`;
+          const newLibraryCode = await generateUniqueLibraryCode(initialBranchName, null, prisma);
           const newBranch = await prisma.branch.create({
             data: {
-              name: `Branch - ${cleanEmail}`,
+              code: newLibraryCode,
+              name: initialBranchName,
               address: "Default Address",
               isActive: true,
             },
@@ -364,16 +376,29 @@ exports.login = async (req, res) => {
           const token = authUtil.signToken({ id: user.id, email: user.email, role: user.role, deviceId: `${reqDeviceId}_${user.id}` });
 
           let branchName = null;
+          let branchCode = null;
           if (user.branchId) {
             const branch = await prisma.branch.findUnique({ where: { id: user.branchId } });
             branchName = branch ? branch.name : null;
+            branchCode = branch ? branch.code : null;
           }
 
           return res.json({
             success: true,
             token,
             mustChangePassword: true,
-            user: { id: user.id, name: user.name, email: user.email, role: user.role, subscriptionTier: user.subscriptionTier, subscriptionExpiry: user.subscriptionExpiry, branch_name: branchName },
+            user: {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              subscriptionTier: user.subscriptionTier,
+              subscriptionExpiry: user.subscriptionExpiry,
+              branch_name: branchName,
+              branch_code: branchCode,
+              library_name: branchName,
+              library_code: branchCode,
+            },
           });
         } else {
           // Log failed login event
@@ -605,9 +630,11 @@ exports.login = async (req, res) => {
     const token = authUtil.signToken({ id: user.id, email: user.email, role: user.role, deviceId: dbDeviceId });
 
     let branchName = null;
+    let branchCode = null;
     if (user.branchId) {
       const branch = await prisma.branch.findUnique({ where: { id: user.branchId } });
       branchName = branch ? branch.name : null;
+      branchCode = branch ? branch.code : null;
     }
 
     let effTier = user.subscriptionTier;
@@ -639,7 +666,10 @@ exports.login = async (req, res) => {
         role: user.role,
         subscriptionTier: effTier,
         subscriptionExpiry: effExpiry,
-        branch_name: branchName
+        branch_name: branchName,
+        branch_code: branchCode,
+        library_name: branchName,
+        library_code: branchCode,
       },
     });
   } catch (error) {
@@ -708,6 +738,7 @@ exports.getProfile = async (req, res) => {
         branch: {
           select: {
             id: true,
+            code: true,
             name: true,
             address: true,
             phone: true,
@@ -718,6 +749,15 @@ exports.getProfile = async (req, res) => {
 
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    let libraryCode = user.branch ? user.branch.code : null;
+    if (user.branch && !libraryCode) {
+      libraryCode = await generateUniqueLibraryCode(user.branch.name, user.branch.phone, prisma);
+      await prisma.branch.update({
+        where: { id: user.branch.id },
+        data: { code: libraryCode }
+      });
     }
 
     let effTier = user.subscriptionTier;
@@ -779,6 +819,7 @@ exports.getProfile = async (req, res) => {
       pendingExpiryDays: user.pendingExpiryDays,
       createdAt: user.createdAt,
       library_name: user.branch ? user.branch.name : "Libraryly Main Branch",
+      library_code: libraryCode || "LB100001",
       contact: user.branch ? user.branch.phone || "" : "",
       address: user.branch ? user.branch.address || "" : "",
     };
@@ -830,6 +871,7 @@ exports.updateProfile = async (req, res) => {
 
     let updatedBranch = existingUser.branch;
     if (existingUser.branchId) {
+      // NOTE: library code is permanently unique and strictly non-editable, so code is never modified here!
       updatedBranch = await prisma.branch.update({
         where: { id: existingUser.branchId },
         data: {
@@ -840,8 +882,10 @@ exports.updateProfile = async (req, res) => {
       });
     } else if (library_name || contact || address) {
       const newBranchName = library_name ? library_name.trim() : `${updatedUser.name}'s Library`;
+      const newLibCode = await generateUniqueLibraryCode(newBranchName, contact, prisma);
       updatedBranch = await prisma.branch.create({
         data: {
+          code: newLibCode,
           name: newBranchName,
           phone: contact ? contact.trim() : null,
           address: address ? address.trim() : null,
@@ -862,6 +906,7 @@ exports.updateProfile = async (req, res) => {
       subscriptionExpiry: updatedUser.subscriptionExpiry,
       createdAt: updatedUser.createdAt,
       library_name: updatedBranch ? updatedBranch.name : "Libraryly Main Branch",
+      library_code: updatedBranch ? (updatedBranch.code || "LB100001") : "LB100001",
       contact: updatedBranch ? updatedBranch.phone || "" : "",
       address: updatedBranch ? updatedBranch.address || "" : "",
     };

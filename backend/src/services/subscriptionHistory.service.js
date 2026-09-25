@@ -90,10 +90,28 @@ const updateSubscriptionHistoryStatus = ({ orderId, paymentId, status = "COMPLET
 };
 
 /**
+ * Auto-cancel PENDING orders older than 24 hours
+ */
+const cancelExpiredPendingOrders = () => {
+  try {
+    db.prepare(`
+      UPDATE subscription_history 
+      SET status = 'CANCELLED' 
+      WHERE status = 'PENDING' AND created_at < datetime('now', '-24 hours')
+    `).run();
+  } catch (err) {
+    console.error("Error auto-cancelling expired pending orders:", err);
+  }
+};
+
+/**
  * Fetch subscription history and current status for a given user
  */
 const getSubscriptionHistoryForUser = async (userId) => {
   try {
+    // Auto-cancel PENDING orders older than 24 hours
+    cancelExpiredPendingOrders();
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -165,7 +183,8 @@ const getSubscriptionHistoryForUser = async (userId) => {
         status: r.status,
         couponCode: r.coupon_code,
         subscriptionExpiry: r.subscription_expiry,
-        createdAt: r.created_at,
+        // created_at is stored in UTC (datetime('now')) — expose as ISO with Z
+        createdAt: r.created_at ? String(r.created_at).replace(" ", "T") + "Z" : null,
       })),
     };
   } catch (err) {
@@ -178,4 +197,5 @@ module.exports = {
   recordSubscriptionHistory,
   updateSubscriptionHistoryStatus,
   getSubscriptionHistoryForUser,
+  cancelExpiredPendingOrders,
 };

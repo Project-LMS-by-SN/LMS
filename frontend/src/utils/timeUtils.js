@@ -43,7 +43,7 @@ export const parse24To12 = (timeStr) => {
   if (isNaN(h)) h = 9;
   if (isNaN(parseInt(m, 10))) m = "00";
 
-  let period = "AM";
+  let period;
   let hour12 = h;
 
   if (hasPM) {
@@ -92,7 +92,22 @@ export const formatTimeTo12Hr = (timeStr) => {
 
 export const formatTime = (timeStr, timeFormat = "12hr") => {
   if (!timeStr) return "";
-  const raw = String(timeStr).trim();
+  let raw = String(timeStr).trim();
+
+  // Full ISO datetime (with timezone) — convert to local time first
+  if (raw.includes("T")) {
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) {
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      raw = `${hh}:${mm}`;
+    }
+  } else {
+    // "YYYY-MM-DD HH:MM(:SS) [AM/PM]" — strip the date part, keep the time
+    const dtMatch = raw.match(/^\d{4}-\d{2}-\d{2}[ ](.+)$/);
+    if (dtMatch) raw = dtMatch[1].trim();
+  }
+
   const upper = raw.toUpperCase();
 
   if (timeFormat === "24hr") {
@@ -100,17 +115,15 @@ export const formatTime = (timeStr, timeFormat = "12hr") => {
       const { hour12, minute, period } = parse24To12(raw);
       return compose12To24(hour12, minute, period);
     }
-    const clean = raw.slice(0, 5);
-    const parts = clean.split(":");
-    if (parts.length >= 2) {
-      const h = parts[0].padStart(2, "0");
-      const m = parts[1].padStart(2, "0");
-      return `${h}:${m}`;
+    const timeMatch = raw.match(/(\d{1,2}):(\d{2})/);
+    if (timeMatch) {
+      const h = String(parseInt(timeMatch[1], 10)).padStart(2, "0");
+      return `${h}:${timeMatch[2]}`;
     }
-    return clean;
+    return raw.slice(0, 5);
   }
 
-  return formatTimeTo12Hr(timeStr);
+  return formatTimeTo12Hr(raw);
 };
 
 export const formatDateTime = (dateTimeStr, timeFormat = "12hr") => {

@@ -76,6 +76,7 @@ const createPayment = async (req, res) => {
       payment_date,
       remarks,
       utr_number,
+      payment_type = "fee", // "fee" (due/renewal) | "registration" (one-time, no validity change)
     } = req.body;
 
     if (!validity_id || !payment_mode_id || !invoice_no || !amount_received) {
@@ -123,25 +124,32 @@ const createPayment = async (req, res) => {
     const remarksValue = remarks || (utr_number ? `UTR: ${utr_number}` : null);
     const payDate = parsePaymentDate(payment_date);
 
-    const newPayment = await prisma.payment.create({
-      data: {
-        validityId: valId,
-        paymentModeId: pmId,
-        invoiceNo: invoice_no,
-        amountReceived: amtReceived,
-        paymentDate: payDate,
-        remarks: remarksValue,
-        utrNumber: utr_number || null,
-      },
-    });
+    let newPayment = null;
 
-    const feePlan = await prisma.feePlan.findFirst({
-      where: { id: validity.feePlanId, isActive: true, branchId: req.user.branchId },
-    });
+    await prisma.$transaction(async (tx) => {
+      newPayment = await tx.payment.create({
+        data: {
+          validityId: valId,
+          paymentModeId: pmId,
+          invoiceNo: invoice_no,
+          amountReceived: amtReceived,
+          paymentDate: payDate,
+          remarks: remarksValue,
+          utrNumber: utr_number || null,
+        },
+      });
 
-    if (feePlan) {
+      // Registration fee is a one-time payment — never touches validity/amounts
+      if (payment_type === "registration") return;
+
+      const feePlan = await tx.feePlan.findFirst({
+        where: { id: validity.feePlanId, isActive: true, branchId: req.user.branchId },
+      });
+
+      if (!feePlan) return;
+
       // Calculate renewal fee (strictly fee plan amount, NO registration fee)
-      const assignments = await prisma.studentShiftAssignment.findMany({
+      const assignments = await tx.studentShiftAssignment.findMany({
         where: { validityId: valId, assignmentStatus: "ACTIVE" },
       });
       const shiftCount = (validity.accessType === "UNRESERVED" && assignments.length > 1)
@@ -149,24 +157,21 @@ const createPayment = async (req, res) => {
         : 1;
       const renewalFee = Number(feePlan.amount) * shiftCount;
 
-      // Calculate total paid across all payments
-      const allPayments = await prisma.payment.findMany({
+      // Calculate total paid across all payments BEFORE this one
+      const allPayments = await tx.payment.findMany({
         where: { validityId: valId },
       });
       const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amountReceived || 0), 0);
       const currentTotalAmount = Number(validity.totalAmount || 0);
 
-      // Check if previous period was fully covered before this payment
       const prevPaid = totalPaid - amtReceived;
-      const wasFullyCovered = prevPaid >= currentTotalAmount;
+      // Renewal only if the previous period was already fully paid before this payment
+      // (i.e. there was no pending due) — due-clearing payments never extend validity
+      const isRenewal = prevPaid >= currentTotalAmount;
 
-      let newTotalAmount = currentTotalAmount;
-      if (wasFullyCovered) {
-        // Renewal payment: add only the plan fee (NO one-time registration fee)
-        newTotalAmount = currentTotalAmount + renewalFee;
-      }
+      if (isRenewal) {
+        const newTotalAmount = currentTotalAmount + renewalFee;
 
-      if (totalPaid >= newTotalAmount) {
         const currentEnd = new Date(validity.endDate);
         currentEnd.setHours(0, 0, 0, 0);
         const today = new Date();
@@ -179,22 +184,16 @@ const createPayment = async (req, res) => {
         const newEndDate = new Date(extendFrom);
         newEndDate.setDate(extendFrom.getDate() + (feePlan.durationDays - 1));
 
-        await prisma.studentValidity.update({
+        await tx.studentValidity.update({
           where: { id: valId },
           data: {
             endDate: newEndDate,
             totalAmount: newTotalAmount,
           },
         });
-      } else if (newTotalAmount !== currentTotalAmount) {
-        await prisma.studentValidity.update({
-          where: { id: valId },
-          data: {
-            totalAmount: newTotalAmount,
-          },
-        });
       }
-    }
+      // Due-clearing payments: only record the payment, no validity change
+    });
 
     // Audit Log
     await logAction("CREATE_PAYMENT", "payments", newPayment.id, null, newPayment, req.user ? req.user.id : null);
@@ -305,18 +304,6 @@ const recordPayment = async (req, res) => {
       });
     }
 
-    // Check duplicate invoice
-    const existingInvoice = await prisma.payment.findUnique({
-      where: { invoiceNo: invoice_no },
-    });
-
-    if (existingInvoice) {
-      return res.status(409).json({
-        success: false,
-        message: "Invoice number already exists",
-      });
-    }
-
     // Calculate end date — extend from existing validity if present
     const existingValidity = await prisma.studentValidity.findUnique({
       where: { studentId: sId },
@@ -324,62 +311,61 @@ const recordPayment = async (req, res) => {
 
     let startDateObj;
     let endDateObj;
+    let validity;
+    let payment;
 
     if (existingValidity) {
-      const currentEnd = new Date(existingValidity.endDate);
-      currentEnd.setHours(0, 0, 0, 0);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      startDateObj = currentEnd > today
-        ? new Date(currentEnd.getTime() + 86400000)
-        : today;
-
-      endDateObj = new Date(startDateObj);
-      endDateObj.setDate(startDateObj.getDate() + (feePlan.durationDays - 1));
+      // Validity already exists: just append the payment, do NOT reset dates/amounts
+      validity = existingValidity;
+      const payDate = parsePaymentDate(payment_date);
+      payment = await prisma.$transaction(async (tx) => {
+        return tx.payment.create({
+          data: {
+            validityId: existingValidity.id,
+            paymentModeId: pmId,
+            invoiceNo: invoice_no,
+            amountReceived: amtReceived,
+            paymentDate: payDate,
+            remarks: remarks || (utr_number ? `UTR: ${utr_number}` : null),
+            utrNumber: utr_number || null,
+          },
+        });
+      });
     } else {
       startDateObj = new Date(start_date);
       endDateObj = new Date(startDateObj);
       endDateObj.setDate(startDateObj.getDate() + (feePlan.durationDays - 1));
+
+      // totalAmount is based on the FEE PLAN (so dues are tracked correctly),
+      // not on however much was received
+      const planAmount = Number(feePlan.amount);
+
+      await prisma.$transaction(async (tx) => {
+        validity = await tx.studentValidity.create({
+          data: {
+            studentId: sId,
+            feePlanId: fpId,
+            startDate: startDateObj,
+            endDate: endDateObj,
+            totalAmount: planAmount,
+            accessType: access_type,
+          },
+        });
+
+        const payDate = parsePaymentDate(payment_date);
+        payment = await tx.payment.create({
+          data: {
+            validityId: validity.id,
+            paymentModeId: pmId,
+            invoiceNo: invoice_no,
+            amountReceived: amtReceived,
+            paymentDate: payDate,
+            remarks: remarks || (utr_number ? `UTR: ${utr_number}` : null),
+            utrNumber: utr_number || null,
+          },
+        });
+      });
     }
-
-    let validity;
-    let payment;
-
-    await prisma.$transaction(async (tx) => {
-      validity = await tx.studentValidity.upsert({
-        where: { studentId: sId },
-        update: {
-          feePlanId: fpId,
-          startDate: startDateObj,
-          endDate: endDateObj,
-          totalAmount: amtReceived,
-          accessType: access_type,
-          updatedAt: new Date(),
-        },
-        create: {
-          studentId: sId,
-          feePlanId: fpId,
-          startDate: startDateObj,
-          endDate: endDateObj,
-          totalAmount: amtReceived,
-          accessType: access_type,
-        },
-      });
-
-      const payDate = parsePaymentDate(payment_date);
-      payment = await tx.payment.create({
-        data: {
-          validityId: validity.id,
-          paymentModeId: pmId,
-          invoiceNo: invoice_no,
-          amountReceived: amtReceived,
-          paymentDate: payDate,
-          remarks: remarks || (utr_number ? `UTR: ${utr_number}` : null),
-          utrNumber: utr_number || null,
-        },
-      });
-    });
 
     // Audit Log
     await logAction("RECORD_PAYMENT", "payments", payment.id, null, payment, req.user ? req.user.id : null);
@@ -404,6 +390,13 @@ const recordPayment = async (req, res) => {
       },
     });
   } catch (error) {
+    if (error.code === "P2002") {
+      return res.status(409).json({
+        success: false,
+        message: "Invoice number already exists",
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to record payment",

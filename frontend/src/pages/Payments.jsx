@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
-import { FaSearch, FaTimes, FaWallet, FaReceipt, FaHashtag, FaClock, FaUser } from "react-icons/fa";
+import { FaSearch, FaTimes, FaWallet, FaReceipt } from "react-icons/fa";
 import CustomDatePicker from "../components/CustomDatePicker";
 
 const Payments = () => {
@@ -61,6 +61,9 @@ const Payments = () => {
     fetchData();
   }, []);
 
+  const toDateStr = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
   const filteredPayments = payments.filter((p) => {
     // Search query filter (Student Name, Code, Invoice No, UTR, Remarks, Mode)
     if (searchQuery.trim()) {
@@ -77,7 +80,7 @@ const Payments = () => {
       }
     }
 
-    // Date filter
+    // Date filter — compare YYYY-MM-DD strings (timezone-safe)
     if (dateFilter === "custom") {
       if (!customDate) return true;
       const recordDateStr = p.payment_date ? p.payment_date.substring(0, 10) : "";
@@ -86,8 +89,7 @@ const Payments = () => {
     const cutoff = getFilterDate(dateFilter);
     if (!cutoff) return true;
     const recordDateStr = p.payment_date ? p.payment_date.substring(0, 10) : "";
-    const recordDate = new Date(recordDateStr);
-    return recordDate >= cutoff;
+    return recordDateStr >= toDateStr(cutoff);
   });
 
   const totalRevenue = filteredPayments.reduce(

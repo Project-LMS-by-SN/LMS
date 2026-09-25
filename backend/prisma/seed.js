@@ -34,6 +34,7 @@ async function main() {
   const defaultBranch = await prisma.branch.create({
     data: {
       id: 1,
+      code: "LB100001",
       name: "Main Branch",
       address: "123 Library Head Office, Sector 62, Noida, UP",
       phone: "+91 9876543210",

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "../api/axios";
-import { FaUserShield, FaEnvelope, FaUser, FaClock, FaCheckCircle, FaEdit, FaSave, FaTimes, FaPhone, FaMapMarkerAlt, FaBuilding, FaLock, FaKey, FaEye, FaEyeSlash } from "react-icons/fa";
+import { FaUserShield, FaEnvelope, FaUser, FaClock, FaCheckCircle, FaEdit, FaSave, FaTimes, FaPhone, FaMapMarkerAlt, FaBuilding, FaLock, FaKey, FaEye, FaEyeSlash, FaCopy, FaCheck, FaIdCard } from "react-icons/fa";
 import { useTheme } from "../context/ThemeContext";
 
 const Profile = () => {
@@ -19,6 +19,14 @@ const Profile = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  const handleCopyCode = (code) => {
+    if (!code) return;
+    navigator.clipboard.writeText(code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
 
   // Edit form state
   const [formData, setFormData] = useState({
@@ -135,6 +143,7 @@ const Profile = () => {
           name: res.data.data.name,
           email: res.data.data.email,
           library_name: res.data.data.library_name,
+          library_code: res.data.data.library_code,
           contact: res.data.data.contact,
           address: res.data.data.address,
         };
@@ -179,7 +188,7 @@ const Profile = () => {
   }
 
   return (
-    <div className="page">
+    <div className="page" style={{ paddingBottom: "60px" }}>
       <div className="page-title-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <h1>My Profile</h1>
@@ -244,8 +253,25 @@ const Profile = () => {
           </div>
           <div style={{ flex: 1 }}>
             <h2 style={{ fontSize: "22px", color: textPrimary, margin: 0 }}>{profile?.name || "Admin User"}</h2>
-            <div style={{ fontSize: "14px", color: "#2563eb", fontWeight: 600, marginTop: "2px" }}>
-              {profile?.library_name || "Libraryly Main Branch"}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "14px", color: "#2563eb", fontWeight: 600 }}>
+                {profile?.library_name || "Libraryly Main Branch"}
+              </span>
+              {profile?.library_code && (
+                <span style={{
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  background: darkMode ? "rgba(59,130,246,0.18)" : "#eff6ff",
+                  color: "#2563eb",
+                  border: "1px solid #bfdbfe",
+                  padding: "2px 8px",
+                  borderRadius: "6px",
+                  letterSpacing: "0.5px",
+                  fontFamily: "monospace",
+                }}>
+                  {profile.library_code}
+                </span>
+              )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "6px" }}>
               <span className="status-badge" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
@@ -276,6 +302,91 @@ const Profile = () => {
                 />
               ) : (
                 <div style={{ fontSize: "15px", fontWeight: 600, color: textPrimary }}>{profile?.library_name || "N/A"}</div>
+              )}
+            </div>
+
+              {/* 2. Library Code (2 Alphabets + 6 Digits Unique & Non-Editable) */}
+            <div className="profile-info-group">
+              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "13px", fontWeight: 600, color: textMuted, marginBottom: "6px" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <FaIdCard style={{ color: "#3b82f6" }} /> Library Code 
+                </span>
+                <span style={{ fontSize: "11px", color: textMuted, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                  <FaLock style={{ fontSize: "10px" }} /> 
+                </span>
+              </label>
+              {isEditing ? (
+                <div>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type="text"
+                      value={profile?.library_code || "MB543210"}
+                      readOnly
+                      disabled
+                      style={{
+                        width: "100%",
+                        padding: "10px 14px",
+                        paddingRight: "70px",
+                        borderRadius: "8px",
+                        border: `1px dashed ${cardBorder}`,
+                        background: darkMode ? "rgba(15,23,42,0.6)" : "#f1f5f9",
+                        color: textMuted,
+                        fontSize: "14px",
+                        fontFamily: "monospace",
+                        fontWeight: 700,
+                        letterSpacing: "0.8px",
+                        cursor: "not-allowed",
+                      }}
+                    />
+                    <div style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", color: textMuted, fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}>
+                      <FaLock style={{ fontSize: "11px" }} /> Fixed
+                    </div>
+                  </div>
+                  <small style={{ color: textMuted, fontSize: "11px", marginTop: "4px", display: "block" }}>
+                    🔒 Permanent 8-character unique code (2 alphabets + 6 digits). Cannot be edited.
+                  </small>
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <div style={{
+                    fontSize: "15px",
+                    fontWeight: 700,
+                    color: "#2563eb",
+                    fontFamily: "monospace",
+                    letterSpacing: "0.8px",
+                    background: darkMode ? "rgba(37,99,235,0.12)" : "#eff6ff",
+                    padding: "7px 14px",
+                    borderRadius: "8px",
+                    border: darkMode ? "1px solid rgba(59,130,246,0.3)" : "1px solid #bfdbfe",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px"
+                  }}>
+                    <FaLock style={{ fontSize: "11px", color: "#60a5fa" }} title="Unique and Non-editable" />
+                    {profile?.library_code || "N/A"}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyCode(profile?.library_code)}
+                    style={{
+                      background: copiedCode ? "#16a34a" : (darkMode ? "#1e293b" : "#f1f5f9"),
+                      color: copiedCode ? "#ffffff" : textPrimary,
+                      border: `1px solid ${copiedCode ? "#16a34a" : cardBorder}`,
+                      padding: "7px 14px",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      transition: "all 0.2s"
+                    }}
+                    title="Copy Library Code"
+                  >
+                    {copiedCode ? <><FaCheck /> Copied!</> : <><FaCopy /> Copy Code</>}
+                  </button>
+                </div>
               )}
             </div>
 
@@ -459,7 +570,7 @@ const Profile = () => {
       </div>
 
       {/* Change Password Security Card */}
-      <div className="form-card" style={{ marginTop: "24px", padding: "24px", border: `1px solid ${cardBorder}` }}>
+      <div className="form-card" style={{ maxWidth: "650px", margin: "24px auto 40px", padding: "24px", border: `1px solid ${cardBorder}` }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: showPwSection ? "20px" : "0" }}>
           <div>
             <h3 style={{ fontSize: "16px", fontWeight: 700, color: textPrimary, margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaCheck, FaCrown, FaUsers, FaArrowRight, FaTimes, FaCalendarAlt, FaClock, FaExclamationTriangle, FaTag, FaGift, FaReceipt, FaHistory, FaCheckCircle, FaCreditCard, FaShieldAlt, FaDownload, FaFileInvoice, FaExternalLinkAlt } from "react-icons/fa";
+import { FaCheck, FaUsers, FaArrowRight, FaTimes, FaCalendarAlt, FaExclamationTriangle, FaTag, FaReceipt, FaCheckCircle, FaCreditCard, FaShieldAlt, FaDownload, FaFileInvoice, FaExternalLinkAlt } from "react-icons/fa";
 import { useTheme } from "../context/ThemeContext";
 import api from "../api/axios";
 import SubscriptionInvoiceModal from "../components/SubscriptionInvoiceModal";
@@ -18,8 +18,8 @@ const Subscription = () => {
   const [appliedCoupon, setAppliedCoupon] = useState(null); // { code: 'PRO1', discountedPrice: 1 }
   const [couponLoading, setCouponLoading] = useState(false);
   const [couponError, setCouponError] = useState("");
-  const [couponSuccess, setCouponSuccess] = useState("");
-  const [hasUsedProCoupon, setHasUsedProCoupon] = useState(false);
+ const [, setCouponSuccess] = useState("");
+ const [, setHasUsedProCoupon] = useState(false);
 
   // Subscription History state
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -48,7 +48,7 @@ const Subscription = () => {
         if (res.data?.success && res.data?.hasUsedProCoupon) {
           setHasUsedProCoupon(true);
         }
-      } catch (e) {
+      } catch {
         // silent fail
       }
     };
@@ -182,8 +182,6 @@ const Subscription = () => {
     });
   };
 
-  const [switchPlanTarget, setSwitchPlanTarget] = useState(null);
-
   const executeUpgrade = async (tierKey, amount, tierName) => {
     try {
       const dbTier = tierMap[tierKey] || tierKey.toUpperCase();
@@ -273,8 +271,6 @@ const Subscription = () => {
   const textMuted = darkMode ? "#94a3b8" : "#64748b";
   const cardBg = darkMode ? "#1e293b" : "#ffffff";
   const border = darkMode ? "rgba(255,255,255,0.08)" : "#e2e8f0";
-  const pageBg = darkMode ? "#0f172a" : "#f8fafc";
-
   const handleContactSubmit = (e) => {
     e.preventDefault();
     setContactSuccess(true);
@@ -496,20 +492,12 @@ const Subscription = () => {
               onClick={async () => {
                 try {
                   const res = await api.get("/payments/razorpay/subscription-history");
-                  if (res.data?.success && res.data.history?.length > 0) {
-                    setSelectedInvoice(res.data.history[0]);
+                  // Invoice is only generated for COMPLETED payments
+                  const completedTx = res.data?.history?.find((h) => h.status === "COMPLETED");
+                  if (completedTx) {
+                    setSelectedInvoice(completedTx);
                   } else {
-                    setSelectedInvoice({
-                      id: 1,
-                      orderId: "ord_subscription_active",
-                      paymentId: "pay_live_verified",
-                      tier: currentTier,
-                      billing: "quarterly",
-                      amount: currentTier === "STARTER" ? 499 : currentTier === "PRO_200" ? 1499 : 999,
-                      status: "COMPLETED",
-                      createdAt: user.updatedAt || new Date().toISOString(),
-                      subscriptionExpiry: subscriptionExpiry || new Date(Date.now() + 90 * 86400000).toISOString(),
-                    });
+                    alert("No completed payment found. Invoice is generated only after payment completion.");
                   }
                 } catch {
                   setShowHistoryModal(true);
@@ -1098,18 +1086,13 @@ const Subscription = () => {
                       <button
                         type="button"
                         onClick={() => {
-                          const latestTx = historyData?.history?.find(h => h.status === "COMPLETED") || {
-                            id: 1,
-                            orderId: "order_active_subscription",
-                            paymentId: "pay_razorpay_verified",
-                            tier: currentTier,
-                            billing: "Active Plan",
-                            amount: currentTier === "PRO_200" ? 900 : currentTier === "PRO_100" ? 600 : 450,
-                            createdAt: new Date().toISOString(),
-                            subscriptionExpiry: subscriptionExpiry,
-                            status: "COMPLETED",
-                          };
-                          setSelectedInvoice(latestTx);
+                          // Invoice is only generated for COMPLETED payments
+                          const latestTx = historyData?.history?.find(h => h.status === "COMPLETED");
+                          if (latestTx) {
+                            setSelectedInvoice(latestTx);
+                          } else {
+                            alert("No completed payment found. Invoice is generated only after payment completion.");
+                          }
                         }}
                         style={{
                           padding: "6px 12px", borderRadius: "10px", fontSize: "12px", fontWeight: "700",
@@ -1149,6 +1132,9 @@ const Subscription = () => {
               <div>
                 <h4 style={{ margin: "0 0 12px 0", fontSize: "15px", fontWeight: 700, color: textPrimary }}>
                   Transaction History & Invoices
+                  <a href="tel:+919142025447" style={{ marginLeft: "12px", fontSize: "12px", fontWeight: 600, color: "#3b82f6", textDecoration: "none" }}>
+                    Support: +91 9142025447
+                  </a>
                 </h4>
 
                 {historyLoading ? (
@@ -1209,57 +1195,65 @@ const Subscription = () => {
                                 display: "inline-flex", alignItems: "center", gap: "4px"
                               }}>
                                 {tx.status === "COMPLETED" ? <FaCheckCircle style={{ fontSize: "10px" }} /> : null}
-                                {tx.status === "COMPLETED" ? "Payment Completed" : tx.status}
+                                {tx.status === "COMPLETED" ? "Payment Completed" : tx.status === "PENDING" ? "Payment Pending" : tx.status === "CANCELLED" ? "Cancelled" : tx.status}
                               </span>
                             </td>
                             <td style={{ padding: "14px 20px", textAlign: "center", whiteSpace: "nowrap" }}>
                               <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" }}>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedInvoice(tx)}
-                                  title="Download PDF Invoice"
-                                  style={{
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    gap: "6px",
-                                    padding: "7px 14px",
-                                    borderRadius: "8px",
-                                    background: "#2563eb",
-                                    color: "#ffffff",
-                                    border: "none",
-                                    fontSize: "12px",
-                                    fontWeight: "700",
-                                    cursor: "pointer",
-                                    whiteSpace: "nowrap",
-                                    boxShadow: "0 2px 6px rgba(37,99,235,0.3)"
-                                  }}
-                                >
-                                  <FaDownload style={{ fontSize: "11px" }} /> Invoice PDF
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setShowHistoryModal(false);
-                                    navigate("invoice", { state: { transaction: tx } });
-                                  }}
-                                  title="Open Full Screen Invoice Page"
-                                  style={{
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    gap: "5px",
-                                    padding: "7px 12px",
-                                    borderRadius: "8px",
-                                    background: darkMode ? "rgba(255,255,255,0.08)" : "#f1f5f9",
-                                    color: textPrimary,
-                                    border: `1px solid ${border}`,
-                                    fontSize: "12px",
-                                    fontWeight: "600",
-                                    cursor: "pointer",
-                                    whiteSpace: "nowrap"
-                                  }}
-                                >
-                                  <FaExternalLinkAlt style={{ fontSize: "11px" }} /> Open
-                                </button>
+                                {tx.status === "COMPLETED" ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedInvoice(tx)}
+                                      title="Download PDF Invoice"
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "6px",
+                                        padding: "7px 14px",
+                                        borderRadius: "8px",
+                                        background: "#2563eb",
+                                        color: "#ffffff",
+                                        border: "none",
+                                        fontSize: "12px",
+                                        fontWeight: "700",
+                                        cursor: "pointer",
+                                        whiteSpace: "nowrap",
+                                        boxShadow: "0 2px 6px rgba(37,99,235,0.3)"
+                                      }}
+                                    >
+                                      <FaDownload style={{ fontSize: "11px" }} /> Invoice PDF
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setShowHistoryModal(false);
+                                        navigate("invoice", { state: { transaction: tx } });
+                                      }}
+                                      title="Open Full Screen Invoice Page"
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "5px",
+                                        padding: "7px 12px",
+                                        borderRadius: "8px",
+                                        background: darkMode ? "rgba(255,255,255,0.08)" : "#f1f5f9",
+                                        color: textPrimary,
+                                        border: `1px solid ${border}`,
+                                        fontSize: "12px",
+                                        fontWeight: "600",
+                                        cursor: "pointer",
+                                        whiteSpace: "nowrap"
+                                      }}
+                                    >
+                                      <FaExternalLinkAlt style={{ fontSize: "11px" }} /> Open
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span style={{ fontSize: "11px", color: textMuted, fontStyle: "italic" }}>
+                                    Invoice after payment
+                                  </span>
+                                )}
                               </div>
                             </td>
                           </tr>

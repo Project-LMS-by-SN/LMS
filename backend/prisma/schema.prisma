@@ -42,6 +42,7 @@ enum AttendanceStatus {
 
 model Branch {
   id        Int      @id @default(autoincrement())
+  code      String?  @unique @map("code")
   name      String   @unique
   address   String?
   phone     String?

@@ -49,4 +49,11 @@ const parsePaymentDate = (payment_date) => {
   return payDate;
 };
 
-module.exports = { formatDateStr, formatDateTimeStr, parsePaymentDate };
+const generateInvoiceNo = () => {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const rand = Math.floor(100 + Math.random() * 900);
+  return `INV-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-${rand}`;
+};
+
+module.exports = { formatDateStr, formatDateTimeStr, parsePaymentDate, generateInvoiceNo };

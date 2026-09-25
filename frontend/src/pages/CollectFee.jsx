@@ -7,15 +7,12 @@ import {
   FaCreditCard,
   FaSearch,
   FaUserCheck,
-  FaReceipt,
   FaMoneyBillWave,
   FaCheckCircle,
   FaTimes,
-  FaPrint,
   FaHistory,
   FaClock,
   FaHashtag,
-  FaArrowRight,
 } from "react-icons/fa";
 
 const getTodayStr = () => {
@@ -52,16 +49,19 @@ const CollectFee = () => {
   const searchRef = useRef(null);
 
   // Form Fields
+  const [feePlans, setFeePlans] = useState([]);
+  const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [collectType, setCollectType] = useState("fee"); // "fee" | "registration"
+  const [registrationAmount, setRegistrationAmount] = useState(0);
   const [renewalPlanFee, setRenewalPlanFee] = useState(0);
   const [paymentModeId, setPaymentModeId] = useState("");
   const [amountReceived, setAmountReceived] = useState("");
   const [invoiceNo, setInvoiceNo] = useState(generateInvoiceNo());
   const [utrNumber, setUtrNumber] = useState("");
-  const [paymentDate, setPaymentDate] = useState(getTodayStr());
+  const [paymentDate] = useState(getTodayStr());
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
-  const [selectedReceipt, setSelectedReceipt] = useState(null);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -70,10 +70,11 @@ const CollectFee = () => {
 
   const fetchData = async () => {
     try {
-      const [studentRes, modeRes, paymentRes] = await Promise.all([
+      const [studentRes, modeRes, paymentRes, planRes] = await Promise.all([
         api.get("/students"),
         api.get("/payment-modes"),
         api.get("/payments"),
+        api.get("/fee-plans"),
       ]);
       setStudents(studentRes.data.data || []);
       const rawModes = modeRes.data.data || [];
@@ -86,10 +87,17 @@ const CollectFee = () => {
           ];
       setPaymentModes(modes);
       if (modes.length > 0) setPaymentModeId(modes[0].id.toString());
-      
+
+      const plans = planRes.data.data || [];
+      setFeePlans(plans);
+      const regPlan = plans.find((p) => p.plan_type === "REGISTRATION" && p.is_active !== false);
+      setRegistrationAmount(regPlan ? Number(regPlan.amount) : 0);
+      const firstPlan = plans.find((p) => p.is_active !== false && p.plan_type !== "REGISTRATION");
+      if (firstPlan) setSelectedPlanId(String(firstPlan.id));
+
       const allPayments = paymentRes.data.data || [];
       setRecentPayments(allPayments.slice(0, 5));
-    } catch (err) {
+    } catch {
       showToast("Failed to load initial data", "error");
     } finally {
       setLoading(false);
@@ -136,7 +144,13 @@ const CollectFee = () => {
         const val = res.data.data.validity;
         const shifts = res.data.data.shift_assignments || [];
         setStudentValidity(val);
-        
+        setCollectType("fee");
+
+        // Default to the fee plan used at admission
+        if (val && val.fee_plan_id) {
+          setSelectedPlanId(String(val.fee_plan_id));
+        }
+
         // Fee Plan Renewal Amount (strictly fee plan amount, WITHOUT one-time admission registration fee)
         let planRate = 0;
         if (val) {
@@ -149,6 +163,10 @@ const CollectFee = () => {
             : 1;
 
           planRate = basePlanAmount * shiftMultiplier;
+        } else {
+          // No validity yet — use the selected (first active) fee plan rate
+          const plan = feePlans.find((p) => String(p.id) === String(selectedPlanId));
+          planRate = plan ? Number(plan.amount) : 0;
         }
         setRenewalPlanFee(planRate);
 
@@ -182,6 +200,32 @@ const CollectFee = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Change payment type: fee plan (due/renewal) vs registration fee
+  const handleCollectTypeChange = (type) => {
+    setCollectType(type);
+    if (type === "registration") {
+      if (registrationAmount > 0) setAmountReceived(registrationAmount.toString());
+    } else {
+      const due = selectedStudent?.due_amount || 0;
+      if (due > 0) setAmountReceived(due.toString());
+      else if (renewalPlanFee > 0) setAmountReceived(renewalPlanFee.toString());
+    }
+  };
+
+  // Change fee plan (only when student has no existing validity)
+  const handlePlanChange = (planId) => {
+    setSelectedPlanId(planId);
+    const plan = feePlans.find((p) => String(p.id) === String(planId));
+    if (!plan) return;
+    const rate = Number(plan.amount);
+    setRenewalPlanFee(rate);
+    const due = selectedStudent?.due_amount || 0;
+    if (collectType === "fee") {
+      if (due > 0) setAmountReceived(due.toString());
+      else setAmountReceived(rate.toString());
+    }
+  };
+
   // Submit Payment Collection
   const handleSubmitPayment = async (e) => {
     e.preventDefault();
@@ -201,83 +245,86 @@ const CollectFee = () => {
       showToast("Invoice number is required", "error");
       return;
     }
+    if (!studentValidity && !selectedPlanId) {
+      showToast("Select a fee plan for this student", "error");
+      return;
+    }
 
     setSubmitting(true);
-    const finalRemarks = remarks.trim() || "(Fee Renewal)";
-    try {
-      let payload;
+    const isRegistration = collectType === "registration" && !!studentValidity;
+    const finalRemarks = remarks.trim() || (isRegistration ? "(Registration Fee)" : "(Fee Renewal)");
+
+    const buildPayload = (invNo) => {
+      const base = {
+        invoice_no: invNo,
+        amount_received: parseFloat(amountReceived),
+        payment_date: paymentDate,
+        utr_number: utrNumber.trim() || null,
+        remarks: finalRemarks,
+      };
       if (studentValidity && studentValidity.id) {
-        payload = {
+        return {
+          ...base,
           validity_id: studentValidity.id,
           payment_mode_id: parseInt(paymentModeId, 10),
-          invoice_no: invoiceNo,
-          amount_received: parseFloat(amountReceived),
-          payment_date: paymentDate,
-          utr_number: utrNumber.trim() || null,
-          remarks: finalRemarks,
+          payment_type: isRegistration ? "registration" : "fee",
         };
-        await api.post("/payments/create", payload);
-      } else {
-        payload = {
-          student_id: selectedStudent.id,
-          fee_plan_id: 1,
-          start_date: getTodayStr(),
-          access_type: selectedStudent.access_type || "UNRESERVED",
-          payment_mode_id: parseInt(paymentModeId, 10),
-          invoice_no: invoiceNo,
-          amount_received: parseFloat(amountReceived),
-          payment_date: paymentDate,
-          utr_number: utrNumber.trim() || null,
-          remarks: finalRemarks,
-        };
-        await api.post("/payments/record", payload);
       }
+      return {
+        ...base,
+        student_id: selectedStudent.id,
+        fee_plan_id: parseInt(selectedPlanId, 10),
+        start_date: getTodayStr(),
+        access_type: selectedStudent.access_type || "UNRESERVED",
+        payment_mode_id: parseInt(paymentModeId, 10),
+      };
+    };
 
-      showToast(`Payment of ₹${amountReceived} collected successfully!`);
-      
-      // Reset Form State
-      setSelectedStudent(null);
-      setStudentValidity(null);
-      setRenewalPlanFee(0);
-      setSearchQuery("");
-      setAmountReceived("");
-      setUtrNumber("");
-      setRemarks("");
-      setInvoiceNo(generateInvoiceNo());
-      
-      // Refresh Data
-      fetchData();
-    } catch (err) {
-      try {
-        const fallbackPayload = {
-          student_id: selectedStudent.id,
-          fee_plan_id: (studentValidity && studentValidity.fee_plan_id) || 1,
-          start_date: getTodayStr(),
-          access_type: selectedStudent.access_type || "UNRESERVED",
-          payment_mode_id: parseInt(paymentModeId, 10),
-          invoice_no: invoiceNo,
-          amount_received: parseFloat(amountReceived),
-          payment_date: paymentDate,
-          utr_number: utrNumber.trim() || null,
-          remarks: finalRemarks,
-        };
-        await api.post("/payments/record", fallbackPayload);
-        showToast(`Payment of ₹${amountReceived} collected successfully!`);
-        setSelectedStudent(null);
-        setStudentValidity(null);
-        setRenewalPlanFee(0);
-        setSearchQuery("");
-        setAmountReceived("");
-        setUtrNumber("");
-        setRemarks("");
-        setInvoiceNo(generateInvoiceNo());
-        fetchData();
-      } catch (err2) {
-        showToast(err2.response?.data?.message || err.response?.data?.message || "Failed to collect payment", "error");
+    const submitOnce = async (invNo) => {
+      const payload = buildPayload(invNo);
+      if (studentValidity && studentValidity.id) {
+        return api.post("/payments/create", payload);
       }
-    } finally {
-      setSubmitting(false);
+      return api.post("/payments/record", payload);
+    };
+
+    try {
+      await submitOnce(invoiceNo);
+    } catch (err) {
+      // Duplicate invoice number — regenerate once and retry
+      if (err.response?.status === 409) {
+        const freshInvoice = generateInvoiceNo();
+        setInvoiceNo(freshInvoice);
+        try {
+          await submitOnce(freshInvoice);
+        } catch (err2) {
+          showToast(err2.response?.data?.message || "Failed to collect payment", "error");
+          setSubmitting(false);
+          return;
+        }
+      } else {
+        showToast(err.response?.data?.message || "Failed to collect payment", "error");
+        setSubmitting(false);
+        return;
+      }
     }
+
+    showToast(`Payment of ₹${amountReceived} collected successfully!`);
+
+    // Reset Form State
+    setSelectedStudent(null);
+    setStudentValidity(null);
+    setRenewalPlanFee(0);
+    setCollectType("fee");
+    setSearchQuery("");
+    setAmountReceived("");
+    setUtrNumber("");
+    setRemarks("");
+    setInvoiceNo(generateInvoiceNo());
+
+    // Refresh Data
+    fetchData();
+    setSubmitting(false);
   };
 
   const cardBg = darkMode ? "#1e293b" : "#ffffff";
@@ -342,7 +389,7 @@ const CollectFee = () => {
                 {selectedStudent && (
                   <button
                     type="button"
-                    onClick={() => { setSelectedStudent(null); setStudentValidity(null); setSearchQuery(""); setAmountReceived(""); setRenewalPlanFee(0); }}
+                    onClick={() => { setSelectedStudent(null); setStudentValidity(null); setSearchQuery(""); setAmountReceived(""); setRenewalPlanFee(0); setCollectType("fee"); }}
                     style={{ border: "none", background: "transparent", color: textMuted, cursor: "pointer" }}
                   >
                     <FaTimes />
@@ -444,6 +491,69 @@ const CollectFee = () => {
               </div>
             )}
 
+            {/* Payment Type & Fee Plan Selector */}
+            {selectedStudent && (
+              <div style={{ display: "grid", gridTemplateColumns: studentValidity ? "1fr" : "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: textMuted, marginBottom: "6px" }}>
+                    Payment For <span style={{ color: "#ef4444" }}>*</span>
+                  </label>
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <button
+                      type="button"
+                      onClick={() => handleCollectTypeChange("fee")}
+                      style={{
+                        flex: 1, padding: "9px 12px", borderRadius: "8px", fontSize: "13px", fontWeight: 700,
+                        border: `1px solid ${collectType === "fee" ? "#3b82f6" : border}`,
+                        background: collectType === "fee" ? (darkMode ? "rgba(59,130,246,0.18)" : "#eff6ff") : inputBg,
+                        color: collectType === "fee" ? "#3b82f6" : textPrimary,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Fee Plan{renewalPlanFee > 0 ? ` (₹${renewalPlanFee})` : ""}
+                    </button>
+                    {studentValidity && registrationAmount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleCollectTypeChange("registration")}
+                        style={{
+                          flex: 1, padding: "9px 12px", borderRadius: "8px", fontSize: "13px", fontWeight: 700,
+                          border: `1px solid ${collectType === "registration" ? "#f59e0b" : border}`,
+                          background: collectType === "registration" ? (darkMode ? "rgba(245,158,11,0.18)" : "#fffbeb") : inputBg,
+                          color: collectType === "registration" ? "#d97706" : textPrimary,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Registration Fee (₹{registrationAmount})
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {!studentValidity && (
+                  <div>
+                    <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: textMuted, marginBottom: "6px" }}>
+                      Fee Plan <span style={{ color: "#ef4444" }}>*</span>
+                    </label>
+                    <select
+                      value={selectedPlanId}
+                      onChange={(e) => handlePlanChange(e.target.value)}
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: `1px solid ${border}`, background: inputBg, color: textPrimary, fontSize: "14px", fontWeight: "600", outline: "none", boxSizing: "border-box", cursor: "pointer" }}
+                    >
+                      <option value="">Select fee plan...</option>
+                      {feePlans
+                        .filter((p) => p.is_active !== false && p.plan_type !== "REGISTRATION")
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.plan_name} — ₹{p.amount}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Payment Input Fields */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
               <div>
@@ -459,11 +569,19 @@ const CollectFee = () => {
                   required
                   style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: `1px solid ${border}`, background: inputBg, color: textPrimary, fontSize: "14px", fontWeight: "600", outline: "none", boxSizing: "border-box" }}
                 />
-                {renewalPlanFee > 0 && (!selectedStudent?.due_amount || selectedStudent?.due_amount <= 0) && (
+                {collectType === "registration" && registrationAmount > 0 ? (
+                  <span style={{ fontSize: "11px", color: "#d97706", fontWeight: 600, display: "block", marginTop: "4px" }}>
+                    ✓ Registration fee amount (₹{registrationAmount})
+                  </span>
+                ) : renewalPlanFee > 0 && (!selectedStudent?.due_amount || selectedStudent?.due_amount <= 0) ? (
                   <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: 600, display: "block", marginTop: "4px" }}>
                     ✓ Fee plan renewal rate (₹{renewalPlanFee})
                   </span>
-                )}
+                ) : selectedStudent?.due_amount > 0 && collectType === "fee" ? (
+                  <span style={{ fontSize: "11px", color: "#ef4444", fontWeight: 600, display: "block", marginTop: "4px" }}>
+                    ✓ Pending due amount (₹{selectedStudent.due_amount})
+                  </span>
+                ) : null}
               </div>
 
               <div>
@@ -563,7 +681,7 @@ const CollectFee = () => {
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || validityLoading}
               style={{
                 width: "100%", padding: "12px", borderRadius: "10px", fontSize: "15px", fontWeight: 700,
                 background: "linear-gradient(135deg, #22c55e, #16a34a)", color: "#fff", border: "none",
