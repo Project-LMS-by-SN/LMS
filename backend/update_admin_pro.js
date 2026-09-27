@@ -1,17 +1,11 @@
-const { PrismaClient } = require("@prisma/client");
-const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
-const path = require("path");
-
-const dbPath = path.resolve(__dirname, "./prisma/dev.db");
-const adapter = new PrismaBetterSqlite3({ url: `file:${dbPath}` });
-const prisma = new PrismaClient({ adapter });
+const db = require("./src/config/mongoClient");
 
 async function updateAdminPro() {
   const expiryDate = new Date();
   expiryDate.setMonth(expiryDate.getMonth() + 3);
 
   const adminEmail = "admin@admin.com";
-  const updated = await prisma.user.updateMany({
+  const updated = await db.user.updateMany({
     where: { email: adminEmail },
     data: {
       subscriptionTier: "PRO_200",
@@ -24,4 +18,5 @@ async function updateAdminPro() {
 
 updateAdminPro()
   .catch((e) => console.error("Error updating admin pro:", e))
-  .finally(() => prisma.$disconnect());
+  .finally(() => db.$disconnect());
+

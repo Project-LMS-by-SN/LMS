@@ -23,8 +23,8 @@ STEP 1: BACKEND SETUP
      cp .env.sample .env
    - (Optional) Open ".env" and modify the settings (e.g. PORT, JWT_SECRET, RAZORPAY_KEY, etc.) if needed.
 
-4. Initialize the SQLite database schema:
-   npx prisma db push
+4. Initialize the database schema & seeds (if needed):
+   npm run seed
 
 5. Start the backend development server:
    npm run dev

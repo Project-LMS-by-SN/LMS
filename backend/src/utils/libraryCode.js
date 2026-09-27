@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 
 /**
  * Extracts 2 alphabets from a library name or returns 'LB' as default.
@@ -40,11 +40,11 @@ const extractSixDigits = (phone, fallbackNumber = 100001) => {
  *
  * @param {string} [libraryName]
  * @param {string} [phone]
- * @param {object} [txPrisma]
+ * @param {object} [txDb]
  * @returns {Promise<string>}
  */
-const generateUniqueLibraryCode = async (libraryName, phone, txPrisma) => {
-  let db = prisma;
+const generateUniqueLibraryCode = async (libraryName, phone, txDb) => {
+  let db = mongoClient;
   let name = libraryName;
   let ph = phone;
 
@@ -53,8 +53,8 @@ const generateUniqueLibraryCode = async (libraryName, phone, txPrisma) => {
     db = libraryName;
     name = null;
     ph = null;
-  } else if (txPrisma) {
-    db = txPrisma;
+  } else if (txDb) {
+    db = txDb;
   }
 
   const alpha = extractTwoAlphabets(name);
@@ -92,8 +92,8 @@ const generateUniqueLibraryCode = async (libraryName, phone, txPrisma) => {
  * Ensures all branches in the database have a unique code formatted as:
  * 2 Alphabets (from library name) + 6 Digits (from phone number / sequence).
  */
-const ensureAllBranchesHaveCode = async (txPrisma) => {
-  const db = txPrisma || prisma;
+const ensureAllBranchesHaveCode = async (txDb) => {
+  const db = txDb || mongoClient;
   const branches = await db.branch.findMany({
     orderBy: { id: "asc" }
   });

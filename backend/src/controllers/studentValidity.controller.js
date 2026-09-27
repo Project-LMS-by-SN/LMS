@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 const { formatDateStr } = require("../utils/format");
 
 const formatValidity = (sv) => {
@@ -22,7 +22,7 @@ const formatValidity = (sv) => {
 
 const getStudentValidities = async (req, res) => {
   try {
-    const validities = await prisma.studentValidity.findMany({
+    const validities = await mongoClient.studentValidity.findMany({
       where: {
         student: {
           deletedAt: null,
@@ -65,7 +65,7 @@ const createOrUpdateStudentValidity = async (req, res) => {
     const fpId = parseInt(fee_plan_id);
 
     // Verify student exists and is active
-    const student = await prisma.student.findFirst({
+    const student = await mongoClient.student.findFirst({
       where: { id: sId, deletedAt: null, branchId: req.user.branchId },
     });
 
@@ -77,7 +77,7 @@ const createOrUpdateStudentValidity = async (req, res) => {
     }
 
     // Verify fee plan is active
-    const feePlan = await prisma.feePlan.findFirst({
+    const feePlan = await mongoClient.feePlan.findFirst({
       where: { id: fpId, isActive: true, branchId: req.user.branchId },
     });
 
@@ -102,7 +102,7 @@ const createOrUpdateStudentValidity = async (req, res) => {
 
     const finalAmount = custom_amount !== undefined && custom_amount !== null && custom_amount !== "" ? parseFloat(custom_amount) : feePlan.amount;
 
-    const validity = await prisma.studentValidity.upsert({
+    const validity = await mongoClient.studentValidity.upsert({
       where: { studentId: sId },
       update: {
         feePlanId: fpId,

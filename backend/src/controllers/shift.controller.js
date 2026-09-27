@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 
 const formatShift = (s) => ({
   id: s.id,
@@ -20,7 +20,7 @@ const checkTimeOverlap = (start1, end1, start2, end2) => {
 
 const getShifts = async (req, res) => {
   try {
-    const shifts = await prisma.shift.findMany({
+    const shifts = await mongoClient.shift.findMany({
       where: { branchId: req.user.branchId },
       orderBy: { id: "asc" },
     });
@@ -54,7 +54,7 @@ const createShift = async (req, res) => {
     }
 
     // Check overlap with existing active shifts (same branch only)
-    const activeShifts = await prisma.shift.findMany({ where: { isActive: true, branchId: req.user.branchId } });
+    const activeShifts = await mongoClient.shift.findMany({ where: { isActive: true, branchId: req.user.branchId } });
     for (const existing of activeShifts) {
       if (checkTimeOverlap(start_time, end_time, existing.startTime, existing.endTime)) {
         return res.status(400).json({
@@ -64,7 +64,7 @@ const createShift = async (req, res) => {
       }
     }
 
-    const newShift = await prisma.shift.create({
+    const newShift = await mongoClient.shift.create({
       data: {
         shiftName: shift_name,
         startTime: start_time,
@@ -103,7 +103,7 @@ const deleteShift = async (req, res) => {
     const { id } = req.params;
     const shiftId = parseInt(id);
 
-    const shift = await prisma.shift.findFirst({ where: { id: shiftId, branchId: req.user.branchId } });
+    const shift = await mongoClient.shift.findFirst({ where: { id: shiftId, branchId: req.user.branchId } });
     if (!shift) {
       return res.status(404).json({ success: false, message: "Shift not found" });
     }
@@ -112,7 +112,7 @@ const deleteShift = async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     // Find active assignments for active students whose validity has not expired
-    const activeAssignments = await prisma.studentShiftAssignment.findMany({
+    const activeAssignments = await mongoClient.studentShiftAssignment.findMany({
       where: {
         shiftId: shiftId,
         assignmentStatus: "ACTIVE",
@@ -146,11 +146,11 @@ const deleteShift = async (req, res) => {
     }
 
     // Clean up all inactive / historical / orphan assignments for this shift so deletion succeeds
-    await prisma.studentShiftAssignment.deleteMany({
+    await mongoClient.studentShiftAssignment.deleteMany({
       where: { shiftId: shiftId },
     });
 
-    const deletedShift = await prisma.shift.delete({
+    const deletedShift = await mongoClient.shift.delete({
       where: { id: shiftId },
     });
 
@@ -196,7 +196,7 @@ const updateShift = async (req, res) => {
 
     const shiftId = parseInt(id);
 
-    const existingShift = await prisma.shift.findFirst({
+    const existingShift = await mongoClient.shift.findFirst({
       where: { id: shiftId, branchId: req.user.branchId },
     });
 
@@ -208,7 +208,7 @@ const updateShift = async (req, res) => {
     }
 
     // Check overlap with other active shifts (same branch, excluding itself)
-    const otherShifts = await prisma.shift.findMany({
+    const otherShifts = await mongoClient.shift.findMany({
       where: { isActive: true, id: { not: shiftId }, branchId: req.user.branchId },
     });
     for (const other of otherShifts) {
@@ -220,7 +220,7 @@ const updateShift = async (req, res) => {
       }
     }
 
-    const updatedShift = await prisma.shift.update({
+    const updatedShift = await mongoClient.shift.update({
       where: { id: shiftId },
       data: {
         shiftName: shift_name,

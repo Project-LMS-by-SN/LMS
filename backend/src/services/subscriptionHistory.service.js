@@ -1,37 +1,10 @@
-const Database = require("better-sqlite3");
-const path = require("path");
-const prisma = require("../config/prisma");
-
-const dbPath = path.resolve(__dirname, "../../prisma/dev.db");
-const db = new Database(dbPath);
-
-// Initialize subscription_history table & index
-try {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS subscription_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      order_id TEXT NOT NULL,
-      payment_id TEXT,
-      tier TEXT NOT NULL,
-      billing TEXT DEFAULT 'monthly',
-      amount REAL NOT NULL,
-      currency TEXT DEFAULT 'INR',
-      status TEXT DEFAULT 'COMPLETED',
-      coupon_code TEXT,
-      subscription_expiry DATETIME,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE INDEX IF NOT EXISTS idx_sub_history_user ON subscription_history(user_id);
-  `);
-} catch (err) {
-  console.error("Error initializing subscription_history table:", err);
-}
+const models = require("../models");
+const mongoClient = require("../config/mongoClient");
 
 /**
  * Record a subscription purchase / order
  */
-const recordSubscriptionHistory = ({
+const recordSubscriptionHistory = async ({
   userId,
   orderId,
   paymentId = null,
@@ -44,28 +17,21 @@ const recordSubscriptionHistory = ({
   subscriptionExpiry = null,
 }) => {
   try {
-    const stmt = db.prepare(`
-      INSERT INTO subscription_history 
-        (user_id, order_id, payment_id, tier, billing, amount, currency, status, coupon_code, subscription_expiry, created_at)
-      VALUES 
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `);
-    const expiryStr = subscriptionExpiry ? new Date(subscriptionExpiry).toISOString() : null;
-    const result = stmt.run(
-      userId,
-      orderId,
-      paymentId,
-      tier,
-      billing,
-      amount,
-      currency,
-      status,
-      couponCode,
-      expiryStr
-    );
-    return result.lastInsertRowid;
+    const doc = await models.SubscriptionHistory.create({
+      userId: Number(userId),
+      orderId: String(orderId),
+      paymentId: paymentId ? String(paymentId) : null,
+      tier: String(tier),
+      billing: billing || "monthly",
+      amount: Number(amount) || 0,
+      currency: currency || "INR",
+      status: status || "COMPLETED",
+      couponCode: couponCode ? String(couponCode) : null,
+      subscriptionExpiry: subscriptionExpiry ? new Date(subscriptionExpiry) : null,
+    });
+    return doc.id;
   } catch (err) {
-    console.error("Error recording subscription history:", err);
+    console.error("Error recording subscription history in MongoDB:", err.message);
     return null;
   }
 };
@@ -73,34 +39,38 @@ const recordSubscriptionHistory = ({
 /**
  * Update an existing subscription order status (e.g. from PENDING to COMPLETED)
  */
-const updateSubscriptionHistoryStatus = ({ orderId, paymentId, status = "COMPLETED", subscriptionExpiry = null }) => {
+const updateSubscriptionHistoryStatus = async ({
+  orderId,
+  paymentId,
+  status = "COMPLETED",
+  subscriptionExpiry = null,
+}) => {
   try {
-    const expiryStr = subscriptionExpiry ? new Date(subscriptionExpiry).toISOString() : null;
-    const stmt = db.prepare(`
-      UPDATE subscription_history 
-      SET payment_id = COALESCE(?, payment_id),
-          status = ?,
-          subscription_expiry = COALESCE(?, subscription_expiry)
-      WHERE order_id = ?
-    `);
-    stmt.run(paymentId, status, expiryStr, orderId);
+    const updateData = { status };
+    if (paymentId) updateData.paymentId = String(paymentId);
+    if (subscriptionExpiry) updateData.subscriptionExpiry = new Date(subscriptionExpiry);
+
+    await models.SubscriptionHistory.updateOne(
+      { orderId: String(orderId) },
+      { $set: updateData }
+    );
   } catch (err) {
-    console.error("Error updating subscription history status:", err);
+    console.error("Error updating subscription history status in MongoDB:", err.message);
   }
 };
 
 /**
  * Auto-cancel PENDING orders older than 24 hours
  */
-const cancelExpiredPendingOrders = () => {
+const cancelExpiredPendingOrders = async () => {
   try {
-    db.prepare(`
-      UPDATE subscription_history 
-      SET status = 'CANCELLED' 
-      WHERE status = 'PENDING' AND created_at < datetime('now', '-24 hours')
-    `).run();
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await models.SubscriptionHistory.updateMany(
+      { status: "PENDING", createdAt: { $lt: yesterday } },
+      { $set: { status: "CANCELLED" } }
+    );
   } catch (err) {
-    console.error("Error auto-cancelling expired pending orders:", err);
+    console.error("Error auto-cancelling expired pending orders in MongoDB:", err.message);
   }
 };
 
@@ -109,11 +79,10 @@ const cancelExpiredPendingOrders = () => {
  */
 const getSubscriptionHistoryForUser = async (userId) => {
   try {
-    // Auto-cancel PENDING orders older than 24 hours
-    cancelExpiredPendingOrders();
+    await cancelExpiredPendingOrders();
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
+    const user = await mongoClient.user.findUnique({
+      where: { id: Number(userId) },
       select: {
         id: true,
         name: true,
@@ -131,21 +100,18 @@ const getSubscriptionHistoryForUser = async (userId) => {
             name: true,
             address: true,
             phone: true,
-          }
+          },
         },
       },
     });
 
     if (!user) return null;
 
-    // Fetch records from subscription_history
-    const historyRows = db.prepare(`
-      SELECT * FROM subscription_history 
-      WHERE user_id = ? 
-      ORDER BY id DESC
-    `).all(userId);
+    const historyRows = await models.SubscriptionHistory.find({ userId: Number(userId) })
+      .sort({ id: -1 })
+      .lean()
+      .exec();
 
-    // Calculate remaining days for current plan
     let daysRemaining = null;
     let isExpired = false;
     if (user.subscriptionExpiry) {
@@ -172,23 +138,22 @@ const getSubscriptionHistoryForUser = async (userId) => {
         isExpired,
         pendingTier: user.pendingTier,
       },
-      history: historyRows.map(r => ({
+      history: historyRows.map((r) => ({
         id: r.id,
-        orderId: r.order_id,
-        paymentId: r.payment_id,
+        orderId: r.orderId,
+        paymentId: r.paymentId,
         tier: r.tier,
         billing: r.billing,
         amount: r.amount,
         currency: r.currency,
         status: r.status,
-        couponCode: r.coupon_code,
-        subscriptionExpiry: r.subscription_expiry,
-        // created_at is stored in UTC (datetime('now')) — expose as ISO with Z
-        createdAt: r.created_at ? String(r.created_at).replace(" ", "T") + "Z" : null,
+        couponCode: r.couponCode,
+        subscriptionExpiry: r.subscriptionExpiry,
+        createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
       })),
     };
   } catch (err) {
-    console.error("Error fetching subscription history for user:", err);
+    console.error("Error fetching subscription history for user in MongoDB:", err.message);
     throw err;
   }
 };

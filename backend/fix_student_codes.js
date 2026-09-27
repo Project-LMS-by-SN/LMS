@@ -1,7 +1,7 @@
-const prisma = require("./src/config/prisma");
+const db = require("./src/config/mongoClient");
 
 async function main() {
-  const students = await prisma.student.findMany();
+  const students = await db.student.findMany();
   console.log(`Found ${students.length} students to process.`);
   
   for (const s of students) {
@@ -16,7 +16,7 @@ async function main() {
     console.log(`Updating student ID ${s.id}: ${s.studentCode} -> ${newCode}, ${s.regNo} -> ${newRegNo}`);
     
     try {
-      await prisma.student.update({
+      await db.student.update({
         where: { id: s.id },
         data: {
           studentCode: newCode,
@@ -37,5 +37,5 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    await db.$disconnect();
   });

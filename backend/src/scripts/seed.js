@@ -1,37 +1,26 @@
-const { PrismaClient } = require("@prisma/client");
-const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
-const path = require("path");
-const authUtil = require("../src/utils/auth");
-
-// Resolve the absolute path to dev.db (which is in backend/prisma/dev.db)
-const dbPath = path.resolve(__dirname, "./dev.db");
-
-const adapter = new PrismaBetterSqlite3({
-  url: `file:${dbPath}`,
-});
-
-const prisma = new PrismaClient({ adapter });
+const db = require("../config/mongoClient");
+const authUtil = require("../utils/auth");
 
 async function main() {
   console.log("Starting seeding...");
 
   // 1. Clean existing database
-  await prisma.expense.deleteMany();
-  await prisma.attendance.deleteMany();
-  await prisma.studentShiftAssignment.deleteMany();
-  await prisma.payment.deleteMany();
-  await prisma.studentValidity.deleteMany();
-  await prisma.student.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.feePlan.deleteMany();
-  await prisma.seat.deleteMany();
-  await prisma.shift.deleteMany();
-  await prisma.paymentMode.deleteMany();
-  await prisma.librarySetting.deleteMany();
-  await prisma.branch.deleteMany();
+  await db.expense.deleteMany();
+  await db.attendance.deleteMany();
+  await db.studentShiftAssignment.deleteMany();
+  await db.payment.deleteMany();
+  await db.studentValidity.deleteMany();
+  await db.student.deleteMany();
+  await db.user.deleteMany();
+  await db.feePlan.deleteMany();
+  await db.seat.deleteMany();
+  await db.shift.deleteMany();
+  await db.paymentMode.deleteMany();
+  await db.librarySetting.deleteMany();
+  await db.branch.deleteMany();
 
   // 2. Seed Default Branch
-  const defaultBranch = await prisma.branch.create({
+  const defaultBranch = await db.branch.create({
     data: {
       id: 1,
       code: "LB100001",
@@ -43,7 +32,7 @@ async function main() {
   });
 
   // 3. Seed Library Settings
-  await prisma.librarySetting.create({
+  await db.librarySetting.create({
     data: {
       id: 1,
       libraryName: "Knowledge Haven Library",
@@ -59,7 +48,7 @@ async function main() {
   const defaultPassword = process.env.DEFAULT_OWNER_PASSWORD || "Password123!";
   const passwordHash = authUtil.hashPassword(defaultPassword);
 
-  const userAdmin = await prisma.user.create({
+  const userAdmin = await db.user.create({
     data: {
       name: "Admin User",
       email: ownerEmail,
@@ -72,32 +61,32 @@ async function main() {
   });
 
   // 5. Seed Payment Modes
-  const cashMode = await prisma.paymentMode.create({ data: { modeName: "Cash", isActive: true } });
-  const upiMode = await prisma.paymentMode.create({ data: { modeName: "UPI", isActive: true } });
-  const cardMode = await prisma.paymentMode.create({ data: { modeName: "Card", isActive: true } });
+  const cashMode = await db.paymentMode.create({ data: { modeName: "Cash", isActive: true } });
+  const upiMode = await db.paymentMode.create({ data: { modeName: "UPI", isActive: true } });
+  const cardMode = await db.paymentMode.create({ data: { modeName: "Card", isActive: true } });
 
   // 6. Seed Fee Plans
-  const planMonthly = await prisma.feePlan.create({
+  const planMonthly = await db.feePlan.create({
     data: { planName: "Monthly Plan (Reserved)", durationDays: 30, amount: 1000, isActive: true, branchId: defaultBranch.id, planType: "RESERVED" },
   });
-  const planQuarterly = await prisma.feePlan.create({
+  const planQuarterly = await db.feePlan.create({
     data: { planName: "Quarterly Plan (Reserved)", durationDays: 90, amount: 2700, isActive: true, branchId: defaultBranch.id, planType: "RESERVED" },
   });
-  const planHalfYearly = await prisma.feePlan.create({
+  const planHalfYearly = await db.feePlan.create({
     data: { planName: "Half Yearly Plan (Reserved)", durationDays: 180, amount: 5000, isActive: true, branchId: defaultBranch.id, planType: "RESERVED" },
   });
-  const planUnreservedMonthly = await prisma.feePlan.create({
+  const planUnreservedMonthly = await db.feePlan.create({
     data: { planName: "Monthly Plan (Unreserved)", durationDays: 30, amount: 800, isActive: true, branchId: defaultBranch.id, planType: "UNRESERVED" },
   });
 
   // 7. Seed Shifts
-  const shiftMorning = await prisma.shift.create({
+  const shiftMorning = await db.shift.create({
     data: { shiftName: "Morning Shift", startTime: "08:00:00", endTime: "14:00:00", isActive: true, branchId: defaultBranch.id },
   });
-  const shiftEvening = await prisma.shift.create({
+  const shiftEvening = await db.shift.create({
     data: { shiftName: "Evening Shift", startTime: "14:00:00", endTime: "20:00:00", isActive: true, branchId: defaultBranch.id },
   });
-  const shiftNight = await prisma.shift.create({
+  const shiftNight = await db.shift.create({
     data: { shiftName: "Night Shift", startTime: "20:00:00", endTime: "02:00:00", isActive: true, branchId: defaultBranch.id },
   });
 
@@ -106,7 +95,7 @@ async function main() {
   const seatPrefixes = ["A", "B", "C"];
   for (const prefix of seatPrefixes) {
     for (let i = 1; i <= 5; i++) {
-      const seat = await prisma.seat.create({
+      const seat = await db.seat.create({
         data: { seatNumber: `${prefix}${i}`, isActive: true, branchId: defaultBranch.id },
       });
       seats.push(seat);
@@ -204,7 +193,7 @@ async function main() {
 
   const dbStudents = [];
   for (const sd of studentsData) {
-    const student = await prisma.student.create({
+    const student = await db.student.create({
       data: {
         ...sd,
         createdBy: userAdmin.id,
@@ -217,7 +206,7 @@ async function main() {
   // 10. Create Validities, Payments, and Shift Assignments
   
   // Student 1 (Aarav): Active RESERVED on Seat A1, Monthly Plan, Cash
-  const validity1 = await prisma.studentValidity.create({
+  const validity1 = await db.studentValidity.create({
     data: {
       studentId: dbStudents[0].id,
       feePlanId: planMonthly.id,
@@ -227,7 +216,7 @@ async function main() {
       accessType: "RESERVED",
     },
   });
-  await prisma.payment.create({
+  await db.payment.create({
     data: {
       validityId: validity1.id,
       paymentModeId: cashMode.id,
@@ -237,7 +226,7 @@ async function main() {
       remarks: "Full Payment received",
     },
   });
-  const assign1 = await prisma.studentShiftAssignment.create({
+  const assign1 = await db.studentShiftAssignment.create({
     data: {
       validityId: validity1.id,
       shiftId: shiftMorning.id,
@@ -247,7 +236,7 @@ async function main() {
   });
 
   // Student 2 (Ananya): Active UNRESERVED (No seat assigned), Monthly Plan, UPI
-  const validity2 = await prisma.studentValidity.create({
+  const validity2 = await db.studentValidity.create({
     data: {
       studentId: dbStudents[1].id,
       feePlanId: planMonthly.id,
@@ -257,7 +246,7 @@ async function main() {
       accessType: "UNRESERVED",
     },
   });
-  await prisma.payment.create({
+  await db.payment.create({
     data: {
       validityId: validity2.id,
       paymentModeId: upiMode.id,
@@ -268,7 +257,7 @@ async function main() {
       utrNumber: "UTR98765432101",
     },
   });
-  const assign2 = await prisma.studentShiftAssignment.create({
+  const assign2 = await db.studentShiftAssignment.create({
     data: {
       validityId: validity2.id,
       shiftId: shiftEvening.id,
@@ -278,7 +267,7 @@ async function main() {
   });
 
   // Student 3 (Vihaan): Active RESERVED on Seat B2, Quarterly Plan, UPI
-  const validity3 = await prisma.studentValidity.create({
+  const validity3 = await db.studentValidity.create({
     data: {
       studentId: dbStudents[2].id,
       feePlanId: planQuarterly.id,
@@ -288,7 +277,7 @@ async function main() {
       accessType: "RESERVED",
     },
   });
-  await prisma.payment.create({
+  await db.payment.create({
     data: {
       validityId: validity3.id,
       paymentModeId: upiMode.id,
@@ -299,7 +288,7 @@ async function main() {
       utrNumber: "UTR98765432102",
     },
   });
-  const assign3 = await prisma.studentShiftAssignment.create({
+  const assign3 = await db.studentShiftAssignment.create({
     data: {
       validityId: validity3.id,
       shiftId: shiftMorning.id,
@@ -309,7 +298,7 @@ async function main() {
   });
 
   // Student 4 (Diya): Active RESERVED on Seat C3, Monthly Plan, UPI
-  const validity4 = await prisma.studentValidity.create({
+  const validity4 = await db.studentValidity.create({
     data: {
       studentId: dbStudents[3].id,
       feePlanId: planMonthly.id,
@@ -319,7 +308,7 @@ async function main() {
       accessType: "RESERVED",
     },
   });
-  await prisma.payment.create({
+  await db.payment.create({
     data: {
       validityId: validity4.id,
       paymentModeId: upiMode.id,
@@ -330,7 +319,7 @@ async function main() {
       utrNumber: "UTR98765432103",
     },
   });
-  const assign4 = await prisma.studentShiftAssignment.create({
+  const assign4 = await db.studentShiftAssignment.create({
     data: {
       validityId: validity4.id,
       shiftId: shiftEvening.id,
@@ -340,7 +329,7 @@ async function main() {
   });
 
   // Student 5 (Kabir - Suspended): Active RESERVED on Seat A3 but status suspended
-  const validity5 = await prisma.studentValidity.create({
+  const validity5 = await db.studentValidity.create({
     data: {
       studentId: dbStudents[4].id,
       feePlanId: planMonthly.id,
@@ -350,7 +339,7 @@ async function main() {
       accessType: "RESERVED",
     },
   });
-  await prisma.payment.create({
+  await db.payment.create({
     data: {
       validityId: validity5.id,
       paymentModeId: cardMode.id,
@@ -360,7 +349,7 @@ async function main() {
       remarks: "Card payment",
     },
   });
-  const assign5 = await prisma.studentShiftAssignment.create({
+  const assign5 = await db.studentShiftAssignment.create({
     data: {
       validityId: validity5.id,
       shiftId: shiftNight.id,
@@ -370,7 +359,7 @@ async function main() {
   });
 
   // Student 6 (Riya - Expired validity): Past validity from -45 days to -15 days
-  const validity6 = await prisma.studentValidity.create({
+  const validity6 = await db.studentValidity.create({
     data: {
       studentId: dbStudents[5].id,
       feePlanId: planMonthly.id,
@@ -380,7 +369,7 @@ async function main() {
       accessType: "RESERVED",
     },
   });
-  await prisma.payment.create({
+  await db.payment.create({
     data: {
       validityId: validity6.id,
       paymentModeId: cashMode.id,
@@ -390,7 +379,7 @@ async function main() {
       remarks: "Cash payment",
     },
   });
-  const assign6 = await prisma.studentShiftAssignment.create({
+  const assign6 = await db.studentShiftAssignment.create({
     data: {
       validityId: validity6.id,
       shiftId: shiftMorning.id,
@@ -400,7 +389,7 @@ async function main() {
   });
 
   // Student 7 (Aditya - Expiring soon): Expiring in 3 days
-  const validity7 = await prisma.studentValidity.create({
+  const validity7 = await db.studentValidity.create({
     data: {
       studentId: dbStudents[6].id,
       feePlanId: planMonthly.id,
@@ -410,7 +399,7 @@ async function main() {
       accessType: "RESERVED",
     },
   });
-  await prisma.payment.create({
+  await db.payment.create({
     data: {
       validityId: validity7.id,
       paymentModeId: upiMode.id,
@@ -421,7 +410,7 @@ async function main() {
       utrNumber: "UTR98765432104",
     },
   });
-  const assign7 = await prisma.studentShiftAssignment.create({
+  const assign7 = await db.studentShiftAssignment.create({
     data: {
       validityId: validity7.id,
       shiftId: shiftEvening.id,
@@ -440,7 +429,7 @@ async function main() {
     for (const assign of assignments) {
       // Random present or absent (80% present, 20% absent)
       const isPresent = Math.random() > 0.2;
-      await prisma.attendance.create({
+      await db.attendance.create({
         data: {
           shiftAssignmentId: assign.id,
           attendanceDate: attDate,
@@ -471,7 +460,7 @@ async function main() {
   ];
 
   for (const exp of expensesData) {
-    await prisma.expense.create({
+    await db.expense.create({
       data: exp
     });
   }
@@ -485,5 +474,5 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    await db.$disconnect();
   });

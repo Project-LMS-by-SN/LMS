@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "admin:dev": "npm --prefix \"frontend admin\" run dev",
+    "admin:build": "npm --prefix \"frontend admin\" run build",
+    "client:dev": "npm --prefix frontend run dev"
   },
   "keywords": [],
   "author": "",

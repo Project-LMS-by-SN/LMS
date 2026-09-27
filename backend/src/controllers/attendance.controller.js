@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 const { formatDateStr, formatDateTimeStr } = require("../utils/format");
 
 const getDayBounds = (dateInput) => {
@@ -37,7 +37,7 @@ const cleanupOldAttendance = async () => {
     cutoff.setDate(cutoff.getDate() - 30);
     cutoff.setHours(0, 0, 0, 0);
 
-    const deleted = await prisma.attendance.deleteMany({
+    const deleted = await mongoClient.attendance.deleteMany({
       where: {
         attendanceDate: {
           lt: cutoff,
@@ -293,7 +293,7 @@ const groupAttendanceRecords = (attendanceRecords) => {
 const getAttendance = async (req, res) => {
   try {
     await cleanupOldAttendance();
-    const attendanceRecords = await prisma.attendance.findMany({
+    const attendanceRecords = await mongoClient.attendance.findMany({
       where: {
         shiftAssignment: {
           validity: {
@@ -353,7 +353,7 @@ const searchStudentAttendance = async (req, res) => {
     const term = q.trim();
 
     // Find student by code, reg no, or name
-    const student = await prisma.student.findFirst({
+    const student = await mongoClient.student.findFirst({
       where: {
         deletedAt: null,
         branchId: req.user.branchId,
@@ -382,7 +382,7 @@ const searchStudentAttendance = async (req, res) => {
     };
 
     // Get all active assignments
-    const assignments = await prisma.studentShiftAssignment.findMany({
+    const assignments = await mongoClient.studentShiftAssignment.findMany({
       where: {
         validity: {
           studentId: student.id,
@@ -417,7 +417,7 @@ const searchStudentAttendance = async (req, res) => {
 
     // Get today's attendance
     const { start, end } = getDayBounds();
-    const todayAttendance = await prisma.attendance.findMany({
+    const todayAttendance = await mongoClient.attendance.findMany({
       where: {
         shiftAssignment: {
           validity: {
@@ -446,7 +446,7 @@ const searchStudentAttendance = async (req, res) => {
     }));
 
     // Get payment history for this student
-    const payments = await prisma.payment.findMany({
+    const payments = await mongoClient.payment.findMany({
       where: {
         validity: {
           studentId: student.id,
@@ -517,7 +517,7 @@ const checkIn = async (req, res) => {
       assignmentWhere.shiftId = shId;
     }
 
-    const assignments = await prisma.studentShiftAssignment.findMany({
+    const assignments = await mongoClient.studentShiftAssignment.findMany({
       where: assignmentWhere,
       include: {
         shift: true,
@@ -564,7 +564,7 @@ const checkIn = async (req, res) => {
     }
 
     // Get ALL active assignments and compute consecutive block BEFORE timing check
-    const allActiveAssignments = await prisma.studentShiftAssignment.findMany({
+    const allActiveAssignments = await mongoClient.studentShiftAssignment.findMany({
       where: {
         validityId: assignment.validityId,
         assignmentStatus: "ACTIVE",
@@ -609,7 +609,7 @@ const checkIn = async (req, res) => {
 
     for (const blockAss of consecutiveBlock) {
       // Check if already checked in today
-      const existing = await prisma.attendance.findFirst({
+      const existing = await mongoClient.attendance.findFirst({
         where: {
           shiftAssignmentId: blockAss.id,
           attendanceDate: {
@@ -620,7 +620,7 @@ const checkIn = async (req, res) => {
       });
 
       if (!existing) {
-        const newAtt = await prisma.attendance.create({
+        const newAtt = await mongoClient.attendance.create({
           data: {
             shiftAssignmentId: blockAss.id,
             attendanceDate: todayDate,
@@ -697,7 +697,7 @@ const checkOut = async (req, res) => {
       attendanceWhere.shiftAssignment.shiftId = shId;
     }
 
-    const records = await prisma.attendance.findMany({
+    const records = await mongoClient.attendance.findMany({
       where: attendanceWhere,
       include: {
         shiftAssignment: {
@@ -726,7 +726,7 @@ const checkOut = async (req, res) => {
     const student = record.shiftAssignment.validity.student;
     const shift = record.shiftAssignment.shift;
 
-    const allActiveAssignments = await prisma.studentShiftAssignment.findMany({
+    const allActiveAssignments = await mongoClient.studentShiftAssignment.findMany({
       where: {
         validityId: record.shiftAssignment.validityId,
         assignmentStatus: "ACTIVE",
@@ -744,7 +744,7 @@ const checkOut = async (req, res) => {
     const currentCheckOutTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
 
     for (const blockAss of consecutiveBlock) {
-      const activeAttendance = await prisma.attendance.findFirst({
+      const activeAttendance = await mongoClient.attendance.findFirst({
         where: {
           shiftAssignmentId: blockAss.id,
           attendanceDate: {
@@ -767,7 +767,7 @@ const checkOut = async (req, res) => {
           }
         }
 
-        const up = await prisma.attendance.update({
+        const up = await mongoClient.attendance.update({
           where: { id: activeAttendance.id },
           data: {
             checkOutTime: currentCheckOutTime,
@@ -822,7 +822,7 @@ const getActiveCheckIns = async (req, res) => {
   try {
     const { start, end } = getDayBounds();
 
-    const activeCheckIns = await prisma.attendance.findMany({
+    const activeCheckIns = await mongoClient.attendance.findMany({
       where: {
         attendanceDate: {
           gte: start,
@@ -884,7 +884,7 @@ const checkoutAllActive = async (req, res) => {
     const now = new Date();
     const currentCheckOutTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
 
-    const activeRecords = await prisma.attendance.findMany({
+    const activeRecords = await mongoClient.attendance.findMany({
       where: {
         attendanceDate: {
           gte: start,
@@ -910,7 +910,7 @@ const checkoutAllActive = async (req, res) => {
       });
     }
 
-    const updated = await prisma.attendance.updateMany({
+    const updated = await mongoClient.attendance.updateMany({
       where: {
         id: { in: activeRecords.map(r => r.id) },
       },
@@ -945,7 +945,7 @@ const publicSearchStudent = async (req, res) => {
     const targetBranchId = branchId ? parseInt(branchId) : 1;
     const term = q.trim();
 
-    const student = await prisma.student.findFirst({
+    const student = await mongoClient.student.findFirst({
       where: {
         deletedAt: null,
         branchId: targetBranchId,
@@ -963,7 +963,7 @@ const publicSearchStudent = async (req, res) => {
     }
 
     const { start, end } = getDayBounds(new Date());
-    const todayAttendance = await prisma.attendance.findFirst({
+    const todayAttendance = await mongoClient.attendance.findFirst({
       where: {
         shiftAssignment: {
           validity: { studentId: student.id }
@@ -1008,7 +1008,7 @@ const publicCheckInOrOut = async (req, res) => {
     const targetBranchId = branchId ? parseInt(branchId) : 1;
     const term = studentCodeOrMobile.trim();
 
-    const student = await prisma.student.findFirst({
+    const student = await mongoClient.student.findFirst({
       where: {
         deletedAt: null,
         branchId: targetBranchId,
@@ -1059,7 +1059,7 @@ const publicCheckInOrOut = async (req, res) => {
     const timeHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const time12HrFormatted = formatMinutesTo12Hr(currMin);
 
-    const todayAttendances = await prisma.attendance.findMany({
+    const todayAttendances = await mongoClient.attendance.findMany({
       where: {
         shiftAssignment: { validity: { studentId: student.id } },
         attendanceDate: { gte: start, lte: end },
@@ -1090,7 +1090,7 @@ const publicCheckInOrOut = async (req, res) => {
         // Auto-checkout the old expired shift block
         for (const att of activeCheckIns) {
           const shiftEnd = att.shiftAssignment?.shift?.endTime ? att.shiftAssignment.shift.endTime.slice(0, 5) : timeHHMM;
-          await prisma.attendance.update({
+          await mongoClient.attendance.update({
             where: { id: att.id },
             data: { checkOutTime: shiftEnd }
           });
@@ -1103,7 +1103,7 @@ const publicCheckInOrOut = async (req, res) => {
         for (const blockAss of matchingNewBlock.assignments) {
           const existing = todayAttendances.find(a => a.shiftAssignmentId === blockAss.id);
           if (!existing) {
-            await prisma.attendance.create({
+            await mongoClient.attendance.create({
               data: {
                 shiftAssignmentId: blockAss.id,
                 attendanceDate: todayDate,
@@ -1129,7 +1129,7 @@ const publicCheckInOrOut = async (req, res) => {
 
       // Normal CHECK-OUT
       for (const att of activeCheckIns) {
-        await prisma.attendance.update({
+        await mongoClient.attendance.update({
           where: { id: att.id },
           data: { checkOutTime: timeHHMM }
         });
@@ -1213,7 +1213,7 @@ const publicCheckInOrOut = async (req, res) => {
     for (const blockAss of matchingBlock.assignments) {
       const existingBlockAtt = todayAttendances.find(a => a.shiftAssignmentId === blockAss.id);
       if (!existingBlockAtt) {
-        await prisma.attendance.create({
+        await mongoClient.attendance.create({
           data: {
             shiftAssignmentId: blockAss.id,
             attendanceDate: todayDate,

@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 
 const formatExpense = (exp) => ({
   id: exp.id,
@@ -12,7 +12,7 @@ const formatExpense = (exp) => ({
 
 const getExpenses = async (req, res) => {
   try {
-    const expenses = await prisma.expense.findMany({
+    const expenses = await mongoClient.expense.findMany({
       where: { branchId: req.user.branchId },
       orderBy: { date: "desc" },
     });
@@ -81,7 +81,7 @@ const createExpense = async (req, res) => {
       });
     }
 
-    const expense = await prisma.expense.create({
+    const expense = await mongoClient.expense.create({
       data: {
         category,
         description,
@@ -114,7 +114,7 @@ const deleteExpense = async (req, res) => {
     const { id } = req.params;
     const expenseId = parseInt(id);
 
-    const existing = await prisma.expense.findFirst({
+    const existing = await mongoClient.expense.findFirst({
       where: { id: expenseId, branchId: req.user.branchId },
     });
 
@@ -122,7 +122,7 @@ const deleteExpense = async (req, res) => {
       return res.status(404).json({ success: false, message: "Expense not found" });
     }
 
-    await prisma.expense.delete({
+    await mongoClient.expense.delete({
       where: { id: expenseId },
     });
 

@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const emailFrom = process.env.EMAIL_FROM || "noreply@dashurl.in";
@@ -23,7 +23,7 @@ const formatStudent = (s) => ({
 
 const logAction = async (action, tableName, recordId, oldValues, newValues, userId) => {
   try {
-    await prisma.auditLog.create({
+    await mongoClient.auditLog.create({
       data: {
         action,
         tableName,
@@ -54,7 +54,7 @@ const autoSuspendExpiredStudents = async (branchId) => {
     const sevenDaysAgo = new Date(nowDate.getTime() - 7 * 24 * 60 * 60 * 1000);
     const twentyDaysAgo = new Date(nowDate.getTime() - 20 * 24 * 60 * 60 * 1000);
 
-    const students = await prisma.student.findMany({
+    const students = await mongoClient.student.findMany({
       where: {
         accountStatus: { in: ["ACTIVE", "SUSPENDED"] },
         deletedAt: null,
@@ -107,7 +107,7 @@ const autoSuspendExpiredStudents = async (branchId) => {
     }
 
     if (studentsToSuspend.length > 0) {
-      await prisma.student.updateMany({
+      await mongoClient.student.updateMany({
         where: { id: { in: studentsToSuspend } },
         data: { accountStatus: "SUSPENDED" },
       });
@@ -117,7 +117,7 @@ const autoSuspendExpiredStudents = async (branchId) => {
     }
 
     if (studentsToInactive.length > 0) {
-      await prisma.student.updateMany({
+      await mongoClient.student.updateMany({
         where: { id: { in: studentsToInactive } },
         data: { accountStatus: "INACTIVE" },
       });
@@ -135,11 +135,11 @@ const getStudents = async (req, res) => {
     await autoSuspendExpiredStudents(req.user.branchId);
 
     // Fetch total active shifts count
-    const activeShiftsCount = await prisma.shift.count({
+    const activeShiftsCount = await mongoClient.shift.count({
       where: { isActive: true, deletedAt: null, branchId: req.user.branchId }
     });
 
-    const students = await prisma.student.findMany({
+    const students = await mongoClient.student.findMany({
       where: { deletedAt: null, branchId: req.user.branchId },
       include: {
         validities: {
@@ -245,7 +245,7 @@ const getStudentById = async (req, res) => {
     await autoSuspendExpiredStudents(req.user.branchId);
     const { id } = req.params;
 
-    const student = await prisma.student.findFirst({
+    const student = await mongoClient.student.findFirst({
       where: {
         id: parseInt(id),
         deletedAt: null,
@@ -296,7 +296,7 @@ const validateStudentFieldsAndDuplicates = async ({ mobile, email, aadharNumber,
   const targetBranchId = branchId || 1;
 
   // Mobile duplicate in same branch
-  const mobileDuplicate = await prisma.student.findFirst({
+  const mobileDuplicate = await mongoClient.student.findFirst({
     where: {
       mobile: cleanMobile,
       branchId: targetBranchId,
@@ -309,7 +309,7 @@ const validateStudentFieldsAndDuplicates = async ({ mobile, email, aadharNumber,
   }
 
   // Email duplicate in same branch
-  const emailDuplicate = await prisma.student.findFirst({
+  const emailDuplicate = await mongoClient.student.findFirst({
     where: {
       email: cleanEmail,
       branchId: targetBranchId,
@@ -323,7 +323,7 @@ const validateStudentFieldsAndDuplicates = async ({ mobile, email, aadharNumber,
 
   // Aadhar duplicate in same branch (only if Aadhar was provided)
   if (cleanAadhar) {
-    const aadharDuplicate = await prisma.student.findFirst({
+    const aadharDuplicate = await mongoClient.student.findFirst({
       where: {
         aadharNumber: cleanAadhar,
         branchId: targetBranchId,
@@ -380,11 +380,11 @@ const createStudent = async (req, res) => {
 
     // Enforce student limit by subscription tier
     if (req.user) {
-      const creator = await prisma.user.findUnique({
+      const creator = await mongoClient.user.findUnique({
         where: { id: req.user.id }
       });
       if (creator) {
-        const activeCount = await prisma.student.count({
+        const activeCount = await mongoClient.student.count({
           where: { accountStatus: "ACTIVE", deletedAt: null, branchId: req.user.branchId }
         });
         const getStudentLimit = (tier) => {
@@ -407,7 +407,7 @@ const createStudent = async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const newStudent = await prisma.student.create({
+    const newStudent = await mongoClient.student.create({
       data: {
         studentCode: student_code,
         regNo: reg_no || null,
@@ -428,7 +428,7 @@ const createStudent = async (req, res) => {
 
     // If this was from an admission request, approve it
     if (requestId) {
-      await prisma.admissionRequest.update({
+      await mongoClient.admissionRequest.update({
         where: { id: parseInt(requestId) },
         data: { status: "APPROVED" },
       });
@@ -441,7 +441,7 @@ const createStudent = async (req, res) => {
     if (req.user && req.user.role === "STAFF") {
       (async () => {
         try {
-          const creator = await prisma.user.findUnique({
+          const creator = await mongoClient.user.findUnique({
             where: { id: req.user.id }
           });
 
@@ -472,7 +472,7 @@ const createStudent = async (req, res) => {
           }
 
           // 2. Fetch all OWNER users of the branch to notify them
-          const owners = await prisma.user.findMany({
+          const owners = await mongoClient.user.findMany({
             where: { role: "OWNER", branchId: newStudent.branchId || 1, deletedAt: null }
           });
 
@@ -562,7 +562,7 @@ const updateStudent = async (req, res) => {
 
     const studentId = parseInt(id);
 
-    const existing = await prisma.student.findFirst({
+    const existing = await mongoClient.student.findFirst({
       where: { id: studentId, deletedAt: null, branchId: req.user.branchId },
     });
 
@@ -601,7 +601,7 @@ const updateStudent = async (req, res) => {
       }
     }
 
-    const updated = await prisma.student.update({
+    const updated = await mongoClient.student.update({
       where: { id: studentId },
       data: {
         studentCode: student_code !== undefined ? student_code : existing.studentCode,
@@ -654,7 +654,7 @@ const deleteStudent = async (req, res) => {
     const { id } = req.params;
     const studentId = parseInt(id);
 
-    const existing = await prisma.student.findFirst({
+    const existing = await mongoClient.student.findFirst({
       where: { id: studentId, deletedAt: null, branchId: req.user.branchId },
     });
 
@@ -665,7 +665,7 @@ const deleteStudent = async (req, res) => {
       });
     }
 
-    const deleted = await prisma.student.update({
+    const deleted = await mongoClient.student.update({
       where: { id: studentId },
       data: {
         accountStatus: "DELETED",
@@ -677,7 +677,7 @@ const deleteStudent = async (req, res) => {
     });
 
     // Release any active seat shift assignments
-    await prisma.studentShiftAssignment.updateMany({
+    await mongoClient.studentShiftAssignment.updateMany({
       where: { validity: { studentId: studentId }, assignmentStatus: "ACTIVE" },
       data: { assignmentStatus: "ENDED" },
     });
@@ -708,7 +708,7 @@ const getNextStudentCode = async (req, res) => {
     const targetBranchId = req.user?.branchId || (req.query.branchId ? parseInt(req.query.branchId) : 1);
     
     // Find all active (non-deleted) students in branch to determine highest STD sequence
-    const activeStudents = await prisma.student.findMany({
+    const activeStudents = await mongoClient.student.findMany({
       where: { branchId: targetBranchId, deletedAt: null },
       select: { studentCode: true },
     });
@@ -727,7 +727,7 @@ const getNextStudentCode = async (req, res) => {
     let studentCode = `STD${String(nextSeq).padStart(5, "0")}`;
 
     // Loop until we find a studentCode that is completely free in database for this branch
-    while (await prisma.student.findFirst({ where: { studentCode, branchId: targetBranchId } })) {
+    while (await mongoClient.student.findFirst({ where: { studentCode, branchId: targetBranchId } })) {
       nextSeq++;
       studentCode = `STD${String(nextSeq).padStart(5, "0")}`;
     }
@@ -737,7 +737,7 @@ const getNextStudentCode = async (req, res) => {
     const month = String(now.getMonth() + 1).padStart(2, "0");
     let regNo = `REG${year}${month}${String(nextSeq).padStart(5, "0")}`;
 
-    while (await prisma.student.findFirst({ where: { regNo, branchId: targetBranchId } })) {
+    while (await mongoClient.student.findFirst({ where: { regNo, branchId: targetBranchId } })) {
       nextSeq++;
       studentCode = `STD${String(nextSeq).padStart(5, "0")}`;
       regNo = `REG${year}${month}${String(nextSeq).padStart(5, "0")}`;
@@ -769,7 +769,7 @@ const searchStudents = async (req, res) => {
 
     const term = q.trim();
 
-    const students = await prisma.student.findMany({
+    const students = await mongoClient.student.findMany({
       where: {
         deletedAt: null,
         branchId: req.user.branchId,
@@ -825,7 +825,7 @@ const getStudentProfile = async (req, res) => {
     const { id } = req.params;
     const studentId = parseInt(id);
 
-    const student = await prisma.student.findFirst({
+    const student = await mongoClient.student.findFirst({
       where: { id: studentId, deletedAt: null, branchId: req.user.branchId },
     });
 
@@ -837,7 +837,7 @@ const getStudentProfile = async (req, res) => {
     }
 
     // Get latest validity
-    const latestValidity = await prisma.studentValidity.findFirst({
+    const latestValidity = await mongoClient.studentValidity.findFirst({
       where: { studentId: studentId },
       include: {
         feePlan: true,
@@ -847,7 +847,7 @@ const getStudentProfile = async (req, res) => {
 
     let shiftAssignments = [];
     if (latestValidity) {
-      const assignments = await prisma.studentShiftAssignment.findMany({
+      const assignments = await mongoClient.studentShiftAssignment.findMany({
         where: { validityId: latestValidity.id, assignmentStatus: "ACTIVE" },
         include: {
           shift: true,
@@ -873,7 +873,7 @@ const getStudentProfile = async (req, res) => {
     }
 
     // Get all payments related to this student
-    const payments = await prisma.payment.findMany({
+    const payments = await mongoClient.payment.findMany({
       where: {
         validity: {
           studentId: studentId,
@@ -909,7 +909,7 @@ const getStudentProfile = async (req, res) => {
       : null;
 
     // Get attendance records for this student (through all shift assignments, active & ended)
-    const studentAssignments = await prisma.studentShiftAssignment.findMany({
+    const studentAssignments = await mongoClient.studentShiftAssignment.findMany({
       where: {
         validity: {
           studentId: studentId
@@ -920,7 +920,7 @@ const getStudentProfile = async (req, res) => {
     const allAssignmentIds = studentAssignments.map((a) => a.id);
     let attendanceRecords = [];
     if (allAssignmentIds.length > 0) {
-      const rawAttendance = await prisma.attendance.findMany({
+      const rawAttendance = await mongoClient.attendance.findMany({
         where: { shiftAssignmentId: { in: allAssignmentIds } },
         include: {
           shiftAssignment: {
@@ -967,7 +967,7 @@ const updateStudentDetails = async (req, res) => {
     const { shift_ids, seat_id, fee_plan_id, access_type } = req.body;
     const studentId = parseInt(id);
 
-    const student = await prisma.student.findFirst({
+    const student = await mongoClient.student.findFirst({
       where: { id: studentId, deletedAt: null, branchId: req.user.branchId },
     });
 
@@ -975,7 +975,7 @@ const updateStudentDetails = async (req, res) => {
       return res.status(404).json({ success: false, message: "Student not found" });
     }
 
-    const validity = await prisma.studentValidity.findFirst({
+    const validity = await mongoClient.studentValidity.findFirst({
       where: { studentId },
       include: {
         assignments: {
@@ -998,7 +998,7 @@ const updateStudentDetails = async (req, res) => {
 
     // Disabled seats must not be allocatable
     if (finalSeatId) {
-      const seat = await prisma.seat.findFirst({
+      const seat = await mongoClient.seat.findFirst({
         where: { id: finalSeatId, isActive: true, branchId: req.user.branchId },
       });
       if (!seat) {
@@ -1014,7 +1014,7 @@ const updateStudentDetails = async (req, res) => {
       : (validity.accessType === "RESERVED");
 
     if (isReserved && finalSeatId && finalShiftIds.length > 0) {
-      const conflict = await prisma.studentShiftAssignment.findFirst({
+      const conflict = await mongoClient.studentShiftAssignment.findFirst({
         where: {
           seatId: finalSeatId,
           shiftId: { in: finalShiftIds },
@@ -1055,7 +1055,7 @@ const updateStudentDetails = async (req, res) => {
     }
 
     if (Object.keys(updates).length > 0) {
-      await prisma.studentValidity.update({
+      await mongoClient.studentValidity.update({
         where: { id: validity.id },
         data: updates,
       });
@@ -1071,7 +1071,7 @@ const updateStudentDetails = async (req, res) => {
       const toCreate = newShiftIds.filter(sid => !existingShiftIds.includes(sid));
 
       for (const assignment of toEnd) {
-        await prisma.studentShiftAssignment.update({
+        await mongoClient.studentShiftAssignment.update({
           where: { id: assignment.id },
           data: { assignmentStatus: "ENDED" },
         });
@@ -1079,7 +1079,7 @@ const updateStudentDetails = async (req, res) => {
 
       for (const assignment of toKeep) {
         if (finalSeatId !== undefined) {
-          await prisma.studentShiftAssignment.update({
+          await mongoClient.studentShiftAssignment.update({
             where: { id: assignment.id },
             data: { seatId: finalSeatId },
           });
@@ -1087,7 +1087,7 @@ const updateStudentDetails = async (req, res) => {
       }
 
       for (const shiftId of toCreate) {
-        await prisma.studentShiftAssignment.create({
+        await mongoClient.studentShiftAssignment.create({
           data: {
             validityId: validity.id,
             shiftId: shiftId,
@@ -1098,7 +1098,7 @@ const updateStudentDetails = async (req, res) => {
     } else if (shift_ids === undefined && seat_id !== undefined) {
       const activeAssignments = validity.assignments.filter(a => a.assignmentStatus === "ACTIVE");
       for (const assignment of activeAssignments) {
-        await prisma.studentShiftAssignment.update({
+        await mongoClient.studentShiftAssignment.update({
           where: { id: assignment.id },
           data: { seatId: seat_id ? parseInt(seat_id) : null },
         });
@@ -1114,7 +1114,7 @@ const updateStudentDetails = async (req, res) => {
 
 const getAllShifts = async (req, res) => {
   try {
-    const shifts = await prisma.shift.findMany({
+    const shifts = await mongoClient.shift.findMany({
       where: { isActive: true, branchId: req.user.branchId },
       orderBy: { startTime: "asc" },
     });
@@ -1126,7 +1126,7 @@ const getAllShifts = async (req, res) => {
 
 const getAllFeePlans = async (req, res) => {
   try {
-    const plans = await prisma.feePlan.findMany({
+    const plans = await mongoClient.feePlan.findMany({
       where: { isActive: true, branchId: req.user.branchId },
       orderBy: { amount: "asc" },
     });
@@ -1139,12 +1139,12 @@ const getAllFeePlans = async (req, res) => {
 const getShiftSeats = async (req, res) => {
   try {
     const { shiftId } = req.params;
-    const seats = await prisma.seat.findMany({
+    const seats = await mongoClient.seat.findMany({
       where: { isActive: true, deletedAt: null, branchId: req.user.branchId },
       orderBy: { seatNumber: "asc" },
     });
 
-    const assignedSeatIds = await prisma.studentShiftAssignment.findMany({
+    const assignedSeatIds = await mongoClient.studentShiftAssignment.findMany({
       where: {
         shiftId: parseInt(shiftId),
         assignmentStatus: "ACTIVE",
@@ -1235,7 +1235,7 @@ const admitStudent = async (req, res) => {
 
     // Verify seat is active (disabled seats must not be allocatable)
     if (seat_id) {
-      const seat = await prisma.seat.findFirst({
+      const seat = await mongoClient.seat.findFirst({
         where: { id: parseInt(seat_id), isActive: true, branchId: req.user.branchId },
       });
       if (!seat) {
@@ -1247,7 +1247,7 @@ const admitStudent = async (req, res) => {
     }
 
     // Verify fee plan is active
-    const feePlan = await prisma.feePlan.findFirst({
+    const feePlan = await mongoClient.feePlan.findFirst({
       where: { id: parseInt(fee_plan_id), isActive: true, branchId: req.user.branchId },
     });
 
@@ -1260,11 +1260,11 @@ const admitStudent = async (req, res) => {
 
     // Enforce student limit by subscription tier
     if (req.user) {
-      const creator = await prisma.user.findUnique({
+      const creator = await mongoClient.user.findUnique({
         where: { id: req.user.id }
       });
       if (creator) {
-        const activeCount = await prisma.student.count({
+        const activeCount = await mongoClient.student.count({
           where: { accountStatus: "ACTIVE", deletedAt: null, branchId: req.user.branchId }
         });
         const getStudentLimit = (tier) => {
@@ -1294,7 +1294,7 @@ const admitStudent = async (req, res) => {
     const finalAmount = custom_amount !== undefined && custom_amount !== null && custom_amount !== "" ? parseFloat(custom_amount) : feePlan.amount;
 
     // Run full admission in ONE transaction so student is NEVER created without validity & shift assignments!
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await mongoClient.$transaction(async (tx) => {
       // 1. Create Student
       const newStudent = await tx.student.create({
         data: {

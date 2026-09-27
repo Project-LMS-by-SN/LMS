@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 const { formatDateStr } = require("../utils/format");
 
 const getDayBounds = (dateInput) => {
@@ -136,7 +136,7 @@ const getDailyAttendanceReport = async (req, res) => {
     const { date } = req.query;
     const { start, end } = getDayBounds(date);
 
-    const attendanceRecords = await prisma.attendance.findMany({
+    const attendanceRecords = await mongoClient.attendance.findMany({
       where: {
         attendanceDate: {
           gte: start,
@@ -209,7 +209,7 @@ const getRevenueReport = async (req, res) => {
     const endDate = new Date(tYear, tMonth, 0, 23, 59, 59, 999); // last day of toMonth
 
     const [payments, expenses] = await Promise.all([
-      prisma.payment.findMany({
+      mongoClient.payment.findMany({
         where: {
           paymentDate: {
             gte: startDate,
@@ -220,7 +220,7 @@ const getRevenueReport = async (req, res) => {
           },
         },
       }),
-      prisma.expense.findMany({
+      mongoClient.expense.findMany({
         where: {
           date: {
             gte: startDate,

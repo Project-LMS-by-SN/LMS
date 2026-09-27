@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 
 const formatFeePlan = (fp) => ({
   id: fp.id,
@@ -12,12 +12,12 @@ const formatFeePlan = (fp) => ({
 const getFeePlans = async (req, res) => {
   try {
     // Ensure default Registration Fee plan exists (100 INR demo plan)
-    let regPlan = await prisma.feePlan.findFirst({
+    let regPlan = await mongoClient.feePlan.findFirst({
       where: { planType: "REGISTRATION", branchId: req.user.branchId },
     });
 
     if (!regPlan) {
-      await prisma.feePlan.create({
+      await mongoClient.feePlan.create({
         data: {
           planName: "Registration Fee",
           durationDays: 36500,
@@ -30,7 +30,7 @@ const getFeePlans = async (req, res) => {
       });
     }
 
-    const plans = await prisma.feePlan.findMany({
+    const plans = await mongoClient.feePlan.findMany({
       where: { branchId: req.user.branchId },
       orderBy: [
         { isActive: "desc" },
@@ -79,7 +79,7 @@ const createFeePlan = async (req, res) => {
       });
     }
 
-    const newPlan = await prisma.feePlan.create({
+    const newPlan = await mongoClient.feePlan.create({
       data: {
         planName: plan_name,
         durationDays: durationDaysInt,
@@ -127,7 +127,7 @@ const updateFeePlan = async (req, res) => {
       });
     }
 
-    const existingPlan = await prisma.feePlan.findFirst({
+    const existingPlan = await mongoClient.feePlan.findFirst({
       where: { id: parseInt(id), branchId: req.user.branchId },
     });
 
@@ -148,7 +148,7 @@ const updateFeePlan = async (req, res) => {
       });
     }
 
-    const updatedPlan = await prisma.feePlan.update({
+    const updatedPlan = await mongoClient.feePlan.update({
       where: { id: parseInt(id) },
       data: {
         planName: plan_name,
@@ -198,7 +198,7 @@ const deactivateFeePlan = async (req, res) => {
     const { id } = req.params;
     const fpId = parseInt(id);
 
-    const existing = await prisma.feePlan.findFirst({
+    const existing = await mongoClient.feePlan.findFirst({
       where: { id: fpId, branchId: req.user.branchId },
     });
 
@@ -211,7 +211,7 @@ const deactivateFeePlan = async (req, res) => {
 
     const newStatus = !existing.isActive;
 
-    const updated = await prisma.feePlan.update({
+    const updated = await mongoClient.feePlan.update({
       where: { id: fpId },
       data: {
         isActive: newStatus,
@@ -242,7 +242,7 @@ const deleteFeePlan = async (req, res) => {
     const { id } = req.params;
     const fpId = parseInt(id);
 
-    const existing = await prisma.feePlan.findFirst({
+    const existing = await mongoClient.feePlan.findFirst({
       where: { id: fpId, branchId: req.user.branchId },
     });
 
@@ -250,7 +250,7 @@ const deleteFeePlan = async (req, res) => {
       return res.status(404).json({ success: false, message: "Fee plan not found" });
     }
 
-    const deleted = await prisma.feePlan.delete({
+    const deleted = await mongoClient.feePlan.delete({
       where: { id: fpId },
     });
 

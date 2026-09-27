@@ -1,10 +1,9 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require("./src/config/mongoClient");
 const authUtil = require('./src/utils/auth');
 
 async function main() {
   const email = "admin@admin.com";
-  const user = await prisma.user.findFirst({
+  const user = await db.user.findFirst({
     where: { email }
   });
   if (user) {
@@ -15,7 +14,7 @@ async function main() {
     });
     
     const newHash = authUtil.hashPassword("123456");
-    await prisma.user.update({
+    await db.user.update({
       where: { id: user.id },
       data: {
         failedLoginAttempts: 0,
@@ -33,4 +32,4 @@ async function main() {
 
 main()
   .catch(e => console.error(e))
-  .finally(() => prisma.$disconnect());
+  .finally(() => db.$disconnect());

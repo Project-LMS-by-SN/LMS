@@ -1,5 +1,5 @@
 const authUtil = require("../utils/auth");
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 
 module.exports = async (req, res, next) => {
   // Allow OPTIONS preflight requests
@@ -40,7 +40,7 @@ module.exports = async (req, res, next) => {
     const decoded = authUtil.verifyToken(token);
     
     // Fetch active user from DB
-    const user = await prisma.user.findFirst({
+    const user = await mongoClient.user.findFirst({
       where: { id: decoded.id, isActive: true, deletedAt: null },
     });
 
@@ -56,7 +56,7 @@ module.exports = async (req, res, next) => {
 
     // Device validation to prevent exceeding concurrent session limits
     if (decoded.deviceId && !isAdmin) {
-      const activeSession = await prisma.userSession.findFirst({
+      const activeSession = await mongoClient.userSession.findFirst({
         where: {
           userId: decoded.id,
           deviceId: decoded.deviceId,
@@ -103,7 +103,7 @@ module.exports = async (req, res, next) => {
     let planHolder = user;
 
     if (user.role === "STAFF" && user.branchId) {
-      const branchOwner = await prisma.user.findFirst({
+      const branchOwner = await mongoClient.user.findFirst({
         where: { branchId: user.branchId, role: "OWNER", isActive: true, deletedAt: null },
         select: { id: true, subscriptionTier: true, subscriptionExpiry: true, pendingTier: true, pendingExpiryDays: true }
       });
@@ -130,7 +130,7 @@ module.exports = async (req, res, next) => {
 
           const activatedTier = planHolder.pendingTier;
 
-          await prisma.user.update({
+          await mongoClient.user.update({
             where: { id: planHolder.id },
             data: {
               subscriptionTier: activatedTier,

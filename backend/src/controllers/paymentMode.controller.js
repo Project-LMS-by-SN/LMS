@@ -1,8 +1,8 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 
 const getPaymentModes = async (req, res) => {
   try {
-    const modes = await prisma.paymentMode.findMany({
+    const modes = await mongoClient.paymentMode.findMany({
       where: {
         isActive: true,
         OR: [

@@ -1,6 +1,6 @@
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 const couponService = require("../services/coupon.service");
 const subscriptionHistoryService = require("../services/subscriptionHistory.service");
 
@@ -27,7 +27,7 @@ const validateCouponEndpoint = async (req, res) => {
     if (!couponCode) {
       return res.status(400).json({ success: false, message: "Please enter a coupon code" });
     }
-    const result = couponService.validateCoupon(req.user.id, couponCode, tier);
+    const result = await couponService.validateCoupon(req.user.id, couponCode, tier);
     if (!result.valid) {
       return res.status(400).json({ success: false, ...result });
     }
@@ -40,7 +40,7 @@ const validateCouponEndpoint = async (req, res) => {
 
 const getCouponStatusEndpoint = async (req, res) => {
   try {
-    const hasUsed = couponService.hasUserUsedCoupon(req.user.id, "PRO1");
+    const hasUsed = await couponService.hasUserUsedCoupon(req.user.id, "PRO1");
     return res.json({ success: true, hasUsedProCoupon: hasUsed });
   } catch (error) {
     console.error("Coupon status error:", error);
@@ -59,7 +59,7 @@ const createOrder = async (req, res) => {
     let finalAmount;
 
     if (couponCode) {
-      const validation = couponService.validateCoupon(req.user.id, couponCode, tier);
+      const validation = await couponService.validateCoupon(req.user.id, couponCode, tier);
       if (!validation.valid) {
         return res.status(400).json({ success: false, message: validation.message, alreadyUsed: validation.alreadyUsed });
       }
@@ -91,7 +91,7 @@ const createOrder = async (req, res) => {
     const order = await client.orders.create(options);
 
     // Record order in subscription history as PENDING
-    subscriptionHistoryService.recordSubscriptionHistory({
+    await subscriptionHistoryService.recordSubscriptionHistory({
       userId: req.user.id,
       orderId: order.id,
       tier,
@@ -161,10 +161,10 @@ const verifySignature = async (req, res) => {
 
     // If a coupon code was used, record the coupon usage to guarantee one-time redemption per user ID
     if (effectiveCoupon) {
-      couponService.recordCouponUsage(req.user.id, effectiveCoupon, effectiveTier, 1);
+      await couponService.recordCouponUsage(req.user.id, effectiveCoupon, effectiveTier, 1);
     }
 
-    const existingUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const existingUser = await mongoClient.user.findUnique({ where: { id: req.user.id } });
     const isSameTier = existingUser && existingUser.subscriptionTier === effectiveTier;
     const isExpired = !existingUser?.subscriptionExpiry || new Date(existingUser.subscriptionExpiry) <= new Date();
 
@@ -186,7 +186,7 @@ const verifySignature = async (req, res) => {
           couponApplied: !!effectiveCoupon
         });
       }
-      await prisma.user.update({
+      await mongoClient.user.update({
         where: { id: req.user.id },
         data: {
           pendingTier: effectiveTier,
@@ -211,7 +211,7 @@ const verifySignature = async (req, res) => {
     baseDate.setDate(baseDate.getDate() + daysToAdd);
     const expiryDate = baseDate;
 
-    await prisma.user.update({
+    await mongoClient.user.update({
       where: { id: req.user.id },
       data: {
         subscriptionTier: effectiveTier,
@@ -221,7 +221,7 @@ const verifySignature = async (req, res) => {
       }
     });
 
-    await prisma.securityEvent.create({
+    await mongoClient.securityEvent.create({
       data: {
         eventType: "RAZORPAY_SUBSCRIPTION_ACTIVATED",
         email: existingUser.email,
@@ -232,7 +232,7 @@ const verifySignature = async (req, res) => {
     }).catch(() => {});
 
     // Update subscription history to COMPLETED
-    subscriptionHistoryService.updateSubscriptionHistoryStatus({
+    await subscriptionHistoryService.updateSubscriptionHistoryStatus({
       orderId: razorpay_order_id,
       paymentId: razorpay_payment_id,
       status: "COMPLETED",

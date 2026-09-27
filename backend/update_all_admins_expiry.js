@@ -1,17 +1,11 @@
-const { PrismaClient } = require("@prisma/client");
-const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
-const path = require("path");
-
-const dbPath = path.resolve(__dirname, "./prisma/dev.db");
-const adapter = new PrismaBetterSqlite3({ url: `file:${dbPath}` });
-const prisma = new PrismaClient({ adapter });
+const db = require("./src/config/mongoClient");
 
 async function updateAllAdminsExpiry() {
   const expiryDate = new Date();
   expiryDate.setMonth(expiryDate.getMonth() + 3);
 
   // Update admin100@admin.com
-  await prisma.user.updateMany({
+  await db.user.updateMany({
     where: { email: "admin100@admin.com" },
     data: {
       subscriptionTier: "PRO_100",
@@ -20,7 +14,7 @@ async function updateAllAdminsExpiry() {
   });
 
   // Update admin200@admin.com
-  await prisma.user.updateMany({
+  await db.user.updateMany({
     where: { email: "admin200@admin.com" },
     data: {
       subscriptionTier: "PRO_200",
@@ -29,7 +23,7 @@ async function updateAllAdminsExpiry() {
   });
 
   // Update any other OWNER user who has a tier set but no expiry date
-  const ownersWithoutExpiry = await prisma.user.findMany({
+  const ownersWithoutExpiry = await db.user.findMany({
     where: {
       role: "OWNER",
       subscriptionExpiry: null,
@@ -38,7 +32,7 @@ async function updateAllAdminsExpiry() {
 
   for (const owner of ownersWithoutExpiry) {
     const tier = owner.subscriptionTier === "FREE" ? "PRO_200" : owner.subscriptionTier;
-    await prisma.user.update({
+    await db.user.update({
       where: { id: owner.id },
       data: {
         subscriptionTier: tier,
@@ -53,4 +47,4 @@ async function updateAllAdminsExpiry() {
 
 updateAllAdminsExpiry()
   .catch((e) => console.error("Error updating all admins:", e))
-  .finally(() => prisma.$disconnect());
+  .finally(() => db.$disconnect());

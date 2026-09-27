@@ -1,6 +1,6 @@
 # 📚 Modern Library Management System (LMS)
 
-A production-grade, SaaS-ready **Library Management System** built with **React 19 (Vite)** on the frontend and **Node.js (Express) + Prisma ORM** on the backend. Designed specifically for modern study libraries, co-working reading halls, and multi-shift student study spaces.
+A production-grade, SaaS-ready **Library Management System** built with **React 19 (Vite)** on the frontend and **Node.js (Express) + MongoDB (Mongoose)** on the backend. Designed specifically for modern study libraries, co-working reading halls, and multi-shift student study spaces.
 
 ---
 
@@ -48,11 +48,11 @@ A production-grade, SaaS-ready **Library Management System** built with **React 
 │   │  Controller  │ │  Validities  │ │ Razorpay Sub │ │ Shifts / Seats   │   │
 │   └──────────────┘ └──────────────┘ └──────────────┘ └──────────────────┘   │
 │                                      │                                      │
-│                              Prisma ORM Client                              │
+│                              MongoDB / Mongoose Client                      │
 └──────────────────────────────────────┼──────────────────────────────────────┘
                                        │
 ┌──────────────────────────────────────┴──────────────────────────────────────┐
-│                    DATABASE (Prisma ORM: SQLite / PostgreSQL)                │
+│                    DATABASE (MongoDB Atlas / Mongoose Models)                │
 │                                                                             │
 │  [Branch] ──┬──< [Users] ───────< [UserSessions] & [AuditLogs]              │
 │             ├──< [Students] ────< [StudentValidities] ──< [Payments]        │
@@ -81,7 +81,7 @@ A production-grade, SaaS-ready **Library Management System** built with **React 
 
 ### Backend
 - **Runtime**: [Node.js](https://nodejs.org/) & [Express 5](https://expressjs.com/)
-- **ORM & Data Layer**: [Prisma ORM v7](https://www.prisma.io/) (SQLite default, seamless PostgreSQL switch)
+- **ORM & Data Layer**: [Mongoose / MongoDB](https://mongoosejs.com/) (MongoDB Atlas Cloud Database)
 - **Authentication**: JSON Web Tokens (JWT) + BCrypt password hashing
 - **Security & Reliability**: In-memory IP rate limiting, active session verification, CORS whitelisting
 - **Payment Processing**: [Razorpay Node SDK](https://razorpay.com/) for subscription checkouts & signature validation
@@ -221,7 +221,7 @@ erDiagram
     STUDENT_SHIFT_ASSIGNMENT ||--o{ ATTENDANCE : logs
 ```
 
-### Key Models in `prisma/schema.prisma`
+### Key Mongoose Models in `src/models/index.js`
 
 | Model | Purpose |
 |---|---|
@@ -335,10 +335,10 @@ cp .env.example .env
 
 Configure your `backend/.env` file:
 ```env
-PORT=5000
+PORT=3000
 FRONTEND_URL=http://localhost:5173
 JWT_SECRET=your_super_secret_jwt_key
-DATABASE_URL="file:./dev.db"
+MONGODB_URI="mongodb+srv://<user>:<password>@cluster0.xxxx.mongodb.net/library_management_db?retryWrites=true&w=majority"
 
 # Optional: Razorpay Keys for subscriptions
 RAZORPAY_KEY_ID=rzp_test_xxxxxx
@@ -350,8 +350,7 @@ RESEND_API_KEY=re_xxxxxx
 
 Initialize the database:
 ```bash
-npx prisma db push
-node prisma/seed.js
+npm run seed
 ```
 
 Start the backend server:

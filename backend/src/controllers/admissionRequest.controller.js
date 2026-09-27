@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 const { formatDateStr } = require("../utils/format");
 
 const formatRequest = (r) => ({
@@ -27,7 +27,7 @@ const createRequest = async (req, res) => {
 const getRequests = async (req, res) => {
   try {
     const userBranchId = req.user.branchId || 1;
-    const requests = await prisma.admissionRequest.findMany({
+    const requests = await mongoClient.admissionRequest.findMany({
       where: {
         status: "PENDING",
         OR: [
@@ -55,7 +55,7 @@ const getRequests = async (req, res) => {
 const deleteRequest = async (req, res) => {
   try {
     const { id } = req.params;
-    const existing = await prisma.admissionRequest.findFirst({
+    const existing = await mongoClient.admissionRequest.findFirst({
       where: { id: parseInt(id), branchId: req.user.branchId },
     });
 
@@ -63,7 +63,7 @@ const deleteRequest = async (req, res) => {
       return res.status(404).json({ success: false, message: "Admission request not found" });
     }
 
-    await prisma.admissionRequest.delete({
+    await mongoClient.admissionRequest.delete({
       where: { id: parseInt(id) },
     });
 
@@ -84,7 +84,7 @@ const deleteRequest = async (req, res) => {
 const getRequestById = async (req, res) => {
   try {
     const { id } = req.params;
-    const request = await prisma.admissionRequest.findFirst({
+    const request = await mongoClient.admissionRequest.findFirst({
       where: { id: parseInt(id), branchId: req.user.branchId },
     });
     if (!request) {

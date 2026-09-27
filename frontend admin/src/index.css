@@ -1,0 +1,118 @@
+/* ============================================================
+   LMS SUPER ADMIN - WHITE, BLUE & GREEN DESIGN SYSTEM
+   Compact, crisp layout with ZERO unnecessary horizontal sliders
+   ============================================================ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html, body {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  background-color: #f8fafc;
+  color: #0f172a;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root {
+  --bg-main: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-subtle: #f1f5f9;
+  --border-subtle: #e2e8f0;
+  --blue-primary: #1d4ed8;
+  --blue-light: #eff6ff;
+  --green-primary: #059669;
+  --green-light: #ecfdf5;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+#root {
+  width: 100%;
+  max-width: 100vw;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  color: #0f172a;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Form Controls */
+input, select, textarea {
+  border: 1px solid var(--border-subtle);
+  background-color: #ffffff;
+  color: #0f172a;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--blue-primary) !important;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.15);
+}
+
+button {
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+button:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+/* Badges */
+.badge-nowrap {
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  display: inline-block !important;
+}
+
+/* Table Clean Rules - No Horizontal Slider */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  vertical-align: middle;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.18s ease-out;
+}

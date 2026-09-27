@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 
 const formatAssignment = (a) => ({
   id: a.id,
@@ -18,7 +18,7 @@ const formatAssignment = (a) => ({
 
 const getStudentShiftAssignments = async (req, res) => {
   try {
-    const assignments = await prisma.studentShiftAssignment.findMany({
+    const assignments = await mongoClient.studentShiftAssignment.findMany({
       where: {
         validity: {
           student: {
@@ -69,7 +69,7 @@ const createStudentShiftAssignment = async (req, res) => {
     const stId = seat_id ? parseInt(seat_id) : null;
 
     // Check validity (must belong to same branch)
-    const validity = await prisma.studentValidity.findFirst({
+    const validity = await mongoClient.studentValidity.findFirst({
       where: { id: valId, student: { branchId: req.user.branchId } },
     });
 
@@ -97,7 +97,7 @@ const createStudentShiftAssignment = async (req, res) => {
     }
 
     // Check if shift is active (same branch)
-    const shift = await prisma.shift.findFirst({
+    const shift = await mongoClient.shift.findFirst({
       where: { id: shId, isActive: true, branchId: req.user.branchId },
     });
 
@@ -110,7 +110,7 @@ const createStudentShiftAssignment = async (req, res) => {
 
     // Check if seat is active (same branch)
     if (stId) {
-      const seat = await prisma.seat.findFirst({
+      const seat = await mongoClient.seat.findFirst({
         where: { id: stId, isActive: true, branchId: req.user.branchId },
       });
       if (!seat) {
@@ -121,7 +121,7 @@ const createStudentShiftAssignment = async (req, res) => {
       }
 
       // Enforce same seat for all shifts
-      const existingSeatAssignment = await prisma.studentShiftAssignment.findFirst({
+      const existingSeatAssignment = await mongoClient.studentShiftAssignment.findFirst({
         where: {
           validityId: valId,
           assignmentStatus: "ACTIVE",
@@ -139,7 +139,7 @@ const createStudentShiftAssignment = async (req, res) => {
     }
 
     // Check if assignment already exists
-    const existing = await prisma.studentShiftAssignment.findFirst({
+    const existing = await mongoClient.studentShiftAssignment.findFirst({
       where: {
         validityId: valId,
         shiftId: shId,
@@ -156,7 +156,7 @@ const createStudentShiftAssignment = async (req, res) => {
 
     // Check if seat already booked for this shift
     if (stId) {
-      const seatBooked = await prisma.studentShiftAssignment.findFirst({
+      const seatBooked = await mongoClient.studentShiftAssignment.findFirst({
         where: {
           shiftId: shId,
           seatId: stId,
@@ -172,7 +172,7 @@ const createStudentShiftAssignment = async (req, res) => {
       }
     }
 
-    const assignment = await prisma.studentShiftAssignment.create({
+    const assignment = await mongoClient.studentShiftAssignment.create({
       data: {
         validityId: valId,
         shiftId: shId,
@@ -215,7 +215,7 @@ const createBulkShiftAssignments = async (req, res) => {
     const stId = seat_id ? parseInt(seat_id) : null;
 
     // Check validity (must belong to same branch)
-    const validity = await prisma.studentValidity.findFirst({
+    const validity = await mongoClient.studentValidity.findFirst({
       where: { id: valId, student: { branchId: req.user.branchId } },
     });
 
@@ -244,7 +244,7 @@ const createBulkShiftAssignments = async (req, res) => {
 
     // Enforce same seat for all shifts
     if (stId) {
-      const existingSeatAssignment = await prisma.studentShiftAssignment.findFirst({
+      const existingSeatAssignment = await mongoClient.studentShiftAssignment.findFirst({
         where: {
           validityId: valId,
           assignmentStatus: "ACTIVE",
@@ -263,7 +263,7 @@ const createBulkShiftAssignments = async (req, res) => {
 
     // Run transaction
     const results = [];
-    await prisma.$transaction(async (tx) => {
+    await mongoClient.$transaction(async (tx) => {
       for (const shiftId of shift_ids) {
         const shId = parseInt(shiftId);
 

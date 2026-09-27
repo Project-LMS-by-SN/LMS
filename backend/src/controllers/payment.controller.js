@@ -1,9 +1,9 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 const { formatDateStr, formatDateTimeStr, parsePaymentDate } = require("../utils/format");
 
 const logAction = async (action, tableName, recordId, oldValues, newValues, userId) => {
   try {
-    await prisma.auditLog.create({
+    await mongoClient.auditLog.create({
       data: {
         action,
         tableName,
@@ -20,7 +20,7 @@ const logAction = async (action, tableName, recordId, oldValues, newValues, user
 
 const getPayments = async (req, res) => {
   try {
-    const payments = await prisma.payment.findMany({
+    const payments = await mongoClient.payment.findMany({
       where: {
         validity: {
           student: {
@@ -98,7 +98,7 @@ const createPayment = async (req, res) => {
     const pmId = parseInt(payment_mode_id);
 
     // Verify validity exists
-    const validity = await prisma.studentValidity.findFirst({
+    const validity = await mongoClient.studentValidity.findFirst({
       where: { id: valId, student: { branchId: req.user.branchId } },
     });
 
@@ -110,7 +110,7 @@ const createPayment = async (req, res) => {
     }
 
     // Verify payment mode is active
-    const paymentMode = await prisma.paymentMode.findFirst({
+    const paymentMode = await mongoClient.paymentMode.findFirst({
       where: { id: pmId, isActive: true },
     });
 
@@ -126,7 +126,7 @@ const createPayment = async (req, res) => {
 
     let newPayment = null;
 
-    await prisma.$transaction(async (tx) => {
+    await mongoClient.$transaction(async (tx) => {
       newPayment = await tx.payment.create({
         data: {
           validityId: valId,
@@ -269,7 +269,7 @@ const recordPayment = async (req, res) => {
     const pmId = parseInt(payment_mode_id);
 
     // Verify student exists and is active
-    const student = await prisma.student.findFirst({
+    const student = await mongoClient.student.findFirst({
       where: { id: sId, deletedAt: null, branchId: req.user.branchId },
     });
 
@@ -281,7 +281,7 @@ const recordPayment = async (req, res) => {
     }
 
     // Verify fee plan is active
-    const feePlan = await prisma.feePlan.findFirst({
+    const feePlan = await mongoClient.feePlan.findFirst({
       where: { id: fpId, isActive: true, branchId: req.user.branchId },
     });
 
@@ -293,7 +293,7 @@ const recordPayment = async (req, res) => {
     }
 
     // Verify payment mode is active
-    const paymentMode = await prisma.paymentMode.findFirst({
+    const paymentMode = await mongoClient.paymentMode.findFirst({
       where: { id: pmId, isActive: true },
     });
 
@@ -305,7 +305,7 @@ const recordPayment = async (req, res) => {
     }
 
     // Calculate end date — extend from existing validity if present
-    const existingValidity = await prisma.studentValidity.findUnique({
+    const existingValidity = await mongoClient.studentValidity.findUnique({
       where: { studentId: sId },
     });
 
@@ -318,7 +318,7 @@ const recordPayment = async (req, res) => {
       // Validity already exists: just append the payment, do NOT reset dates/amounts
       validity = existingValidity;
       const payDate = parsePaymentDate(payment_date);
-      payment = await prisma.$transaction(async (tx) => {
+      payment = await mongoClient.$transaction(async (tx) => {
         return tx.payment.create({
           data: {
             validityId: existingValidity.id,
@@ -340,7 +340,7 @@ const recordPayment = async (req, res) => {
       // not on however much was received
       const planAmount = Number(feePlan.amount);
 
-      await prisma.$transaction(async (tx) => {
+      await mongoClient.$transaction(async (tx) => {
         validity = await tx.studentValidity.create({
           data: {
             studentId: sId,

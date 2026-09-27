@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 const authUtil = require("../utils/auth");
 const { generateUniqueLibraryCode, ensureAllBranchesHaveCode } = require("../utils/libraryCode");
 const { Resend } = require("resend");
@@ -33,10 +33,14 @@ const getDefaultOwnerPassword = () => {
 };
 
 // Seed default branch and admin user on startup
-// Run seedAdminUser only once per server process (not on every first login)
+// Run seedAdminUser only once per server process
 let seedAdminUserRan = false;
 const seedAdminUser = async () => {
   if (seedAdminUserRan) return;
+  if (mongoClient.mongoose && mongoClient.mongoose.connection && mongoClient.mongoose.connection.readyState !== 1) {
+    console.log("ℹ️ MongoDB connection pending, seedAdminUser will execute once connected.");
+    return;
+  }
   try {
     const branchesConfig = [
       { id: 1, name: "Main Branch", address: "123 Library Head Office, Sector 62, Noida, UP", code: "MB543210" },
@@ -45,9 +49,9 @@ const seedAdminUser = async () => {
     ];
 
     for (const bConfig of branchesConfig) {
-      const existingBranch = await prisma.branch.findFirst({ where: { id: bConfig.id } });
+      const existingBranch = await mongoClient.branch.findFirst({ where: { id: bConfig.id } });
       if (!existingBranch) {
-        await prisma.branch.create({
+        await mongoClient.branch.create({
           data: {
             id: bConfig.id,
             code: bConfig.code,
@@ -58,21 +62,21 @@ const seedAdminUser = async () => {
         });
         console.log(`✅ Branch ${bConfig.id} (${bConfig.name}) seeded successfully with code ${bConfig.code}`);
       } else if (!existingBranch.code) {
-        await prisma.branch.update({
+        await mongoClient.branch.update({
           where: { id: existingBranch.id },
           data: { code: bConfig.code },
         });
       }
     }
 
-    await ensureAllBranchesHaveCode(prisma);
+    await ensureAllBranchesHaveCode(mongoClient);
 
     // 1. Seed admin@admin.com -> Branch 1
     const adminEmail = "admin@admin.com";
-    const adminUser = await prisma.user.findFirst({ where: { email: adminEmail } });
+    const adminUser = await mongoClient.user.findFirst({ where: { email: adminEmail } });
     const adminHash = authUtil.hashPassword(getDefaultOwnerPassword());
     if (adminUser) {
-      await prisma.user.update({
+      await mongoClient.user.update({
         where: { id: adminUser.id },
         data: {
           branchId: 1,
@@ -83,7 +87,7 @@ const seedAdminUser = async () => {
       });
       console.log("🔓 admin@admin.com verified and linked to Branch 1");
     } else {
-      await prisma.user.create({
+      await mongoClient.user.create({
         data: {
           name: "Admin User",
           email: adminEmail,
@@ -102,9 +106,9 @@ const seedAdminUser = async () => {
 
     // 2. Seed admin100@admin.com -> Branch 2
     const email100 = "admin100@admin.com";
-    const user100 = await prisma.user.findFirst({ where: { email: email100 } });
+    const user100 = await mongoClient.user.findFirst({ where: { email: email100 } });
     if (!user100) {
-      await prisma.user.create({
+      await mongoClient.user.create({
         data: {
           name: "Owner Pro 100",
           email: email100,
@@ -120,7 +124,7 @@ const seedAdminUser = async () => {
       });
       console.log("👤 admin100@admin.com created with default FREE tier");
     } else {
-      await prisma.user.update({
+      await mongoClient.user.update({
         where: { id: user100.id },
         data: {
           branchId: 2,
@@ -134,9 +138,9 @@ const seedAdminUser = async () => {
 
     // 3. Seed admin200@admin.com -> Branch 3
     const email200 = "admin200@admin.com";
-    const user200 = await prisma.user.findFirst({ where: { email: email200 } });
+    const user200 = await mongoClient.user.findFirst({ where: { email: email200 } });
     if (!user200) {
-      await prisma.user.create({
+      await mongoClient.user.create({
         data: {
           name: "Owner Pro 200",
           email: email200,
@@ -152,7 +156,7 @@ const seedAdminUser = async () => {
       });
       console.log("👤 admin200@admin.com created with default FREE tier");
     } else {
-      await prisma.user.update({
+      await mongoClient.user.update({
         where: { id: user200.id },
         data: {
           branchId: 3,
@@ -167,12 +171,12 @@ const seedAdminUser = async () => {
     // 4. Ensure each branch has default seats, shifts, and fee plans seeded
     for (const bId of [1, 2, 3]) {
       // Seats
-      const seatCount = await prisma.seat.count({ where: { branchId: bId } });
+      const seatCount = await mongoClient.seat.count({ where: { branchId: bId } });
       if (seatCount === 0) {
         const prefixes = ["A", "B", "C"];
         for (const prefix of prefixes) {
           for (let i = 1; i <= 5; i++) {
-            await prisma.seat.create({
+            await mongoClient.seat.create({
               data: {
                 seatNumber: `${prefix}${i}`,
                 isActive: true,
@@ -187,9 +191,9 @@ const seedAdminUser = async () => {
       }
 
       // Shifts
-      const shiftCount = await prisma.shift.count({ where: { branchId: bId } });
+      const shiftCount = await mongoClient.shift.count({ where: { branchId: bId } });
       if (shiftCount === 0) {
-        await prisma.shift.createMany({
+        await mongoClient.shift.createMany({
           data: [
             { shiftName: "Morning Shift", startTime: "08:00:00", endTime: "14:00:00", isActive: true, branchId: bId },
             { shiftName: "Evening Shift", startTime: "14:00:00", endTime: "20:00:00", isActive: true, branchId: bId },
@@ -200,9 +204,9 @@ const seedAdminUser = async () => {
       }
 
       // Fee Plans
-      const planCount = await prisma.feePlan.count({ where: { branchId: bId } });
+      const planCount = await mongoClient.feePlan.count({ where: { branchId: bId } });
       if (planCount === 0) {
-        await prisma.feePlan.createMany({
+        await mongoClient.feePlan.createMany({
           data: [
             { planName: "Monthly Plan (Reserved)", durationDays: 30, amount: 1000, isActive: true, branchId: bId, planType: "RESERVED" },
             { planName: "Quarterly Plan (Reserved)", durationDays: 90, amount: 2700, isActive: true, branchId: bId, planType: "RESERVED" },
@@ -217,6 +221,12 @@ const seedAdminUser = async () => {
     console.error("❌ Failed to seed default branches / admin users:", err.message);
   }
 };
+
+if (mongoClient.mongoose && mongoClient.mongoose.connection) {
+  mongoClient.mongoose.connection.on("connected", () => {
+    seedAdminUser();
+  });
+}
 
 // Parse User Agent to extract OS & Browser
 const parseUserAgent = (uaString) => {
@@ -281,7 +291,7 @@ exports.login = async (req, res) => {
     };
 
     // Look up user in the DB
-    let user = await prisma.user.findFirst({ where: { email: cleanEmail, deletedAt: null } });
+    let user = await mongoClient.user.findFirst({ where: { email: cleanEmail, deletedAt: null } });
 
     // Handle First Login flow for owner
     if (!user) {
@@ -289,7 +299,7 @@ exports.login = async (req, res) => {
         // Must match the default owner password
         if (password === defaultPassword) {
           // Check duplicate prevention: prevent multiple owner signups from same computer/IP
-          const duplicateUser = await prisma.user.findFirst({
+          const duplicateUser = await mongoClient.user.findFirst({
             where: {
               OR: [
                 { ipAddress: reqIp },
@@ -312,8 +322,8 @@ exports.login = async (req, res) => {
 
           // Create a new branch for this owner to isolate their data
           const initialBranchName = `Branch - ${cleanEmail}`;
-          const newLibraryCode = await generateUniqueLibraryCode(initialBranchName, null, prisma);
-          const newBranch = await prisma.branch.create({
+          const newLibraryCode = await generateUniqueLibraryCode(initialBranchName, null, mongoClient);
+          const newBranch = await mongoClient.branch.create({
             data: {
               code: newLibraryCode,
               name: initialBranchName,
@@ -322,7 +332,7 @@ exports.login = async (req, res) => {
             },
           });
 
-          user = await prisma.user.create({
+          user = await mongoClient.user.create({
             data: {
               name: "Owner",
               email: cleanEmail,
@@ -341,7 +351,7 @@ exports.login = async (req, res) => {
           });
 
           // Create active user session
-          await prisma.userSession.upsert({
+          await mongoClient.userSession.upsert({
             where: { deviceId: `${reqDeviceId}_${user.id}` },
             update: {
               userId: user.id,
@@ -363,7 +373,7 @@ exports.login = async (req, res) => {
           });
 
           // Log security event
-          await prisma.securityEvent.create({
+          await mongoClient.securityEvent.create({
             data: {
               eventType: "OWNER_FIRST_LOGIN",
               email: cleanEmail,
@@ -378,7 +388,7 @@ exports.login = async (req, res) => {
           let branchName = null;
           let branchCode = null;
           if (user.branchId) {
-            const branch = await prisma.branch.findUnique({ where: { id: user.branchId } });
+            const branch = await mongoClient.branch.findUnique({ where: { id: user.branchId } });
             branchName = branch ? branch.name : null;
             branchCode = branch ? branch.code : null;
           }
@@ -402,7 +412,7 @@ exports.login = async (req, res) => {
           });
         } else {
           // Log failed login event
-          await prisma.securityEvent.create({
+          await mongoClient.securityEvent.create({
             data: {
               eventType: "LOGIN_FAILED_WHITELIST",
               email: cleanEmail,
@@ -431,7 +441,7 @@ exports.login = async (req, res) => {
     // Find owner of the staff's branch if user is STAFF
     let owner = null;
     if (user.role === "STAFF") {
-      owner = await prisma.user.findFirst({
+      owner = await mongoClient.user.findFirst({
         where: { role: "OWNER", branchId: user.branchId || 1, deletedAt: null }
       });
       if (!owner) {
@@ -481,7 +491,7 @@ exports.login = async (req, res) => {
       const isLocking = newAttempts >= 5;
       const lockedUntil = isLocking ? new Date(Date.now() + 15 * 60000) : null; // 15 mins lock
 
-      await prisma.user.update({
+      await mongoClient.user.update({
         where: { id: user.id },
         data: {
           failedLoginAttempts: newAttempts,
@@ -489,7 +499,7 @@ exports.login = async (req, res) => {
         },
       });
 
-      await prisma.securityEvent.create({
+      await mongoClient.securityEvent.create({
         data: {
           eventType: isLocking ? "ACCOUNT_LOCKED" : "LOGIN_FAILED",
           email: cleanEmail,
@@ -509,7 +519,7 @@ exports.login = async (req, res) => {
 
     // Retrieve active sessions for the user (ordered by oldest lastActive first)
     const dbDeviceId = `${reqDeviceId}_${user.id}`;
-    const activeSessions = await prisma.userSession.findMany({
+    const activeSessions = await mongoClient.userSession.findMany({
       where: { userId: user.id, isActive: true },
       orderBy: { lastActive: "asc" }
     });
@@ -528,13 +538,13 @@ exports.login = async (req, res) => {
       } else {
         // Deactivate the oldest session
         const oldestSession = activeSessions[0];
-        await prisma.userSession.update({
+        await mongoClient.userSession.update({
           where: { id: oldestSession.id },
           data: { isActive: false },
         });
 
         // Create FORCE_LOGIN_LOGOUT security event to warn the admin/staff
-        await prisma.securityEvent.create({
+        await mongoClient.securityEvent.create({
           data: {
             eventType: "FORCE_LOGIN_LOGOUT",
             email: user.email,
@@ -547,7 +557,7 @@ exports.login = async (req, res) => {
     }
 
     // Co-existence logic: Check active sessions on the same physical device/browser
-    const physicalSessions = await prisma.userSession.findMany({
+    const physicalSessions = await mongoClient.userSession.findMany({
       where: {
         isActive: true,
         OR: [
@@ -560,7 +570,7 @@ exports.login = async (req, res) => {
       }
     });
 
-    const activeStaff = physicalSessions.filter(s => s.user.role === "STAFF");
+    const activeStaff = physicalSessions.filter(s => s.user?.role === "STAFF");
 
     if (user.role === "OWNER") {
       // If owner logs in, and there is a staff active on this physical device:
@@ -568,7 +578,7 @@ exports.login = async (req, res) => {
       const isPremium = cleanEmail === "admin@admin.com" || user.subscriptionTier === "PRO_200" || user.subscriptionTier === "ENTERPRISE";
       if (!isPremium && activeStaff.length > 0) {
         for (const s of activeStaff) {
-          await prisma.userSession.update({
+          await mongoClient.userSession.update({
             where: { id: s.id },
             data: { isActive: false }
           });
@@ -577,7 +587,7 @@ exports.login = async (req, res) => {
     }
 
     // Upsert the session for the current device
-    await prisma.userSession.upsert({
+    await mongoClient.userSession.upsert({
       where: { deviceId: dbDeviceId },
       update: {
         userId: user.id,
@@ -612,12 +622,12 @@ exports.login = async (req, res) => {
     if (!user.firstLoginAt) {
       updateData.firstLoginAt = new Date();
     }
-    await prisma.user.update({
+    await mongoClient.user.update({
       where: { id: user.id },
       data: updateData,
     });
 
-    await prisma.securityEvent.create({
+    await mongoClient.securityEvent.create({
       data: {
         eventType: "LOGIN_SUCCESS",
         email: cleanEmail,
@@ -632,7 +642,7 @@ exports.login = async (req, res) => {
     let branchName = null;
     let branchCode = null;
     if (user.branchId) {
-      const branch = await prisma.branch.findUnique({ where: { id: user.branchId } });
+      const branch = await mongoClient.branch.findUnique({ where: { id: user.branchId } });
       branchName = branch ? branch.name : null;
       branchCode = branch ? branch.code : null;
     }
@@ -649,7 +659,7 @@ exports.login = async (req, res) => {
       const d = new Date();
       d.setMonth(d.getMonth() + 3);
       effExpiry = d;
-      await prisma.user.update({
+      await mongoClient.user.update({
         where: { id: user.id },
         data: { subscriptionExpiry: effExpiry }
       });
@@ -684,18 +694,18 @@ exports.logout = async (req, res) => {
     if (req.user) {
       // Mark current session inactive
       if (req.user.deviceId) {
-        await prisma.userSession.updateMany({
+        await mongoClient.userSession.updateMany({
           where: { userId: req.user.id, deviceId: req.user.deviceId },
           data: { isActive: false }
         });
       }
 
       // Check if user has any active sessions remaining
-      const activeCount = await prisma.userSession.count({
+      const activeCount = await mongoClient.userSession.count({
         where: { userId: req.user.id, isActive: true }
       });
 
-      await prisma.user.update({
+      await mongoClient.user.update({
         where: { id: req.user.id },
         data: {
           isLoggedIn: activeCount > 0,
@@ -720,7 +730,7 @@ exports.getProfile = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const user = await prisma.user.findFirst({
+    const user = await mongoClient.user.findFirst({
       where: { id: req.user.id, deletedAt: null },
       select: {
         id: true,
@@ -753,8 +763,8 @@ exports.getProfile = async (req, res) => {
 
     let libraryCode = user.branch ? user.branch.code : null;
     if (user.branch && !libraryCode) {
-      libraryCode = await generateUniqueLibraryCode(user.branch.name, user.branch.phone, prisma);
-      await prisma.branch.update({
+      libraryCode = await generateUniqueLibraryCode(user.branch.name, user.branch.phone, mongoClient);
+      await mongoClient.branch.update({
         where: { id: user.branch.id },
         data: { code: libraryCode }
       });
@@ -764,7 +774,7 @@ exports.getProfile = async (req, res) => {
     let effExpiry = user.subscriptionExpiry;
 
     if (user.role === "STAFF") {
-      const owner = await prisma.user.findFirst({
+      const owner = await mongoClient.user.findFirst({
         where: { role: "OWNER", branchId: user.branchId || 1, deletedAt: null }
       });
       if (owner) {
@@ -779,7 +789,7 @@ exports.getProfile = async (req, res) => {
         newExpiry.setDate(newExpiry.getDate() + days);
 
         // Use updateMany with pendingTier condition to prevent double-activation race condition
-        const activated = await prisma.user.updateMany({
+        const activated = await mongoClient.user.updateMany({
           where: { id: user.id, pendingTier: user.pendingTier },
           data: {
             subscriptionTier: user.pendingTier,
@@ -799,7 +809,7 @@ exports.getProfile = async (req, res) => {
       } else if (!user.subscriptionExpiry && user.subscriptionTier !== "FREE") {
         const fallbackExpiry = new Date();
         fallbackExpiry.setMonth(fallbackExpiry.getMonth() + 3);
-        await prisma.user.update({
+        await mongoClient.user.update({
           where: { id: user.id },
           data: { subscriptionExpiry: fallbackExpiry }
         });
@@ -840,7 +850,7 @@ exports.updateProfile = async (req, res) => {
 
     const { name, email, contact, address, library_name } = req.body;
 
-    const existingUser = await prisma.user.findUnique({
+    const existingUser = await mongoClient.user.findUnique({
       where: { id: req.user.id },
       include: { branch: true }
     });
@@ -850,7 +860,7 @@ exports.updateProfile = async (req, res) => {
     }
 
     if (email && email.toLowerCase() !== existingUser.email.toLowerCase()) {
-      const emailExists = await prisma.user.findFirst({
+      const emailExists = await mongoClient.user.findFirst({
         where: {
           email: email.toLowerCase(),
           id: { not: req.user.id }
@@ -861,7 +871,7 @@ exports.updateProfile = async (req, res) => {
       }
     }
 
-    const updatedUser = await prisma.user.update({
+    const updatedUser = await mongoClient.user.update({
       where: { id: req.user.id },
       data: {
         name: name ? name.trim() : existingUser.name,
@@ -872,7 +882,7 @@ exports.updateProfile = async (req, res) => {
     let updatedBranch = existingUser.branch;
     if (existingUser.branchId) {
       // NOTE: library code is permanently unique and strictly non-editable, so code is never modified here!
-      updatedBranch = await prisma.branch.update({
+      updatedBranch = await mongoClient.branch.update({
         where: { id: existingUser.branchId },
         data: {
           name: library_name !== undefined ? (library_name ? library_name.trim() : existingUser.branch.name) : existingUser.branch.name,
@@ -882,8 +892,8 @@ exports.updateProfile = async (req, res) => {
       });
     } else if (library_name || contact || address) {
       const newBranchName = library_name ? library_name.trim() : `${updatedUser.name}'s Library`;
-      const newLibCode = await generateUniqueLibraryCode(newBranchName, contact, prisma);
-      updatedBranch = await prisma.branch.create({
+      const newLibCode = await generateUniqueLibraryCode(newBranchName, contact, mongoClient);
+      updatedBranch = await mongoClient.branch.create({
         data: {
           code: newLibCode,
           name: newBranchName,
@@ -891,7 +901,7 @@ exports.updateProfile = async (req, res) => {
           address: address ? address.trim() : null,
         }
       });
-      await prisma.user.update({
+      await mongoClient.user.update({
         where: { id: req.user.id },
         data: { branchId: updatedBranch.id }
       });
@@ -943,7 +953,7 @@ exports.changePassword = async (req, res) => {
       return res.status(400).json({ success: false, message: "New password must be different from current password" });
     }
 
-    const user = await prisma.user.findUnique({
+    const user = await mongoClient.user.findUnique({
       where: { id: req.user.id },
     });
 
@@ -958,7 +968,7 @@ exports.changePassword = async (req, res) => {
     }
 
     const newHash = authUtil.hashPassword(newPassword);
-    await prisma.user.update({
+    await mongoClient.user.update({
       where: { id: user.id },
       data: {
         passwordHash: newHash,
@@ -970,8 +980,8 @@ exports.changePassword = async (req, res) => {
 
     // Audit Log entry safely
     try {
-      if (prisma.auditLog) {
-        await prisma.auditLog.create({
+      if (mongoClient.auditLog) {
+        await mongoClient.auditLog.create({
           data: {
             action: "CHANGE_PASSWORD",
             tableName: "users",
@@ -1003,7 +1013,7 @@ exports.deleteAccount = async (req, res) => {
       return res.status(400).json({ success: false, message: "Password is required to delete account" });
     }
 
-    const user = await prisma.user.findUnique({
+    const user = await mongoClient.user.findUnique({
       where: { id: req.user.id },
     });
 
@@ -1017,7 +1027,7 @@ exports.deleteAccount = async (req, res) => {
     }
 
     // Perform soft delete to preserve relations & audit trail
-    await prisma.user.update({
+    await mongoClient.user.update({
       where: { id: user.id },
       data: {
         deletedAt: new Date(),
@@ -1026,7 +1036,7 @@ exports.deleteAccount = async (req, res) => {
     });
 
     // Log security event
-    await prisma.securityEvent.create({
+    await mongoClient.securityEvent.create({
       data: {
         eventType: "ACCOUNT_DELETED",
         email: user.email,
@@ -1067,7 +1077,7 @@ exports.activatePendingPlan = async (req, res) => {
       return res.status(403).json({ success: false, message: "Only owners can activate plans" });
     }
 
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const user = await mongoClient.user.findUnique({ where: { id: req.user.id } });
     if (!user || !user.pendingTier) {
       return res.status(400).json({ success: false, message: "No pending plan found to activate." });
     }
@@ -1078,7 +1088,7 @@ exports.activatePendingPlan = async (req, res) => {
 
     const activatedTier = user.pendingTier;
 
-    await prisma.user.update({
+    await mongoClient.user.update({
       where: { id: user.id },
       data: {
         subscriptionTier: activatedTier,
@@ -1089,7 +1099,7 @@ exports.activatePendingPlan = async (req, res) => {
       }
     });
 
-    await prisma.securityEvent.create({
+    await mongoClient.securityEvent.create({
       data: {
         eventType: "SUBSCRIPTION_ACTIVATED",
         email: user.email,
@@ -1117,14 +1127,14 @@ exports.getStaff = async (req, res) => {
       return res.status(403).json({ success: false, message: "Forbidden: Only owners can manage staff" });
     }
     
-    const owner = await prisma.user.findUnique({
+    const owner = await mongoClient.user.findUnique({
       where: { id: req.user.id }
     });
     if (!owner) {
       return res.status(404).json({ success: false, message: "Owner not found" });
     }
 
-    const staff = await prisma.user.findMany({
+    const staff = await mongoClient.user.findMany({
       where: { role: "STAFF", branchId: owner.branchId || 1, deletedAt: null },
       select: {
         id: true,
@@ -1169,7 +1179,7 @@ exports.createStaff = async (req, res) => {
       return res.status(400).json({ success: false, message: "Password must contain at least one number" });
     }
 
-    const owner = await prisma.user.findUnique({
+    const owner = await mongoClient.user.findUnique({
       where: { id: req.user.id }
     });
     if (!owner) {
@@ -1186,7 +1196,7 @@ exports.createStaff = async (req, res) => {
 
     const limit = getStaffLimit(owner.subscriptionTier);
 
-    const staffCount = await prisma.user.count({
+    const staffCount = await mongoClient.user.count({
       where: { role: "STAFF", branchId: owner.branchId || 1, deletedAt: null }
     });
 
@@ -1197,14 +1207,14 @@ exports.createStaff = async (req, res) => {
       });
     }
 
-    const existingUser = await prisma.user.findFirst({
+    const existingUser = await mongoClient.user.findFirst({
       where: { email: email.toLowerCase().trim() }
     });
     if (existingUser) {
       return res.status(409).json({ success: false, message: "Email already registered" });
     }
 
-    const newStaff = await prisma.user.create({
+    const newStaff = await mongoClient.user.create({
       data: {
         name,
         email: email.toLowerCase().trim(),
@@ -1240,7 +1250,7 @@ exports.deleteStaff = async (req, res) => {
       return res.status(403).json({ success: false, message: "Forbidden: Only owners can manage staff" });
     }
 
-    const owner = await prisma.user.findUnique({
+    const owner = await mongoClient.user.findUnique({
       where: { id: req.user.id }
     });
     if (!owner) {
@@ -1250,7 +1260,7 @@ exports.deleteStaff = async (req, res) => {
     const { id } = req.params;
     const staffId = parseInt(id);
 
-    const staff = await prisma.user.findFirst({
+    const staff = await mongoClient.user.findFirst({
       where: { id: staffId, role: "STAFF", branchId: owner.branchId || 1, deletedAt: null }
     });
 
@@ -1258,7 +1268,7 @@ exports.deleteStaff = async (req, res) => {
       return res.status(404).json({ success: false, message: "Staff member not found" });
     }
 
-    await prisma.user.update({
+    await mongoClient.user.update({
       where: { id: staffId },
       data: { deletedAt: new Date(), isActive: false }
     });
@@ -1280,7 +1290,7 @@ exports.forgotPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: "Email is required" });
     }
 
-    const user = await prisma.user.findFirst({
+    const user = await mongoClient.user.findFirst({
       where: { email: email.toLowerCase().trim(), deletedAt: null, isActive: true }
     });
 
@@ -1293,7 +1303,7 @@ exports.forgotPassword = async (req, res) => {
     const token = crypto.randomBytes(32).toString("hex");
     const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    await prisma.user.update({
+    await mongoClient.user.update({
       where: { id: user.id },
       data: { passwordResetToken: token, passwordResetExpiry: expiry }
     });
@@ -1347,7 +1357,7 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: "Reset token is required." });
     }
 
-    const user = await prisma.user.findFirst({
+    const user = await mongoClient.user.findFirst({
       where: {
         passwordResetToken: token,
         passwordResetExpiry: { gt: new Date() },
@@ -1376,7 +1386,7 @@ exports.resetPassword = async (req, res) => {
 
     const hashedPassword = authUtil.hashPassword(newPassword);
 
-    await prisma.user.update({
+    await mongoClient.user.update({
       where: { id: user.id },
       data: {
         passwordHash: hashedPassword,
@@ -1407,7 +1417,7 @@ exports.changeStaffPassword = async (req, res) => {
       return res.status(403).json({ success: false, message: "Forbidden: Only owners can change staff passwords" });
     }
 
-    const owner = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const owner = await mongoClient.user.findUnique({ where: { id: req.user.id } });
     if (!owner) return res.status(404).json({ success: false, message: "Owner not found" });
 
     const staffId = parseInt(req.params.id);
@@ -1420,14 +1430,14 @@ exports.changeStaffPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: "Password must contain at least one number" });
     }
 
-    const staff = await prisma.user.findFirst({
+    const staff = await mongoClient.user.findFirst({
       where: { id: staffId, role: "STAFF", branchId: owner.branchId || 1, deletedAt: null }
     });
     if (!staff) {
       return res.status(404).json({ success: false, message: "Staff member not found" });
     }
 
-    await prisma.user.update({
+    await mongoClient.user.update({
       where: { id: staffId },
       data: {
         passwordHash: authUtil.hashPassword(newPassword),

@@ -41,6 +41,20 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Check database connection readiness
+app.use((req, res, next) => {
+  if (req.path === "/" || req.path === "/favicon.ico") return next();
+  const mongoose = require("mongoose");
+  if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      success: false,
+      code: "DB_NOT_CONNECTED",
+      message: "Database not connected. Please set your MongoDB Atlas URL (or start MongoDB) in backend/.env",
+    });
+  }
+  next();
+});
+
 // Protect all routes under /api with authMiddleware
 app.use("/api", authMiddleware);
 

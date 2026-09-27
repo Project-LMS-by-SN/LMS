@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 
 const parseSeatNumber = (seatNumber) => {
   const match = seatNumber.match(/^([A-Za-z]+)(\d+)$/);
@@ -7,7 +7,7 @@ const parseSeatNumber = (seatNumber) => {
 };
 
 const renumberAllSeats = async (branchId) => {
-  const seats = await prisma.seat.findMany({ where: { branchId }, orderBy: { id: "asc" } });
+  const seats = await mongoClient.seat.findMany({ where: { branchId }, orderBy: { id: "asc" } });
   if (seats.length === 0) return 0;
 
   const groups = {};
@@ -32,9 +32,9 @@ const renumberAllSeats = async (branchId) => {
   }
 
   if (updates.length > 0) {
-    await prisma.$transaction(
+    await mongoClient.$transaction(
       updates.map((u) =>
-        prisma.seat.update({ where: { id: u.id }, data: { seatNumber: u.newName } })
+        mongoClient.seat.update({ where: { id: u.id }, data: { seatNumber: u.newName } })
       )
     );
   }
@@ -44,7 +44,7 @@ const renumberAllSeats = async (branchId) => {
 
 const getSeats = async (req, res) => {
   try {
-    const seats = await prisma.seat.findMany({
+    const seats = await mongoClient.seat.findMany({
       where: { branchId: req.user.branchId },
       include: {
         assignments: {
@@ -139,7 +139,7 @@ const createSeat = async (req, res) => {
     const prefix = match ? match[1] : null;
 
     if (prefix) {
-      const existingPrefixSeat = await prisma.seat.findFirst({
+      const existingPrefixSeat = await mongoClient.seat.findFirst({
         where: {
           branchId,
           seatNumber: { startsWith: prefix },
@@ -154,7 +154,7 @@ const createSeat = async (req, res) => {
       }
     }
 
-    const newSeat = await prisma.seat.create({
+    const newSeat = await mongoClient.seat.create({
       data: {
         seatNumber: seatNumTrimmed,
         floor: floor ? floor.trim() : null,
@@ -197,12 +197,12 @@ const updateSeat = async (req, res) => {
     const { id } = req.params;
     const { seat_number, floor, room, section } = req.body;
 
-    const existing = await prisma.seat.findFirst({ where: { id: parseInt(id), branchId: req.user.branchId } });
+    const existing = await mongoClient.seat.findFirst({ where: { id: parseInt(id), branchId: req.user.branchId } });
     if (!existing) {
       return res.status(404).json({ success: false, message: "Seat not found" });
     }
 
-    const updatedSeat = await prisma.seat.update({
+    const updatedSeat = await mongoClient.seat.update({
       where: { id: parseInt(id) },
       data: {
         seatNumber: seat_number !== undefined ? seat_number.trim().toUpperCase() : existing.seatNumber,
@@ -253,12 +253,12 @@ const deleteSeat = async (req, res) => {
     const { id } = req.params;
     const seatId = parseInt(id);
 
-    const existing = await prisma.seat.findFirst({ where: { id: seatId, branchId: req.user.branchId } });
+    const existing = await mongoClient.seat.findFirst({ where: { id: seatId, branchId: req.user.branchId } });
     if (!existing) {
       return res.status(404).json({ success: false, message: "Seat not found" });
     }
 
-    const deletedSeat = await prisma.seat.delete({
+    const deletedSeat = await mongoClient.seat.delete({
       where: { id: seatId },
     });
 
@@ -320,7 +320,7 @@ const createBulkSeats = async (req, res) => {
     const prefix = match ? match[1] : null;
 
     if (prefix) {
-      const existingPrefixSeat = await prisma.seat.findFirst({
+      const existingPrefixSeat = await mongoClient.seat.findFirst({
         where: {
           branchId,
           seatNumber: { startsWith: prefix },
@@ -339,7 +339,7 @@ const createBulkSeats = async (req, res) => {
     let skipped = 0;
     for (const seatNumber of seats) {
       try {
-        await prisma.seat.create({
+        await mongoClient.seat.create({
           data: {
             seatNumber: seatNumber.trim().toUpperCase(),
             floor: floor ? floor.trim() : null,
@@ -355,7 +355,7 @@ const createBulkSeats = async (req, res) => {
       }
     }
 
-    const createdSeats = await prisma.seat.findMany({
+    const createdSeats = await mongoClient.seat.findMany({
       where: { seatNumber: { in: seats.map(s => s.trim().toUpperCase()) } },
     });
 
@@ -387,13 +387,13 @@ const toggleSeatActive = async (req, res) => {
     const { id } = req.params;
     const seatId = parseInt(id);
 
-    const seat = await prisma.seat.findFirst({ where: { id: seatId, branchId: req.user.branchId } });
+    const seat = await mongoClient.seat.findFirst({ where: { id: seatId, branchId: req.user.branchId } });
     if (!seat) {
       return res.status(404).json({ success: false, message: "Seat not found" });
     }
 
     if (seat.isActive) {
-      const activeAssignments = await prisma.studentShiftAssignment.count({
+      const activeAssignments = await mongoClient.studentShiftAssignment.count({
         where: {
           seatId: seatId,
           assignmentStatus: "ACTIVE",
@@ -413,7 +413,7 @@ const toggleSeatActive = async (req, res) => {
       }
     }
 
-    const updated = await prisma.seat.update({
+    const updated = await mongoClient.seat.update({
       where: { id: seatId },
       data: { isActive: !seat.isActive, updatedAt: new Date() },
     });
@@ -454,7 +454,7 @@ const deleteBulkSeats = async (req, res) => {
 
     const ids = seat_ids.map(Number).filter(Boolean);
 
-    const result = await prisma.seat.deleteMany({
+    const result = await mongoClient.seat.deleteMany({
       where: { id: { in: ids }, branchId: req.user.branchId },
     });
 

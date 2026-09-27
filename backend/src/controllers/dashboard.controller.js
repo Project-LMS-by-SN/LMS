@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const mongoClient = require("../config/mongoClient");
 const { autoSuspendExpiredStudents } = require("./student.controller");
 const { formatDateStr, formatDateTimeStr } = require("../utils/format");
 
@@ -44,35 +44,35 @@ const getDashboardStats = async (req, res) => {
       allStudentsWithValidities,
       totalExpensesAgg,
     ] = await Promise.all([
-      prisma.student.count({ where: { deletedAt: null, branchId } }),
-      prisma.student.count({ where: { accountStatus: "ACTIVE", deletedAt: null, branchId } }),
-      prisma.student.count({ where: { accountStatus: "SUSPENDED", deletedAt: null, branchId } }),
-      prisma.student.count({ where: { accountStatus: { in: ["INACTIVE", "DISABLED"] }, deletedAt: null, branchId } }),
-      prisma.studentValidity.count({
+      mongoClient.student.count({ where: { deletedAt: null, branchId } }),
+      mongoClient.student.count({ where: { accountStatus: "ACTIVE", deletedAt: null, branchId } }),
+      mongoClient.student.count({ where: { accountStatus: "SUSPENDED", deletedAt: null, branchId } }),
+      mongoClient.student.count({ where: { accountStatus: { in: ["INACTIVE", "DISABLED"] }, deletedAt: null, branchId } }),
+      mongoClient.studentValidity.count({
         where: {
           startDate: { lte: todayEnd },
           endDate: { gte: todayStart },
           student: { deletedAt: null, accountStatus: "ACTIVE", branchId },
         },
       }),
-      prisma.studentValidity.count({
+      mongoClient.studentValidity.count({
         where: {
           endDate: { gte: todayStart, lte: next7DaysObj },
           student: { deletedAt: null, accountStatus: "ACTIVE", branchId },
         },
       }),
-      prisma.payment.count({
+      mongoClient.payment.count({
         where: {
           validity: { student: { branchId } },
         },
       }),
-      prisma.payment.aggregate({
+      mongoClient.payment.aggregate({
         _sum: { amountReceived: true },
         where: {
           validity: { student: { branchId } },
         },
       }),
-      prisma.attendance.findMany({
+      mongoClient.attendance.findMany({
         where: {
           attendanceDate: { gte: todayStart, lte: todayEnd },
           status: "PRESENT",
@@ -84,7 +84,7 @@ const getDashboardStats = async (req, res) => {
           shiftAssignment: { include: { validity: true } },
         },
       }),
-      prisma.attendance.findMany({
+      mongoClient.attendance.findMany({
         where: {
           attendanceDate: { gte: todayStart, lte: todayEnd },
           status: "ABSENT",
@@ -96,9 +96,9 @@ const getDashboardStats = async (req, res) => {
           shiftAssignment: { include: { validity: true } },
         },
       }),
-      prisma.shift.count({ where: { isActive: true, branchId } }),
-      prisma.seat.count({ where: { isActive: true, branchId } }),
-      prisma.studentShiftAssignment.count({
+      mongoClient.shift.count({ where: { isActive: true, branchId } }),
+      mongoClient.seat.count({ where: { isActive: true, branchId } }),
+      mongoClient.studentShiftAssignment.count({
         where: {
           assignmentStatus: "ACTIVE",
           validity: {
@@ -108,7 +108,7 @@ const getDashboardStats = async (req, res) => {
           seatId: { not: null },
         },
       }),
-      prisma.student.findMany({
+      mongoClient.student.findMany({
         where: { deletedAt: null, accountStatus: "ACTIVE", branchId },
         include: {
           validities: {
@@ -116,7 +116,7 @@ const getDashboardStats = async (req, res) => {
           },
         },
       }),
-      prisma.expense.aggregate({
+      mongoClient.expense.aggregate({
         _sum: { amount: true },
         where: { branchId },
       }),
@@ -203,7 +203,7 @@ const getRevenueByYear = async (req, res) => {
     const startDate = new Date(selectedYear, 0, 1, 0, 0, 0, 0);
     const endDate = new Date(selectedYear, 11, 31, 23, 59, 59, 999);
 
-    const payments = await prisma.payment.findMany({
+    const payments = await mongoClient.payment.findMany({
       where: {
         paymentDate: {
           gte: startDate,
@@ -246,7 +246,7 @@ const getRecentPayments = async (req, res) => {
     const { limit } = req.query;
     const takeLimit = parseInt(limit) || 10;
 
-    const payments = await prisma.payment.findMany({
+    const payments = await mongoClient.payment.findMany({
       take: takeLimit,
       where: {
         validity: {
@@ -292,15 +292,15 @@ const getRecentPayments = async (req, res) => {
 const getSeatAvailability = async (req, res) => {
   try {
     const [shifts, seats, assignments] = await Promise.all([
-      prisma.shift.findMany({
+      mongoClient.shift.findMany({
         where: { isActive: true, branchId: req.user.branchId },
         orderBy: { startTime: "asc" },
       }),
-      prisma.seat.findMany({
+      mongoClient.seat.findMany({
         where: { isActive: true, branchId: req.user.branchId },
         orderBy: { id: "asc" },
       }),
-      prisma.studentShiftAssignment.findMany({
+      mongoClient.studentShiftAssignment.findMany({
         where: {
           assignmentStatus: "ACTIVE",
           validity: {
@@ -402,7 +402,7 @@ const getNotifications = async (req, res) => {
 
     const [inactiveStudents, pendingRequests, forceLoginEvents] = await Promise.all([
       // 1. Inactive students updated within the last 48 hours
-      prisma.student.findMany({
+      mongoClient.student.findMany({
         where: {
           accountStatus: { in: ["INACTIVE", "DISABLED"] },
           deletedAt: null,
@@ -412,7 +412,7 @@ const getNotifications = async (req, res) => {
         orderBy: { updatedAt: "desc" },
       }),
       // 2. Admission requests created within the last 48 hours
-      prisma.admissionRequest.findMany({
+      mongoClient.admissionRequest.findMany({
         where: {
           status: "PENDING",
           createdAt: { gte: fortyEightHoursAgo },
@@ -424,7 +424,7 @@ const getNotifications = async (req, res) => {
         orderBy: { id: "desc" },
       }),
       // 3. Security events occurred within the last 48 hours
-      prisma.securityEvent.findMany({
+      mongoClient.securityEvent.findMany({
         where: {
           eventType: "FORCE_LOGIN_LOGOUT",
           createdAt: { gte: fortyEightHoursAgo },
@@ -531,7 +531,7 @@ const getStudentsByMetric = async (req, res) => {
     let students = [];
 
     if (metric === "total_students") {
-      students = await prisma.student.findMany({
+      students = await mongoClient.student.findMany({
         where: { accountStatus: "ACTIVE", deletedAt: null, branchId },
         include: {
           validities: {
@@ -543,7 +543,7 @@ const getStudentsByMetric = async (req, res) => {
         orderBy: { fullName: "asc" },
       });
     } else if (metric === "active_students") {
-      const validities = await prisma.studentValidity.findMany({
+      const validities = await mongoClient.studentValidity.findMany({
         where: {
           startDate: { lte: todayEnd },
           endDate: { gte: todayStart },
@@ -564,7 +564,7 @@ const getStudentsByMetric = async (req, res) => {
       });
       students = validities.map((v) => v.student).filter(Boolean);
     } else if (metric === "inactive") {
-      students = await prisma.student.findMany({
+      students = await mongoClient.student.findMany({
         where: { accountStatus: { in: ["INACTIVE", "DISABLED"] }, deletedAt: null, branchId },
         include: {
           validities: {
@@ -576,7 +576,7 @@ const getStudentsByMetric = async (req, res) => {
         orderBy: { fullName: "asc" },
       });
     } else if (metric === "expiring_soon") {
-      const validities = await prisma.studentValidity.findMany({
+      const validities = await mongoClient.studentValidity.findMany({
         where: {
           endDate: { gte: todayStart, lte: next7DaysObj },
           student: { deletedAt: null, accountStatus: "ACTIVE", branchId },
@@ -596,7 +596,7 @@ const getStudentsByMetric = async (req, res) => {
       });
       students = validities.map((v) => v.student).filter(Boolean);
     } else if (metric === "suspended" || metric === "unpaid") {
-      students = await prisma.student.findMany({
+      students = await mongoClient.student.findMany({
         where: { accountStatus: "SUSPENDED", deletedAt: null, branchId },
         include: {
           validities: {
@@ -608,7 +608,7 @@ const getStudentsByMetric = async (req, res) => {
         orderBy: { fullName: "asc" },
       });
     } else if (metric === "today_present") {
-      const attendances = await prisma.attendance.findMany({
+      const attendances = await mongoClient.attendance.findMany({
         where: {
           attendanceDate: {
             gte: todayStart,
