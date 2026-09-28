@@ -1,5 +1,6 @@
 const mongoClient = require("../config/mongoClient");
 const { formatDateStr, formatDateTimeStr, parsePaymentDate } = require("../utils/format");
+const { clearStatsCache } = require("./dashboard.controller");
 
 const logAction = async (action, tableName, recordId, oldValues, newValues, userId) => {
   try {
@@ -45,7 +46,7 @@ const getPayments = async (req, res) => {
       full_name: p.validity && p.validity.student ? p.validity.student.fullName : null,
       student_code: p.validity && p.validity.student ? p.validity.student.studentCode : null,
       payment_mode_id: p.paymentModeId,
-      mode_name: p.paymentMode.modeName,
+      mode_name: p.paymentMode?.modeName || "Unknown",
       invoice_no: p.invoiceNo,
       amount_received: p.amountReceived ? Number(p.amountReceived) : 0,
       remarks: p.remarks,
@@ -198,6 +199,8 @@ const createPayment = async (req, res) => {
     // Audit Log
     await logAction("CREATE_PAYMENT", "payments", newPayment.id, null, newPayment, req.user ? req.user.id : null);
 
+    try { clearStatsCache(); } catch (e) {}
+
     res.status(201).json({
       success: true,
       message: "Payment created successfully",
@@ -212,7 +215,7 @@ const createPayment = async (req, res) => {
       },
     });
   } catch (error) {
-    if (error.code === "P2002") {
+    if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
         message: "Invoice number already exists",
@@ -370,6 +373,8 @@ const recordPayment = async (req, res) => {
     // Audit Log
     await logAction("RECORD_PAYMENT", "payments", payment.id, null, payment, req.user ? req.user.id : null);
 
+    try { clearStatsCache(); } catch (e) {}
+
     res.status(201).json({
       success: true,
       message: "Payment recorded successfully",
@@ -390,7 +395,7 @@ const recordPayment = async (req, res) => {
       },
     });
   } catch (error) {
-    if (error.code === "P2002") {
+    if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
         message: "Invoice number already exists",

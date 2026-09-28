@@ -1,5 +1,6 @@
 const mongoClient = require("../config/mongoClient");
 const { formatDateStr } = require("../utils/format");
+const { clearStatsCache } = require("./dashboard.controller");
 
 const formatValidity = (sv) => {
   const totalPaid = (sv.payments || []).reduce((sum, p) => sum + Number(p.amountReceived || 0), 0);
@@ -120,7 +121,16 @@ const createOrUpdateStudentValidity = async (req, res) => {
         totalAmount: finalAmount,
         accessType: access_type,
       },
+      include: {
+        student: true,
+        feePlan: true,
+        payments: true,
+      },
     });
+
+    try {
+      clearStatsCache();
+    } catch (e) {}
 
     res.status(201).json({
       success: true,

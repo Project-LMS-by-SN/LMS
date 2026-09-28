@@ -8,8 +8,21 @@ const parseSeatNumber = (seatNumber) => {
   return { prefix: match[1].toUpperCase(), num: parseInt(match[2], 10) };
 };
 
+const statsCache = new Map();
+const STATS_CACHE_TTL = 20000; // 20 seconds cache for rapid page navigation
+
 const getDashboardStats = async (req, res) => {
   try {
+    const branchId = req.user.branchId;
+    const cacheKey = `stats_${branchId || 1}`;
+    const cached = statsCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < STATS_CACHE_TTL) {
+      return res.json({
+        success: true,
+        data: cached.data,
+      });
+    }
+
     await autoSuspendExpiredStudents(req.user.branchId);
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -24,8 +37,6 @@ const getDashboardStats = async (req, res) => {
     const sevenDaysAgo = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
     const twentyDaysAgo = new Date(todayStart.getTime() - 20 * 24 * 60 * 60 * 1000);
     const fifteenDaysAgo = new Date(todayStart.getTime() - 15 * 24 * 60 * 60 * 1000);
-
-    const branchId = req.user.branchId;
 
     const [
       totalStudents,
@@ -165,26 +176,30 @@ const getDashboardStats = async (req, res) => {
       ? Number(totalExpensesAgg._sum.amount)
       : 0;
 
+    const responseData = {
+      total_students: totalStudents,
+      active_students: activeStudents,
+      suspended_students: suspendedStudentsCount,
+      unpaid_students: unpaidStudents,
+      active_validities: activeValidities,
+      inactive_members: inactiveMembersCount,
+      expiring_soon: expiringSoon,
+      total_payments: totalPayments,
+      total_revenue: totalRevenue,
+      total_expenses: totalExpenses,
+      net_profit: totalRevenue - totalExpenses,
+      today_present: todayPresent,
+      today_absent: todayAbsent,
+      active_shifts: activeShifts,
+      total_seats: totalSeats,
+      active_shift_assignments: activeShiftAssignments,
+    };
+
+    statsCache.set(cacheKey, { timestamp: Date.now(), data: responseData });
+
     res.json({
       success: true,
-      data: {
-        total_students: totalStudents,
-        active_students: activeStudents,
-        suspended_students: suspendedStudentsCount,
-        unpaid_students: unpaidStudents,
-        active_validities: activeValidities,
-        inactive_members: inactiveMembersCount,
-        expiring_soon: expiringSoon,
-        total_payments: totalPayments,
-        total_revenue: totalRevenue,
-        total_expenses: totalExpenses,
-        net_profit: totalRevenue - totalExpenses,
-        today_present: todayPresent,
-        today_absent: todayAbsent,
-        active_shifts: activeShifts,
-        total_seats: totalSeats,
-        active_shift_assignments: activeShiftAssignments,
-      },
+      data: responseData,
     });
   } catch (error) {
     res.status(500).json({
@@ -339,18 +354,21 @@ const getSeatAvailability = async (req, res) => {
       const shiftAssignments = assignments.filter((a) => a.shiftId === sh.id);
       const occupiedSeatsCount = shiftAssignments.length;
 
-      const assignmentsList = shiftAssignments.map((a) => ({
-        seat_number: a.seat.seatNumber,
-        student_name: a.validity.student.fullName,
-        student_code: a.validity.student.studentCode,
-      }));
+      const assignmentsList = shiftAssignments
+        .filter((a) => a.seat)
+        .map((a) => ({
+          seat_number: a.seat?.seatNumber || "",
+          student_name: a.validity?.student?.fullName || "Student",
+          student_code: a.validity?.student?.studentCode || "",
+        }));
 
       // Sort assignments by seat number
-      assignmentsList.sort((a, b) => a.seat_number.localeCompare(b.seat_number));
+      assignmentsList.sort((a, b) => (a.seat_number || "").localeCompare(b.seat_number || ""));
 
       // Build per-shift seat status for cross-shift blocking
       const shiftSeatStatus = {};
       assignments.forEach((a) => {
+        if (!a.seat) return;
         const seatNum = a.seat.seatNumber;
         if (!shiftSeatStatus[seatNum]) {
           shiftSeatStatus[seatNum] = [];
@@ -696,4 +714,5 @@ module.exports = {
   getSeatAvailability,
   getNotifications,
   getStudentsByMetric,
+  clearStatsCache: () => statsCache.clear(),
 };

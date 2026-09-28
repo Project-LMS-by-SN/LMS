@@ -3,6 +3,7 @@ const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const emailFrom = process.env.EMAIL_FROM || "noreply@dashurl.in";
 const { formatDateStr, formatDateTimeStr, parsePaymentDate, generateInvoiceNo } = require("../utils/format");
+const { clearStatsCache } = require("./dashboard.controller");
 
 const formatStudent = (s) => ({
   id: s.id,
@@ -390,9 +391,9 @@ const createStudent = async (req, res) => {
         const getStudentLimit = (tier) => {
           if (tier === "STARTER") return 150;
           if (tier === "PRO_100") return 250;
-          if (tier === "PRO_200") return 500;
+          if (tier === "PRO_200" || tier === "PRO") return 500;
           if (tier === "ENTERPRISE") return 999999;
-          return 0; // FREE - no students allowed
+          return 50; // Default/Free trial tier allows at least 50 students
         };
         const limit = getStudentLimit(creator.subscriptionTier);
         if (activeCount >= limit) {
@@ -522,16 +523,18 @@ const createStudent = async (req, res) => {
       })();
     }
 
+    try { clearStatsCache(); } catch (e) {}
+
     res.status(201).json({
       success: true,
       message: "Student created successfully",
       data: formatStudent(newStudent),
     });
   } catch (error) {
-    if (error.code === "P2002") {
+    if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Student code or registration number already exists",
+        message: "Student code or registration number already exists in this library branch",
       });
     }
 
@@ -622,16 +625,18 @@ const updateStudent = async (req, res) => {
     // Audit Log
     await logAction("UPDATE_STUDENT", "students", studentId, existing, updated, req.user ? req.user.id : null);
 
+    try { clearStatsCache(); } catch (e) {}
+
     res.json({
       success: true,
       message: "Student updated successfully",
       data: formatStudent(updated),
     });
   } catch (error) {
-    if (error.code === "P2002") {
+    if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Student code or registration number already exists",
+        message: "Student code or registration number already exists in this library branch",
       });
     }
 
@@ -1270,9 +1275,9 @@ const admitStudent = async (req, res) => {
         const getStudentLimit = (tier) => {
           if (tier === "STARTER") return 150;
           if (tier === "PRO_100") return 250;
-          if (tier === "PRO_200") return 500;
+          if (tier === "PRO_200" || tier === "PRO") return 500;
           if (tier === "ENTERPRISE") return 999999;
-          return 0;
+          return 50; // Default/Free trial tier allows at least 50 students
         };
         const limit = getStudentLimit(creator.subscriptionTier);
         if (activeCount >= limit) {
@@ -1403,6 +1408,8 @@ const admitStudent = async (req, res) => {
       console.log("Email sending error:", e.message);
     }
 
+    try { clearStatsCache(); } catch (e) {}
+
     res.status(201).json({
       success: true,
       message: "Student admitted with shifts & seat allocated successfully",
@@ -1413,8 +1420,8 @@ const admitStudent = async (req, res) => {
     });
 
   } catch (error) {
-    if (error.code === "P2002") {
-      const target = error.meta?.target;
+    if (error.code === "P2002" || error.code === 11000) {
+      const target = error.meta?.target || Object.keys(error.keyPattern || {});
       let fieldStr = "student code, mobile, or email";
       if (Array.isArray(target) && target.length > 0) {
         fieldStr = target.join(", ");

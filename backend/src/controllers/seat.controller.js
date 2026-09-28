@@ -73,14 +73,16 @@ const getSeats = async (req, res) => {
     const formattedData = seats.map((s) => {
       const activeAssignments = s.assignments || [];
       const isOccupied = activeAssignments.length > 0;
-      const occupiedShifts = activeAssignments.map((a) => ({
-        shift_id: a.shiftId,
-        shift_name: a.shift.shiftName,
-        start_time: a.shift.startTime ? a.shift.startTime.substring(0, 5) : null,
-        end_time: a.shift.endTime ? a.shift.endTime.substring(0, 5) : null,
-        student_name: a.validity.student.fullName,
-        student_code: a.validity.student.studentCode,
-      }));
+      const occupiedShifts = activeAssignments
+        .filter((a) => a.shift && a.validity?.student)
+        .map((a) => ({
+          shift_id: a.shiftId,
+          shift_name: a.shift?.shiftName || "Shift",
+          start_time: a.shift?.startTime ? a.shift.startTime.substring(0, 5) : null,
+          end_time: a.shift?.endTime ? a.shift.endTime.substring(0, 5) : null,
+          student_name: a.validity?.student?.fullName || "Student",
+          student_code: a.validity?.student?.studentCode || "",
+        }));
 
       return {
         id: s.id,
@@ -177,10 +179,10 @@ const createSeat = async (req, res) => {
       },
     });
   } catch (error) {
-    if (error.code === "P2002") {
+    if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Seat number already exists",
+        message: "Seat number already exists in this branch",
       });
     }
 
@@ -226,10 +228,10 @@ const updateSeat = async (req, res) => {
       },
     });
   } catch (error) {
-    if (error.code === "P2002") {
+    if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Seat number already exists",
+        message: "Seat number already exists in this branch",
       });
     }
 
@@ -350,7 +352,7 @@ const createBulkSeats = async (req, res) => {
         });
         created++;
       } catch (e) {
-        if (e.code === "P2002") { skipped++; }
+        if (e.code === "P2002" || e.code === 11000) { skipped++; }
         else throw e;
       }
     }

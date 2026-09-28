@@ -96,7 +96,7 @@ const createFeePlan = async (req, res) => {
       data: formatFeePlan(newPlan),
     });
   } catch (error) {
-    if (error.code === "P2002") {
+    if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
         message: "An active fee plan with this name already exists. Deactivate old plan first.",
@@ -167,7 +167,7 @@ const updateFeePlan = async (req, res) => {
       data: formatFeePlan(updatedPlan),
     });
   } catch (error) {
-    if (error.code === "P2002") {
+    if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
         message: "Another active fee plan with this name already exists.",

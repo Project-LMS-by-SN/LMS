@@ -1,5 +1,6 @@
 const mongoClient = require("../config/mongoClient");
 const { formatDateStr, formatDateTimeStr } = require("../utils/format");
+const { clearStatsCache } = require("./dashboard.controller");
 
 const getDayBounds = (dateInput) => {
   let d;
@@ -563,7 +564,7 @@ const checkIn = async (req, res) => {
       });
     }
 
-    // Get ALL active assignments and compute consecutive block BEFORE timing check
+    // Get ALL active assignments and compute consecutive block
     const allActiveAssignments = await mongoClient.studentShiftAssignment.findMany({
       where: {
         validityId: assignment.validityId,
@@ -575,37 +576,44 @@ const checkIn = async (req, res) => {
     });
 
     const consecutiveBlock = getConsecutiveAssignments(assignment, allActiveAssignments);
-
-    const firstShift = consecutiveBlock[0].shift;
-    const lastShift = consecutiveBlock[consecutiveBlock.length - 1].shift;
-    const startMin = timeToMinutes(firstShift.startTime);
-    const endMin = timeToMinutes(lastShift.endTime);
-    const allowedStartMin = (startMin - 30 + 1440) % 1440;
-    const crossesMidnight = endMin < startMin;
-
-    const isAllowed = crossesMidnight
-      ? currMin >= allowedStartMin || currMin <= endMin
-      : currMin >= allowedStartMin && currMin <= endMin;
-
-    if (!isAllowed) {
-      const shiftStart12 = formatMinutesTo12Hr(startMin);
-      const shiftEnd12 = formatMinutesTo12Hr(endMin);
-      const allowedStart12 = formatMinutesTo12Hr(allowedStartMin);
-      const currTime12 = formatMinutesTo12Hr(currMin);
-
-      return res.status(400).json({
-        success: false,
-        message: `Check-in not allowed. Your shift block starts at ${shiftStart12} and ends at ${shiftEnd12}. You can check in from ${allowedStart12} (30 mins before shift). Current time is ${currTime12}.`,
-      });
-    }
-
-    const checkInTimes = [];
-    const createdAttendances = [];
+    const blockAssignmentIds = consecutiveBlock.map((b) => b.id);
 
     const { start, end } = getDayBounds();
     const currentCheckInTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
     const todayDate = new Date();
     todayDate.setHours(0, 0, 0, 0);
+
+    // Auto-checkout any open active attendance from an alternate/different shift block earlier today
+    try {
+      const openAttendances = await mongoClient.attendance.findMany({
+        where: {
+          attendanceDate: { gte: start, lte: end },
+          checkInTime: { not: null },
+          checkOutTime: null,
+          shiftAssignment: {
+            validity: { studentId: sId },
+          },
+        },
+        include: {
+          shiftAssignment: { include: { shift: true } },
+        },
+      });
+
+      for (const openAtt of openAttendances) {
+        if (!blockAssignmentIds.includes(openAtt.shiftAssignmentId)) {
+          const prevEnd = openAtt.shiftAssignment?.shift?.endTime ? openAtt.shiftAssignment.shift.endTime.slice(0, 5) : currentCheckInTime.slice(0, 5);
+          await mongoClient.attendance.update({
+            where: { id: openAtt.id },
+            data: { checkOutTime: prevEnd, updatedAt: new Date() },
+          });
+        }
+      }
+    } catch (autoCheckoutErr) {
+      console.log("Auto-checkout alternate shift error:", autoCheckoutErr.message);
+    }
+
+    const checkInTimes = [];
+    const createdAttendances = [];
 
     for (const blockAss of consecutiveBlock) {
       // Check if already checked in today
@@ -632,6 +640,19 @@ const checkIn = async (req, res) => {
         });
         createdAttendances.push(newAtt);
         checkInTimes.push(blockAss.shift.shiftName);
+      } else if (existing.checkOutTime) {
+        // If already checked out today but admin is checking in again, re-open check-in
+        const updated = await mongoClient.attendance.update({
+          where: { id: existing.id },
+          data: {
+            checkInTime: currentCheckInTime,
+            checkOutTime: null,
+            status: "PRESENT",
+            updatedAt: new Date(),
+          },
+        });
+        createdAttendances.push(updated);
+        checkInTimes.push(blockAss.shift.shiftName);
       }
     }
 
@@ -641,6 +662,8 @@ const checkIn = async (req, res) => {
         message: `Already checked in today for all shifts in this block.`,
       });
     }
+
+    try { clearStatsCache(); } catch (e) {}
 
     res.status(201).json({
       success: true,
@@ -797,6 +820,8 @@ const checkOut = async (req, res) => {
       });
     }
 
+    try { clearStatsCache(); } catch (e) {}
+
     res.json({
       success: true,
       message: `${student.fullName} (${student.studentCode}) checked out successfully for ${checkedOutShifts.join(", ")}`,
@@ -919,6 +944,8 @@ const checkoutAllActive = async (req, res) => {
         updatedAt: new Date(),
       },
     });
+
+    try { clearStatsCache(); } catch (e) {}
 
     res.json({
       success: true,
@@ -1081,9 +1108,8 @@ const publicCheckInOrOut = async (req, res) => {
       // Check if student forgot to check out of a previous shift and is now arriving for an alternate shift
       const matchingNewBlock = shiftBlocks.find(b => {
         const isDifferentBlock = !activeBlock || b !== activeBlock;
-        const isActiveNow = b.isTimeInside(currMin);
         const isNewBlockUnattended = b.assignments.some(ass => !todayAttendances.some(att => att.shiftAssignmentId === ass.id));
-        return isDifferentBlock && isActiveNow && isNewBlockUnattended;
+        return isDifferentBlock && isNewBlockUnattended;
       });
 
       if (matchingNewBlock) {
@@ -1092,7 +1118,7 @@ const publicCheckInOrOut = async (req, res) => {
           const shiftEnd = att.shiftAssignment?.shift?.endTime ? att.shiftAssignment.shift.endTime.slice(0, 5) : timeHHMM;
           await mongoClient.attendance.update({
             where: { id: att.id },
-            data: { checkOutTime: shiftEnd }
+            data: { checkOutTime: shiftEnd, updatedAt: new Date() }
           });
         }
 
@@ -1120,18 +1146,18 @@ const publicCheckInOrOut = async (req, res) => {
           success: true,
           action: "CHECK_IN",
           message: `Welcome to ${matchingNewBlock.shiftNames}, ${student.fullName}! 📚✨`,
-          subMessage: `Previous shift checked out. Check-In recorded at ${time12HrFormatted} for ${matchingNewBlock.shiftNames}.`,
+          subMessage: `Previous shift auto-checked out. Check-In recorded at ${time12HrFormatted} for ${matchingNewBlock.shiftNames}.`,
           time: time12HrFormatted,
           checkInTime: time12HrFormatted,
           student: { full_name: student.fullName, student_code: student.studentCode, shift_name: matchingNewBlock.shiftNames }
         });
       }
 
-      // Normal CHECK-OUT
+      // Normal CHECK-OUT of active block
       for (const att of activeCheckIns) {
         await mongoClient.attendance.update({
           where: { id: att.id },
-          data: { checkOutTime: timeHHMM }
+          data: { checkOutTime: timeHHMM, updatedAt: new Date() }
         });
       }
 
@@ -1143,7 +1169,7 @@ const publicCheckInOrOut = async (req, res) => {
         success: true,
         action: "CHECK_OUT",
         message: `Thank you for studying at our library, ${student.fullName}!`,
-        subMessage: `Check-Out recorded at ${time12HrFormatted} for ${checkedOutShiftNames}. Have a great rest of your day! `,
+        subMessage: `Check-Out recorded at ${time12HrFormatted} for ${checkedOutShiftNames}. Have a great rest of your day! 🌟`,
         time: time12HrFormatted,
         checkInTime: checkIn12Hr,
         checkOutTime: time12HrFormatted,
@@ -1174,37 +1200,8 @@ const publicCheckInOrOut = async (req, res) => {
       });
     }
 
-    // Find an unattended block whose allowed window contains the current time
-    const matchingBlock = unattendedBlocks.find(b => b.isTimeInside(currMin));
-
-    if (!matchingBlock) {
-      // Find upcoming shift block today
-      const upcomingBlock = unattendedBlocks.find(b => {
-        if (b.crossesMidnight) {
-          return currMin < b.allowedStartMin && currMin > b.endMin;
-        }
-        return currMin < b.allowedStartMin;
-      });
-
-      if (upcomingBlock) {
-        const shiftStart12Hr = formatMinutesTo12Hr(upcomingBlock.startMin);
-        const allowedStart12Hr = formatMinutesTo12Hr(upcomingBlock.allowedStartMin);
-        return res.status(400).json({
-          success: false,
-          message: `Check-in not allowed yet for ${student.fullName}. Your next shift (${upcomingBlock.shiftNames}) starts at ${shiftStart12Hr}. Early check-in is allowed from ${allowedStart12Hr} (30 mins before shift). Current time is ${time12HrFormatted}.`
-        });
-      }
-
-      // If no upcoming block, all unattended blocks ended earlier today
-      const pastBlock = unattendedBlocks[unattendedBlocks.length - 1];
-      const pastStart12Hr = formatMinutesTo12Hr(pastBlock.startMin);
-      const pastEnd12Hr = formatMinutesTo12Hr(pastBlock.endMin);
-
-      return res.status(400).json({
-        success: false,
-        message: `Check-in not allowed for ${student.fullName}. Your shift (${pastBlock.shiftNames}) was from ${pastStart12Hr} to ${pastEnd12Hr}. Current time is ${time12HrFormatted}.`
-      });
-    }
+    // Find an unattended block: match current time window first, or pick the best unattended block
+    const matchingBlock = unattendedBlocks.find(b => b.isTimeInside(currMin)) || unattendedBlocks[0];
 
     // Check in all shifts in the matchingBlock
     const todayDate = new Date();
@@ -1225,6 +1222,8 @@ const publicCheckInOrOut = async (req, res) => {
         });
       }
     }
+
+    try { clearStatsCache(); } catch (e) {}
 
     return res.json({
       success: true,

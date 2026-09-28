@@ -79,10 +79,10 @@ const createShift = async (req, res) => {
       data: formatShift(newShift),
     });
   } catch (error) {
-    if (error.code === "P2002") {
+    if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Shift name already exists",
+        message: "Shift name already exists in this branch",
       });
     }
 
@@ -237,10 +237,10 @@ const updateShift = async (req, res) => {
       data: formatShift(updatedShift),
     });
   } catch (error) {
-    if (error.code === "P2002") {
+    if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Shift name already exists",
+        message: "Shift name already exists in this branch",
       });
     }
 

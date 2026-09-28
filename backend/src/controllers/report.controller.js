@@ -80,11 +80,11 @@ const groupAttendanceRecords = (attendanceRecords) => {
 
       if (block.length === 1) {
         result.push({
-          student_code: first.shiftAssignment.validity.student.studentCode,
-          full_name: first.shiftAssignment.validity.student.fullName,
-          reg_no: first.shiftAssignment.validity.student.regNo,
-          shift_name: first.shiftAssignment.shift.shiftName,
-          seat_number: first.shiftAssignment.seat ? first.shiftAssignment.seat.seatNumber : null,
+          student_code: first.shiftAssignment?.validity?.student?.studentCode || "-",
+          full_name: first.shiftAssignment?.validity?.student?.fullName || "Unknown",
+          reg_no: first.shiftAssignment?.validity?.student?.regNo || null,
+          shift_name: first.shiftAssignment?.shift?.shiftName || "-",
+          seat_number: first.shiftAssignment?.seat ? first.shiftAssignment.seat.seatNumber : null,
           check_in_time: first.checkInTime ? first.checkInTime.substring(0, 5) : null,
           check_out_time: first.checkOutTime ? first.checkOutTime.substring(0, 5) : null,
           status: first.status,
@@ -114,9 +114,9 @@ const groupAttendanceRecords = (attendanceRecords) => {
         const seatNumber = block.find((b) => b.shiftAssignment?.seat?.seatNumber)?.shiftAssignment?.seat?.seatNumber || null;
 
         result.push({
-          student_code: first.shiftAssignment.validity.student.studentCode,
-          full_name: first.shiftAssignment.validity.student.fullName,
-          reg_no: first.shiftAssignment.validity.student.regNo,
+          student_code: first.shiftAssignment?.validity?.student?.studentCode || "-",
+          full_name: first.shiftAssignment?.validity?.student?.fullName || "Unknown",
+          reg_no: first.shiftAssignment?.validity?.student?.regNo || null,
           shift_name: `${block.length} Shifts (${shiftNames.join(", ")})`,
           seat_number: seatNumber,
           check_in_time: earliestCheckIn,
