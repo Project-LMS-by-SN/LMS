@@ -288,18 +288,62 @@ const Attendance = () => {
     }
     setError("");
     setSuccessMsg("");
+
+    const prevStudentData = studentData;
+
+    // Instant optimistic update (0ms UI latency!)
+    const now = new Date();
+    const timeHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const todayYMD = formatDateLocal(now);
+    const targetShiftId = selected.shift_id;
+    const consecutiveIds = getConsecutiveBlockForShift(targetShiftId, studentData.assignments || []);
+    const affectedShiftIds = Array.from(new Set([targetShiftId, ...consecutiveIds]));
+
+    const updatedToday = [...(studentData.todayAttendance || [])];
+    affectedShiftIds.forEach((sId) => {
+      const idx = updatedToday.findIndex((a) => a.shift_id === sId);
+      const record = {
+        shift_id: sId,
+        status: "PRESENT",
+        check_in_time: timeHHMM,
+        check_out_time: null,
+        attendance_date: todayYMD,
+      };
+      if (idx >= 0) {
+        updatedToday[idx] = { ...updatedToday[idx], ...record };
+      } else {
+        updatedToday.push(record);
+      }
+    });
+
+    setStudentData({ ...studentData, todayAttendance: updatedToday });
+
     try {
       const res = await api.post("/attendance/check-in", {
         student_id: studentData.student.id,
         shift_id: selected.shift_id
       });
       setSuccessMsg(res.data.message);
-      const query = searchQuery.trim() || studentData.student.student_code;
-      const refreshRes = await api.get(`/attendance/search?q=${encodeURIComponent(query)}`);
-      setStudentData(refreshRes.data.data);
-      fetchAttendance();
-      fetchActiveCheckIns();
+
+      if (res.data?.data?.check_in_time) {
+        const serverInTime = res.data.data.check_in_time;
+        setStudentData((curr) => {
+          if (!curr) return curr;
+          const list = (curr.todayAttendance || []).map((item) =>
+            affectedShiftIds.includes(item.shift_id)
+              ? { ...item, check_in_time: serverInTime, status: "PRESENT" }
+              : item
+          );
+          return { ...curr, todayAttendance: list };
+        });
+      }
+
+      Promise.all([
+        fetchAttendance(),
+        fetchActiveCheckIns()
+      ]).catch(() => {});
     } catch (err) {
+      setStudentData(prevStudentData);
       setError(err.response?.data?.message || "Failed to check in");
     }
   };
@@ -313,18 +357,51 @@ const Attendance = () => {
     }
     setError("");
     setSuccessMsg("");
+
+    const prevStudentData = studentData;
+
+    // Instant optimistic update (0ms UI latency!)
+    const now = new Date();
+    const timeHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const targetShiftId = selected.shift_id;
+    const consecutiveIds = getConsecutiveBlockForShift(targetShiftId, studentData.assignments || []);
+    const affectedShiftIds = Array.from(new Set([targetShiftId, ...consecutiveIds]));
+
+    const updatedToday = [...(studentData.todayAttendance || [])].map((item) => {
+      if (affectedShiftIds.includes(item.shift_id)) {
+        return { ...item, check_out_time: timeHHMM };
+      }
+      return item;
+    });
+
+    setStudentData({ ...studentData, todayAttendance: updatedToday });
+
     try {
       const res = await api.post("/attendance/check-out", {
         student_id: studentData.student.id,
         shift_id: selected.shift_id
       });
       setSuccessMsg(res.data.message);
-      const query = searchQuery.trim() || studentData.student.student_code;
-      const refreshRes = await api.get(`/attendance/search?q=${encodeURIComponent(query)}`);
-      setStudentData(refreshRes.data.data);
-      fetchAttendance();
-      fetchActiveCheckIns();
+
+      if (res.data?.data?.check_out_time) {
+        const serverOutTime = res.data.data.check_out_time;
+        setStudentData((curr) => {
+          if (!curr) return curr;
+          const list = (curr.todayAttendance || []).map((item) =>
+            affectedShiftIds.includes(item.shift_id)
+              ? { ...item, check_out_time: serverOutTime }
+              : item
+          );
+          return { ...curr, todayAttendance: list };
+        });
+      }
+
+      Promise.all([
+        fetchAttendance(),
+        fetchActiveCheckIns()
+      ]).catch(() => {});
     } catch (err) {
+      setStudentData(prevStudentData);
       setError(err.response?.data?.message || "Failed to check out");
     }
   };
