@@ -1,4 +1,5 @@
 const mongoClient = require("../config/mongoClient");
+const { ensureBranchDefaults } = require("../utils/branchDefaults");
 
 const parseSeatNumber = (seatNumber) => {
   const match = seatNumber.match(/^([A-Za-z]+)(\d+)$/);
@@ -44,6 +45,9 @@ const renumberAllSeats = async (branchId) => {
 
 const getSeats = async (req, res) => {
   try {
+    if (req.user?.branchId) {
+      await ensureBranchDefaults(req.user.branchId);
+    }
     const seats = await mongoClient.seat.findMany({
       where: { branchId: req.user.branchId },
       include: {
