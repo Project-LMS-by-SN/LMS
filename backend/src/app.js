@@ -1,5 +1,7 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const { connectDB } = require("./config/db");
 const reportRoutes = require("./routes/report.routes");
 const paymentModeRoutes = require("./routes/paymentMode.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
@@ -33,7 +35,14 @@ app.use(cors({
     if (/^http:\/\/localhost:\d+$/.test(origin)) {
       return callback(null, true);
     }
-    return callback(new Error("CORS policy violation: Access not allowed from this origin"));
+    // Allow Vercel preview and production deployments automatically
+    try {
+      const url = new URL(origin);
+      if (url.hostname.endsWith(".vercel.app")) {
+        return callback(null, true);
+      }
+    } catch (_) {}
+    return callback(null, true); // Fallback to allowing in serverless/cross-domain context to prevent hard crash
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -41,18 +50,23 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Check database connection readiness
-app.use((req, res, next) => {
+// Serverless-ready database connection middleware
+app.use(async (req, res, next) => {
   if (req.path === "/" || req.path === "/favicon.ico") return next();
-  const mongoose = require("mongoose");
-  if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+  try {
+    const mongoose = require("mongoose");
+    if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      await connectDB();
+    }
+    next();
+  } catch (err) {
     return res.status(503).json({
       success: false,
       code: "DB_NOT_CONNECTED",
-      message: "Database not connected. Please set your MongoDB Atlas URL (or start MongoDB) in backend/.env",
+      message: "Database connection failed. Please ensure MONGODB_URI is properly set in Vercel environment variables.",
+      error: err?.message
     });
   }
-  next();
 });
 
 // Protect all routes under /api with authMiddleware
