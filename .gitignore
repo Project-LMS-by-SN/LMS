@@ -44,3 +44,5 @@ Thumbs.db
 # Browser Profiles / AI artifacts
 /antigravity-browser-profile/
 .gemini/
+.vercel
+.env*

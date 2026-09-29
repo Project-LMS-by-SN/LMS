@@ -7,8 +7,15 @@ if (!deviceId) {
   localStorage.setItem("lms_device_id", deviceId);
 }
 
+const getBaseURL = () => {
+  if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
+    return "http://localhost:3000/api";
+  }
+  return import.meta.env.VITE_API_URL || "https://lms-4kly.vercel.app/api";
+};
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:3000/api",
+  baseURL: getBaseURL(),
 });
 
 // Request interceptor to attach Authorization token and X-Device-Id

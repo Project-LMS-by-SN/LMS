@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { FaSearch, FaUserCircle, FaTimes, FaTrash, FaCreditCard, FaChair, FaClock, FaCalendarAlt, FaArrowLeft, FaEdit, FaComments, FaPaperPlane, FaWhatsapp, FaCheckCircle, FaTimesCircle } from "react-icons/fa";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
@@ -120,7 +121,14 @@ const Students = () => {
   const [currentViewMonth, setCurrentViewMonth] = useState(new Date().getMonth());
   const loggedInUser = JSON.parse(localStorage.getItem("lms_user") || "{}");
   const isOwner = loggedInUser.role === "OWNER";
-  const [students, setStudents] = useState([]);
+  const { data: students = [], isLoading, refetch: fetchStudents } = useQuery({
+    queryKey: ['studentsList'],
+    queryFn: async () => {
+      const res = await api.get("/students");
+      return res.data?.data || [];
+    }
+  });
+  const loading = isLoading && students.length === 0;
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [profileData, setProfileData] = useState(null);
   const [profileTab, setProfileTab] = useState("payment");
@@ -133,7 +141,6 @@ const Students = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [accessTypeFilter, setAccessTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
   const [editingStudent, setEditingStudent] = useState(false);
   const [editTab, setEditTab] = useState("personal");
@@ -159,21 +166,6 @@ const Students = () => {
     }
     return name.slice(0, 2).toUpperCase();
   };
-
-  const fetchStudents = async () => {
-    try {
-      const res = await api.get("/students");
-      setStudents(res.data.data);
-    } catch (error) {
-      console.log("Students fetch error:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchStudents();
-  }, []);
 
   useEffect(() => {
     const handleReset = () => {
@@ -511,9 +503,6 @@ const Students = () => {
     return "Unknown";
   };
 
-  if (loading) {
-    return <div className="page"><p>Loading...</p></div>;
-  }
 
   const textPrimary = darkMode ? "#f1f5f9" : "#1e293b";
   const cardBg = darkMode ? "#1e293b" : "#ffffff";
@@ -1815,7 +1804,11 @@ const Students = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredStudents.length === 0 ? (
+            {loading ? (
+              <tr>
+                <td colSpan="7" className="empty-text" style={{ textAlign: 'center', padding: '32px' }}>Loading students...</td>
+              </tr>
+            ) : filteredStudents.length === 0 ? (
               <tr>
                 <td colSpan="7" className="empty-text" style={{ textAlign: 'center', padding: '32px' }}>No students found</td>
               </tr>

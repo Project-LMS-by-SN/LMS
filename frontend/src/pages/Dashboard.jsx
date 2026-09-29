@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { FaUsers, FaUserCheck, FaChair, FaUserMinus, FaClipboardCheck, FaExclamationTriangle, FaTimes, FaUserPlus, FaRocket, FaCrown, FaBolt, FaBuilding, FaPhone, FaEnvelope, FaMapMarkerAlt, FaUserShield, FaEdit } from "react-icons/fa";
 import api from "../api/axios";
@@ -78,11 +79,7 @@ const Dashboard = () => {
   const isExpired = daysLeft !== null && daysLeft <= 0;
   const isExpiringSoon = daysLeft !== null && daysLeft > 0 && daysLeft <= 7;
 
-  const [stats, setStats] = useState(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
-  const [revenueData, setRevenueData] = useState([]);
-  const [recentPayments, setRecentPayments] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [selectedShift, setSelectedShift] = useState(null);
   const [selectedMetric, setSelectedMetric] = useState(null);
   const [metricLoading, setMetricLoading] = useState(false);
@@ -116,10 +113,32 @@ const Dashboard = () => {
     };
   };
 
-  const formatLiveTime = (date) => {
-    const { dateText, timeText } = formatLiveDateTime(date);
-    return `${dateText} | ${timeText}`;
-  };
+  const { data: stats = null, isLoading: statsLoading, isError: statsError } = useQuery({
+    queryKey: ['dashboardStats'],
+    queryFn: async () => {
+      const res = await api.get("/dashboard/stats");
+      return res.data?.data || null;
+    },
+    retry: 1
+  });
+
+  const { data: revenueData = [] } = useQuery({
+    queryKey: ['dashboardRevenue', selectedYear],
+    queryFn: async () => {
+      const res = await api.get(`/dashboard/revenue?year=${selectedYear}`);
+      return res.data?.data || [];
+    },
+    retry: 1
+  });
+
+  const { data: recentPayments = [] } = useQuery({
+    queryKey: ['recentPayments'],
+    queryFn: async () => {
+      const res = await api.get("/dashboard/recent-payments?limit=4");
+      return res.data?.data || [];
+    },
+    retry: 1
+  });
 
   const handleMetricCardClick = async (card) => {
     try {
@@ -128,7 +147,7 @@ const Dashboard = () => {
       setMetricSearch("");
       
       const res = await api.get(`/dashboard/stats-students?metric=${card.key}`);
-      if (res.data.success) {
+      if (res.data?.success) {
         setSelectedMetric({
           label: card.label,
           key: card.key,
@@ -144,49 +163,14 @@ const Dashboard = () => {
     }
   };
 
-  const fetchStats = async () => {
-    try {
-      const res = await api.get("/dashboard/stats");
-      setStats(res.data.data);
-    } catch (error) {
-      console.log("Dashboard stats error:", error);
-    }
-  };
-
-  const fetchRevenue = async (year) => {
-    try {
-      const res = await api.get(`/dashboard/revenue?year=${year}`);
-      setRevenueData(res.data.data);
-    } catch (error) {
-      console.log("Revenue fetch error:", error);
-    }
-  };
-
-  const fetchRecentPayments = async () => {
-    try {
-      const res = await api.get("/dashboard/recent-payments?limit=4");
-      setRecentPayments(res.data.data);
-    } catch (error) {
-      console.log("Recent payments fetch error:", error);
-    }
-  };
-
-  useEffect(() => {
-    Promise.all([fetchStats(), fetchRevenue(selectedYear), fetchRecentPayments()]).finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    fetchRevenue(selectedYear);
-  }, [selectedYear]);
-
-const statsCards = stats ? [
-    { icon: <FaUsers />, color: "blue", label: "Total Members", value: stats.total_students, key: "total_students" },
-    { icon: <FaUserCheck />, color: "green", label: "Active Members", value: `${stats.active_students || stats.active_validities} / ${stats.total_students}`, key: "active_students" },
-    { icon: <FaExclamationTriangle />, color: "amber", label: "Suspended Members (unpaid > 7d)", value: stats.suspended_students !== undefined ? stats.suspended_students : (stats.unpaid_students || 0), key: "suspended" },
-    { icon: <FaUserMinus />, color: "red", label: "Inactive Members (unpaid > 20d)", value: stats.inactive_members || 0, key: "inactive" },
-    { icon: <FaExclamationTriangle />, color: "orange", label: "Expire Soon (7 days)", value: stats.expiring_soon, key: "expiring_soon" },
-    { icon: <FaClipboardCheck />, color: "purple", label: "Today's Attendance", value: stats.today_present, key: "today_present" },
-  ] : [];
+  const statsCards = [
+    { icon: <FaUsers />, color: "blue", label: "Total Members", value: stats?.total_students ?? (statsLoading ? "..." : 0), key: "total_students" },
+    { icon: <FaUserCheck />, color: "green", label: "Active Members", value: stats ? `${stats.active_students || stats.active_validities} / ${stats.total_students}` : (statsLoading ? "..." : "0 / 0"), key: "active_students" },
+    { icon: <FaExclamationTriangle />, color: "amber", label: "Suspended Members (unpaid > 7d)", value: stats ? (stats.suspended_students !== undefined ? stats.suspended_students : (stats.unpaid_students || 0)) : (statsLoading ? "..." : 0), key: "suspended" },
+    { icon: <FaUserMinus />, color: "red", label: "Inactive Members (unpaid > 20d)", value: stats?.inactive_members ?? (statsLoading ? "..." : 0), key: "inactive" },
+    { icon: <FaExclamationTriangle />, color: "orange", label: "Expire Soon (7 days)", value: stats?.expiring_soon ?? (statsLoading ? "..." : 0), key: "expiring_soon" },
+    { icon: <FaClipboardCheck />, color: "purple", label: "Today's Attendance", value: stats?.today_present ?? (statsLoading ? "..." : 0), key: "today_present" },
+  ];
 
   const maxRevenue = Math.max(...revenueData.map(d => d.revenue), 1);
   const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -195,14 +179,6 @@ const statsCards = stats ? [
   const currentYear = new Date().getFullYear();
   for (let y = currentYear - 5; y <= currentYear; y++) {
     years.push(y.toString());
-  }
-
-  if (loading) {
-    return (
-      <div className="dashboard" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-        <p style={{ color: '#888', fontSize: '18px' }}>Loading dashboard...</p>
-      </div>
-    );
   }
 
   return (
