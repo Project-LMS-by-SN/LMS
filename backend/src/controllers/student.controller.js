@@ -4,7 +4,6 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const emailFrom = process.env.EMAIL_FROM || "noreply@dashurl.in";
 const { formatDateStr, formatDateTimeStr, parsePaymentDate, generateInvoiceNo } = require("../utils/format");
 const { clearStatsCache } = require("./dashboard.controller");
-const { ensureBranchDefaults } = require("../utils/branchDefaults");
 
 const formatStudent = (s) => ({
   id: s.id,
@@ -1120,9 +1119,6 @@ const updateStudentDetails = async (req, res) => {
 
 const getAllShifts = async (req, res) => {
   try {
-    if (req.user?.branchId) {
-      await ensureBranchDefaults(req.user.branchId);
-    }
     const shifts = await mongoClient.shift.findMany({
       where: { isActive: true, branchId: req.user.branchId },
       orderBy: { startTime: "asc" },
@@ -1135,9 +1131,6 @@ const getAllShifts = async (req, res) => {
 
 const getAllFeePlans = async (req, res) => {
   try {
-    if (req.user?.branchId) {
-      await ensureBranchDefaults(req.user.branchId);
-    }
     const plans = await mongoClient.feePlan.findMany({
       where: { isActive: true, branchId: req.user.branchId },
       orderBy: { amount: "asc" },
@@ -1151,9 +1144,6 @@ const getAllFeePlans = async (req, res) => {
 const getShiftSeats = async (req, res) => {
   try {
     const { shiftId } = req.params;
-    if (req.user?.branchId) {
-      await ensureBranchDefaults(req.user.branchId);
-    }
     const seats = await mongoClient.seat.findMany({
       where: { isActive: true, deletedAt: null, branchId: req.user.branchId },
       orderBy: { seatNumber: "asc" },
@@ -1180,7 +1170,6 @@ const getShiftSeats = async (req, res) => {
 const admitStudent = async (req, res) => {
   try {
     const branchId = req.user ? req.user.branchId : 1;
-    await ensureBranchDefaults(branchId);
     const {
       student_code,
       reg_no,

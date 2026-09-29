@@ -4,7 +4,6 @@ const crypto = require("crypto");
 const mongoClient = require("../config/mongoClient");
 const authUtil = require("../utils/auth");
 const { generateUniqueLibraryCode, ensureAllBranchesHaveCode } = require("../utils/libraryCode");
-const { ensureBranchDefaults } = require("../utils/branchDefaults");
 const { Resend } = require("resend");
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const emailFrom = process.env.EMAIL_FROM || "noreply@dashurl.in";
@@ -332,7 +331,6 @@ exports.login = async (req, res) => {
               isActive: true,
             },
           });
-          await ensureBranchDefaults(newBranch.id);
 
           user = await mongoClient.user.create({
             data: {
