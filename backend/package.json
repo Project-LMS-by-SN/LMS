@@ -6,9 +6,7 @@
   "scripts": {
     "dev": "node node_modules/nodemon/bin/nodemon.js src/server.js",
     "start": "node src/server.js",
-    "seed": "node src/scripts/seed.js",
-    "build": "echo 'Vercel handles the build automatically'"
-
+    "seed": "node src/scripts/seed.js"
   },
   "keywords": [],
   "author": "",
