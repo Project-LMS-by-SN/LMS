@@ -1211,8 +1211,6 @@ const admitStudent = async (req, res) => {
       });
     }
 
-    const branchId = req.user ? req.user.branchId : 1;
-
     // Validate fields & branch-scoped duplicates
     const validationError = await validateStudentFieldsAndDuplicates({
       mobile,
