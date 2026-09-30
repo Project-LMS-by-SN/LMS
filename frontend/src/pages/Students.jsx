@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { FaSearch, FaUserCircle, FaTimes, FaTrash, FaCreditCard, FaChair, FaClock, FaCalendarAlt, FaArrowLeft, FaEdit, FaComments, FaPaperPlane, FaWhatsapp, FaCheckCircle, FaTimesCircle } from "react-icons/fa";
 import api from "../api/axios";
@@ -138,7 +139,12 @@ const Students = () => {
   const [msgTemplate, setMsgTemplate] = useState("expiry_reminder");
   const [msgCustom, setMsgCustom] = useState("");
   const [quickMsgStudent, setQuickMsgStudent] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const studentCodeParam = searchParams.get("student_code") || searchParams.get("studentCode");
+  const studentIdParam = searchParams.get("student_id") || searchParams.get("id");
+  const searchParam = searchParams.get("search");
+
+  const [searchQuery, setSearchQuery] = useState(searchParam || "");
   const [accessTypeFilter, setAccessTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [profileLoading, setProfileLoading] = useState(false);
@@ -168,13 +174,47 @@ const Students = () => {
   };
 
   useEffect(() => {
+    if (searchParam) {
+      setSearchQuery(searchParam);
+    }
+  }, [searchParam]);
+
+  useEffect(() => {
+    if (studentCodeParam || studentIdParam) {
+      fetchStudents();
+    }
+  }, [studentCodeParam, studentIdParam]);
+
+  useEffect(() => {
+    if (students && students.length > 0 && !selectedStudent) {
+      if (studentCodeParam) {
+        const found = students.find(
+          s => String(s.student_code || "").trim().toLowerCase() === String(studentCodeParam).trim().toLowerCase()
+        );
+        if (found) {
+          openProfile(found);
+          return;
+        }
+      }
+      if (studentIdParam) {
+        const found = students.find(s => String(s.id) === String(studentIdParam));
+        if (found) {
+          openProfile(found);
+          return;
+        }
+      }
+    }
+  }, [students, studentCodeParam, studentIdParam, selectedStudent]);
+
+  useEffect(() => {
     const handleReset = () => {
       setProfileData(null);
       setSelectedStudent(null);
+      setSearchParams({}, { replace: true });
     };
     window.addEventListener("reset-students-view", handleReset);
     return () => window.removeEventListener("reset-students-view", handleReset);
-  }, []);
+  }, [setSearchParams]);
 
   // Close modal on ESC key
   useEffect(() => {
@@ -277,6 +317,9 @@ const Students = () => {
   const closeProfile = () => {
     setSelectedStudent(null);
     setProfileData(null);
+    if (searchParams.get("student_code") || searchParams.get("studentCode") || searchParams.get("student_id") || searchParams.get("id")) {
+      setSearchParams({}, { replace: true });
+    }
   };
 
   const handleDeleteAdmission = async () => {

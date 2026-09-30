@@ -1001,6 +1001,38 @@ tr:hover td {
   background: #e2e8f0;
 }
 
+.topbar-refresh-btn {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #64748b;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+
+.topbar-refresh-btn:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+body.dark .topbar-refresh-btn {
+  background: #1e293b;
+  color: #94a3b8;
+}
+
+body.dark .topbar-refresh-btn:hover {
+  background: #334155;
+  color: #f1f5f9;
+}
+
 .badge-count {
   position: absolute;
   top: -2px;

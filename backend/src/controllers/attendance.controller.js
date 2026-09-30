@@ -6,6 +6,7 @@ const getDayBounds = getISTDayBounds;
 
 const formatAttendance = (a) => ({
   id: a.id,
+  student_id: a.shiftAssignment?.validity?.studentId || a.shiftAssignment?.validity?.student?.id || null,
   shift_assignment_id: a.shiftAssignmentId,
   attendance_date: formatDateStr(a.attendanceDate),
   status: a.status,
@@ -171,8 +172,11 @@ const groupAttendanceRecords = (attendanceRecords) => {
 
   attendanceRecords.forEach((a) => {
     const studentId = a.shiftAssignment?.validity?.studentId || a.shiftAssignment?.validity?.student?.id;
+    const studentCode = a.shiftAssignment?.validity?.student?.studentCode;
     const dateStr = formatDateStr(a.attendanceDate);
-    const key = `${studentId}_${dateStr}`;
+    // Guarantee unique grouping: each student gets their own separate group per date.
+    // If student ID is missing, keep the record separate by its ID so records are NEVER erroneously merged.
+    const key = (studentId && studentCode) ? `${studentId}_${studentCode}_${dateStr}` : `single_${a.id}`;
 
     if (!groups[key]) {
       groups[key] = [];
@@ -191,9 +195,14 @@ const groupAttendanceRecords = (attendanceRecords) => {
     });
 
     const areConsecutive = (r1, r2) => {
+      // Must be the exact same student
+      const id1 = r1.shiftAssignment?.validity?.studentId || r1.shiftAssignment?.validity?.student?.id;
+      const id2 = r2.shiftAssignment?.validity?.studentId || r2.shiftAssignment?.validity?.student?.id;
+      if (!id1 || !id2 || id1 !== id2) return false;
+
       const s1 = r1.shiftAssignment?.shift;
       const s2 = r2.shiftAssignment?.shift;
-      if (!s1 || !s2) return false;
+      if (!s1 || !s2 || !s1.endTime || !s2.startTime) return false;
       const [h1, m1] = s1.endTime.split(":").map(Number);
       const [h2, m2] = s2.startTime.split(":").map(Number);
       const end1 = h1 * 60 + m1;
@@ -252,6 +261,7 @@ const groupAttendanceRecords = (attendanceRecords) => {
 
         result.push({
           id: first.id,
+          student_id: first.shiftAssignment?.validity?.studentId || first.shiftAssignment?.validity?.student?.id || null,
           shift_assignment_id: first.shiftAssignmentId,
           attendance_date: formatDateStr(first.attendanceDate),
           status: block.some((b) => b.status === "PRESENT") ? "PRESENT" : first.status,
@@ -387,6 +397,11 @@ const searchStudentAttendance = async (req, res) => {
       },
     });
 
+    // Strictly sort assignments by shift start time (Morning first, Afternoon second, Evening third)
+    assignments.sort((a, b) => {
+      return (a.shift?.startTime || "").localeCompare(b.shift?.startTime || "");
+    });
+
     const formattedAssignments = assignments.map((a) => ({
       assignment_id: a.id,
       assignment_status: a.assignmentStatus,
@@ -402,7 +417,7 @@ const searchStudentAttendance = async (req, res) => {
     }));
 
     // Get today's attendance
-    const { start, end } = getDayBounds();
+    const { start, end, todayDate } = getDayBounds();
     const todayAttendance = await mongoClient.attendance.findMany({
       where: {
         shiftAssignment: {
@@ -416,7 +431,11 @@ const searchStudentAttendance = async (req, res) => {
         },
       },
       include: {
-        shiftAssignment: true,
+        shiftAssignment: {
+          include: {
+            shift: true,
+          },
+        },
       },
       orderBy: { id: "asc" },
     });

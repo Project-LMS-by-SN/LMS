@@ -1,4 +1,6 @@
 import { useEffect, useState, useRef, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { FaUserCircle, FaCamera, FaCheckCircle } from "react-icons/fa";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
@@ -52,6 +54,7 @@ const getSeatColorForAdmission = (seat, selectedShiftIds, selectedSeatId, darkMo
 };
 
 const Admission = () => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     student_code: "",
     reg_no: "",
@@ -72,9 +75,40 @@ const Admission = () => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
   const [selectedSeat, setSelectedSeat] = useState(null);
-  const [seats, setSeats] = useState([]);
   const [selectedFloor, setSelectedFloor] = useState("");
   const [selectedRoom, setSelectedRoom] = useState("");
+
+  const { data: seats = [] } = useQuery({
+    queryKey: ['seats'],
+    queryFn: async () => {
+      const res = await api.get("/seats");
+      return res.data.data || [];
+    },
+  });
+
+  const { data: shifts = [] } = useQuery({
+    queryKey: ['shifts'],
+    queryFn: async () => {
+      const res = await api.get("/shifts");
+      return (res.data.data || []).sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
+    },
+  });
+
+  const { data: feePlans = [] } = useQuery({
+    queryKey: ['feePlans'],
+    queryFn: async () => {
+      const res = await api.get("/fee-plans");
+      return (res.data.data || []).filter(p => p.is_active !== false && p.plan_type !== "REGISTRATION");
+    },
+  });
+
+  const { data: paymentModes = [] } = useQuery({
+    queryKey: ['paymentModes'],
+    queryFn: async () => {
+      const res = await api.get("/payment-modes");
+      return res.data.data || [];
+    },
+  });
 
   const uniqueFloors = useMemo(() => {
     return [...new Set(seats.filter(s => s.is_active !== false).map(s => s.floor).filter(Boolean))].sort();
@@ -85,14 +119,24 @@ const Admission = () => {
     return [...new Set(seats.filter(s => s.floor === selectedFloor && s.is_active !== false).map(s => s.room).filter(Boolean))].sort();
   }, [seats, selectedFloor]);
 
+  useEffect(() => {
+    if (uniqueFloors.length > 0 && !selectedFloor) {
+      setSelectedFloor(uniqueFloors[0]);
+    }
+  }, [uniqueFloors, selectedFloor]);
+
+  useEffect(() => {
+    if (uniqueRooms.length > 0 && (!selectedRoom || !uniqueRooms.includes(selectedRoom))) {
+      setSelectedRoom(uniqueRooms[0]);
+    }
+  }, [uniqueRooms, selectedRoom]);
+
   const handleFloorChange = (floor) => {
     setSelectedFloor(floor);
     const rooms = [...new Set(seats.filter(s => s.floor === floor && s.is_active !== false).map(s => s.room).filter(Boolean))].sort();
     setSelectedRoom(rooms[0] || "");
   };
-  const [shifts, setShifts] = useState([]);
-  const [feePlans, setFeePlans] = useState([]);
-  const [paymentModes, setPaymentModes] = useState([]);
+
   const [paymentMode, setPaymentMode] = useState("");
   const [utrNumber, setUtrNumber] = useState("");
   const [paymentDate, setPaymentDate] = useState(
@@ -101,85 +145,56 @@ const Admission = () => {
   const [includeRegistrationFee, setIncludeRegistrationFee] = useState(false);
   const [customRegistrationFee, setCustomRegistrationFee] = useState("100");
   const [admissionRemark, setAdmissionRemark] = useState("");
-  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
+    let isMounted = true;
+    const fetchCodeAndRequest = async () => {
       try {
-        const [seatsRes, shiftsRes, plansRes, modesRes, codeRes] = await Promise.all([
-          api.get("/seats"),
-          api.get("/shifts"),
-          api.get("/fee-plans"),
-          api.get("/payment-modes"),
-          api.get("/students/next-code"),
-        ]);
-        const allSeats = seatsRes.data.data || [];
-        setSeats(allSeats);
-        const activeSeats = allSeats.filter(s => s.is_active !== false);
-        const floors = [...new Set(activeSeats.map(s => s.floor).filter(Boolean))].sort();
-        if (floors.length > 0) {
-          setSelectedFloor(floors[0]);
-          const rooms = [...new Set(activeSeats.filter(s => s.floor === floors[0]).map(s => s.room).filter(Boolean))].sort();
-          if (rooms.length > 0) {
-            setSelectedRoom(rooms[0]);
-          }
-        }
-        setShifts(shiftsRes.data.data);
-        const activePlans = plansRes.data.data.filter(p => p.is_active !== false && p.plan_type !== "REGISTRATION");
-        setFeePlans(activePlans);
-        setPaymentModes(modesRes.data.data);
-
-        let nextStudentCode = "";
-        let nextRegNo = "";
-
-        if (codeRes.data.success) {
-          nextStudentCode = codeRes.data.data.student_code;
-          nextRegNo = codeRes.data.data.reg_no;
+        const codeRes = await api.get("/students/next-code");
+        let nextCode = "";
+        let nextReg = "";
+        if (codeRes.data?.success && isMounted) {
+          nextCode = codeRes.data.data.student_code;
+          nextReg = codeRes.data.data.reg_no;
           setFormData(prev => ({
             ...prev,
-            student_code: nextStudentCode,
-            reg_no: nextRegNo,
+            student_code: prev.student_code || nextCode,
+            reg_no: prev.reg_no || nextReg,
           }));
         }
 
         const params = new URLSearchParams(window.location.search);
         const requestId = params.get("request_id");
-        if (requestId) {
-          try {
-            const reqRes = await api.get(`/admission-requests/${requestId}`);
-            if (reqRes.data.success) {
-              const reqData = reqRes.data.data;
-              setFormData(prev => ({
-                ...prev,
-                student_code: nextStudentCode || prev.student_code,
-                reg_no: nextRegNo || prev.reg_no,
-                full_name: reqData.full_name || "",
-                email: reqData.email || "",
-                mobile: reqData.mobile || "",
-                gender: reqData.gender || "",
-                dob: reqData.dob || "",
-                address: reqData.address || "",
-                aadhar_number: reqData.aadhar_number || "",
-                profilePhotoUrl: reqData.profile_photo_url || "",
-                requestId: requestId,
-              }));
-              if (reqData.profile_photo_url) {
-                setPhotoPreview(reqData.profile_photo_url);
-              }
+        if (requestId && isMounted) {
+          const reqRes = await api.get(`/admission-requests/${requestId}`);
+          if (reqRes.data?.success) {
+            const reqData = reqRes.data.data;
+            setFormData(prev => ({
+              ...prev,
+              student_code: nextCode || prev.student_code,
+              reg_no: nextReg || prev.reg_no,
+              full_name: reqData.full_name || "",
+              email: reqData.email || "",
+              mobile: reqData.mobile || "",
+              gender: reqData.gender || "",
+              dob: reqData.dob || "",
+              address: reqData.address || "",
+              aadhar_number: reqData.aadhar_number || "",
+              profilePhotoUrl: reqData.profile_photo_url || "",
+              requestId: requestId,
+            }));
+            if (reqData.profile_photo_url) {
+              setPhotoPreview(reqData.profile_photo_url);
             }
-          } catch (err) {
-            console.error("Failed to load admission request details:", err);
           }
         }
-      } catch (error) {
-        console.log("Admission fetch error:", error);
-      } finally {
-        setLoading(false);
+      } catch (err) {
+        console.error("Admission code fetch error:", err);
       }
     };
-    fetchData();
+    fetchCodeAndRequest();
+    return () => { isMounted = false; };
   }, []);
 
   const handlePhotoFile = (file) => {
@@ -367,7 +382,9 @@ const Admission = () => {
         custom_amount: getCalculatedAmount(),
       };
 
-      await api.post("/students/admit", fullAdmissionPayload);
+      const res = await api.post("/students/admit", fullAdmissionPayload);
+      const admittedStudent = res.data?.data;
+      const admittedCode = admittedStudent?.student_code || formData.student_code;
 
       alert("Student admitted with shifts & seat allocated successfully!");
       setAdmissionRemark("");
@@ -381,15 +398,21 @@ const Admission = () => {
       setPaymentMode("");
       setUtrNumber("");
       setPaymentDate(new Date().toISOString().split("T")[0]);
-      // Refresh next student code
-      const codeRes = await api.get("/students/next-code");
-      if (codeRes.data.success) {
-        setFormData(prev => ({
-          ...prev,
-          student_code: codeRes.data.data.student_code,
-          reg_no: codeRes.data.data.reg_no,
-        }));
-      }
+
+      // Navigate to Students overview page with the admitted student's overview open
+      const user = (() => {
+        try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); }
+        catch { return {}; }
+      })();
+      const roleSegment = (user.role || "owner").toLowerCase();
+      const nameSegment = (user.name || "user").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      const prefix = `/${roleSegment}/${nameSegment}`;
+
+      const targetPath = admittedCode
+        ? `${prefix}/students?student_code=${encodeURIComponent(admittedCode)}`
+        : `${prefix}/students`;
+
+      navigate(targetPath);
     } catch (error) {
       alert(error.response?.data?.message || "Failed to admit student");
     } finally {
@@ -405,10 +428,6 @@ const Admission = () => {
   const inputBg = darkMode ? "#0f172a" : "#FCFBF9";
   const sectionBg = darkMode ? "#0f172a" : "#f8fafc";
   const readOnlyBg = darkMode ? "#1e293b" : "#f1f5f9";
-
-  if (loading) {
-    return <div className="page"><p>Loading...</p></div>;
-  }
 
   return (
     <div className="page admission-page">

@@ -24,14 +24,23 @@ import {
   FaCog,
   FaUser,
   FaSignOutAlt,
-  FaPhoneAlt
+  FaPhoneAlt,
+  FaSyncAlt
 } from "react-icons/fa";
 
 const DashboardLayout = () => {
   const { darkMode } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const profileRef = useRef(null);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      window.location.reload();
+    }, 250);
+  };
 
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); }
@@ -405,6 +414,22 @@ const DashboardLayout = () => {
                 <span>{getTierName(user.subscriptionTier)} Plan</span>
               </div>
             )}
+
+            {/* Refresh Button */}
+            <button
+              type="button"
+              className="topbar-refresh-btn"
+              onClick={handleRefresh}
+              title="Refresh Page"
+              aria-label="Refresh Page"
+            >
+              <FaSyncAlt
+                style={{
+                  transition: "transform 0.5s ease",
+                  transform: isRefreshing ? "rotate(360deg)" : "rotate(0deg)",
+                }}
+              />
+            </button>
 
             <NotificationBell />
             <div className="profile-container" style={{ position: "relative" }} ref={profileRef}>

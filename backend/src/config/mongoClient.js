@@ -76,6 +76,42 @@ const coerceValue = (key, val) => {
   return val;
 };
 
+// Helper: Merge existing and incoming conditions for the same field/foreignKey
+const mergeCondition = (existing, incoming) => {
+  if (existing === undefined) return incoming;
+  if (incoming === undefined) return existing;
+
+  const getScalar = (val) => {
+    if (typeof val !== "object" || val === null) return val;
+    if (val.$eq !== undefined) return val.$eq;
+    return undefined;
+  };
+
+  const scalarA = getScalar(existing);
+  const scalarB = getScalar(incoming);
+
+  // Both are scalars (e.g. 16 and 16)
+  if (scalarA !== undefined && scalarB !== undefined) {
+    return scalarA === scalarB ? scalarA : { $in: [] };
+  }
+
+  // One is scalar, other is { $in: [...] }
+  if (scalarA !== undefined && incoming && Array.isArray(incoming.$in)) {
+    return incoming.$in.includes(scalarA) ? scalarA : { $in: [] };
+  }
+  if (scalarB !== undefined && existing && Array.isArray(existing.$in)) {
+    return existing.$in.includes(scalarB) ? scalarB : { $in: [] };
+  }
+
+  // Both are { $in: [...] }
+  if (existing && Array.isArray(existing.$in) && incoming && Array.isArray(incoming.$in)) {
+    const setB = new Set(incoming.$in);
+    return { $in: existing.$in.filter((x) => setB.has(x)) };
+  }
+
+  return { ...existing, ...incoming };
+};
+
 // Recursively convert where clause to Mongoose query
 const resolveWhereFilters = async (modelName, where) => {
   if (!where || typeof where !== "object") return {};
@@ -107,7 +143,7 @@ const resolveWhereFilters = async (modelName, where) => {
       const targetWhere = await resolveWhereFilters(rel.targetModel, val);
       const targetDocs = await models[rel.targetModel].find(targetWhere, { [rel.targetKey]: 1 }).lean().exec();
       const targetIds = targetDocs.map((d) => d[rel.targetKey]).filter((id) => id !== null && id !== undefined);
-      cleaned[rel.foreignKey] = { $in: targetIds };
+      cleaned[rel.foreignKey] = mergeCondition(cleaned[rel.foreignKey], { $in: targetIds });
       continue;
     }
 
@@ -118,7 +154,7 @@ const resolveWhereFilters = async (modelName, where) => {
       const targetField = modelName === "Seat" ? "seatId" : "shiftId";
       const saDocs = await models.StudentShiftAssignment.find(saWhere, { [targetField]: 1 }).lean().exec();
       const targetIds = saDocs.map((d) => d[targetField]).filter(Boolean);
-      cleaned.id = { $in: targetIds };
+      cleaned.id = mergeCondition(cleaned.id, { $in: targetIds });
       continue;
     }
 
@@ -127,7 +163,7 @@ const resolveWhereFilters = async (modelName, where) => {
       const saWhere = await resolveWhereFilters("StudentShiftAssignment", val);
       const saDocs = await models.StudentShiftAssignment.find(saWhere, { id: 1 }).lean().exec();
       const targetIds = saDocs.map((d) => d.id).filter(Boolean);
-      cleaned.shiftAssignmentId = { $in: targetIds };
+      cleaned.shiftAssignmentId = mergeCondition(cleaned.shiftAssignmentId, { $in: targetIds });
       continue;
     }
 
@@ -165,15 +201,15 @@ const resolveWhereFilters = async (modelName, where) => {
             break;
           case "contains":
             ops.$regex = escapeRegExp(opVal);
-            if (val.mode === "insensitive") ops.$options = "i";
+            if (val.mode !== "sensitive") ops.$options = "i";
             break;
           case "startsWith":
             ops.$regex = `^${escapeRegExp(opVal)}`;
-            if (val.mode === "insensitive") ops.$options = "i";
+            if (val.mode !== "sensitive") ops.$options = "i";
             break;
           case "endsWith":
             ops.$regex = `${escapeRegExp(opVal)}$`;
-            if (val.mode === "insensitive") ops.$options = "i";
+            if (val.mode !== "sensitive") ops.$options = "i";
             break;
           case "mode":
             break;
@@ -181,9 +217,10 @@ const resolveWhereFilters = async (modelName, where) => {
             ops[op] = coercedOpVal;
         }
       }
-      cleaned[key] = Object.keys(ops).length > 0 ? ops : coerceValue(key, val);
+      const finalOp = Object.keys(ops).length > 0 ? ops : coerceValue(key, val);
+      cleaned[key] = mergeCondition(cleaned[key], finalOp);
     } else {
-      cleaned[key] = coerceValue(key, val);
+      cleaned[key] = mergeCondition(cleaned[key], coerceValue(key, val));
     }
   }
 

@@ -23,6 +23,20 @@ const getMaxAllowedDate = () => {
   return formatDateLocal(new Date());
 };
 
+const isShiftEnded = (shift) => {
+  if (!shift || !shift.start_time || !shift.end_time) return false;
+  const now = new Date();
+  const currMin = now.getHours() * 60 + now.getMinutes();
+  const [sh, sm] = shift.start_time.split(":").map(Number);
+  const [eh, em] = shift.end_time.split(":").map(Number);
+  const sMin = sh * 60 + sm;
+  const eMin = eh * 60 + em;
+  if (eMin < sMin) {
+    return currMin >= eMin && currMin < sMin;
+  }
+  return currMin >= eMin;
+};
+
 const Attendance = () => {
   const searchFormRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -146,17 +160,22 @@ const Attendance = () => {
         setLoading(false);
         return;
       }
+      const rawAssignments = res.data.data.assignments || [];
+      // Strictly sort assignments by start time (Morning first, Afternoon second, Evening third)
+      const assignments = [...rawAssignments].sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
+      res.data.data.assignments = assignments;
       setStudentData(res.data.data);
-      const assignments = res.data.data.assignments || [];
+
       const todayAtt = res.data.data.todayAttendance || [];
       const activeAtt = todayAtt.find(a => a.check_in_time && !a.check_out_time);
+
       if (activeAtt) {
         setSelectedShiftId(activeAtt.shift_id);
-      } else if (assignments.length === 1) {
-        setSelectedShiftId(assignments[0].shift_id);
-      } else if (assignments.length > 1) {
+      } else if (assignments.length > 0) {
         const now = new Date();
         const currMin = now.getHours() * 60 + now.getMinutes();
+
+        // 1. Find currently ongoing shift (with 30 min early check-in buffer)
         const matchingAss = assignments.find(a => {
           const [sh, sm] = (a.start_time || "00:00").split(":").map(Number);
           const [eh, em] = (a.end_time || "00:00").split(":").map(Number);
@@ -168,12 +187,18 @@ const Attendance = () => {
           }
           return currMin >= allowedStart && currMin <= eMin;
         });
+
         if (matchingAss) {
           setSelectedShiftId(matchingAss.shift_id);
         } else {
-          const attendedIds = todayAtt.map(a => a.shift_id);
-          const firstUnattended = assignments.find(a => !attendedIds.includes(a.shift_id));
-          setSelectedShiftId(firstUnattended ? firstUnattended.shift_id : assignments[0].shift_id);
+          // 2. Select first remaining / upcoming shift today that hasn't ended
+          const remainingShift = assignments.find(a => !isShiftEnded(a));
+          if (remainingShift) {
+            setSelectedShiftId(remainingShift.shift_id);
+          } else {
+            // All shifts ended today, default to the first shift
+            setSelectedShiftId(assignments[0].shift_id);
+          }
         }
       }
     } catch (err) {
@@ -453,7 +478,12 @@ const Attendance = () => {
   };
 
   const studentHistory = studentData
-    ? filteredAttendanceList.filter(a => a.student_code === studentData.student.student_code)
+    ? filteredAttendanceList.filter((a) => {
+        if (a.student_id && studentData.student?.id) {
+          return a.student_id === studentData.student.id;
+        }
+        return a.student_code === studentData.student?.student_code;
+      })
     : [];
 
   const today = new Date().toLocaleDateString("en-IN", {
@@ -766,10 +796,13 @@ const Attendance = () => {
                 {(studentData.assignments || []).length > 0 ? (
                   <>
                     <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
-                      {(studentData.assignments || []).map((a) => {
+                      {[...(studentData.assignments || [])]
+                        .sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""))
+                        .map((a) => {
                         const consecutiveIds = getConsecutiveBlockForShift(selectedShiftId, studentData.assignments);
                         const isInSelectedBlock = selectedShiftId === a.shift_id || consecutiveIds.includes(a.shift_id);
                         const todayAttendance = getTodayForShift(a.shift_id);
+                        const ended = isShiftEnded(a);
                         return (
                           <div
                             key={a.shift_id}
@@ -785,15 +818,56 @@ const Attendance = () => {
                             <div style={{ fontWeight: 600, fontSize: "14px" }}>{a.shift_name}</div>
                             <div style={{ fontSize: "12px", color: textSecondary }}>{formatTime(a.start_time, timeFormat)} - {formatTime(a.end_time, timeFormat)}</div>
                             {a.seat_number && <div style={{ fontSize: "12px", color: textSecondary }}>Seat: {a.seat_number}</div>}
-                            {todayAttendance && (
-                              <div style={{ marginTop: "4px", fontSize: "12px" }}>
-                                {todayAttendance.check_in_time && !todayAttendance.check_out_time && <span style={{ color: "#15803d" }}>In at {formatTime(todayAttendance.check_in_time, timeFormat)}</span>}
-                                {todayAttendance.check_in_time && todayAttendance.check_out_time && <span style={{ color: "#dc2626" }}>Done ({formatTime(todayAttendance.check_in_time, timeFormat)} - {formatTime(todayAttendance.check_out_time, timeFormat)})</span>}
+                            
+                            {/* Attendance status badge */}
+                            {todayAttendance ? (
+                              <div style={{ marginTop: "6px", fontSize: "12px", fontWeight: 600 }}>
+                                {todayAttendance.check_in_time && !todayAttendance.check_out_time && (
+                                  <span style={{ color: "#15803d" }}>● In at {formatTime(todayAttendance.check_in_time, timeFormat)}</span>
+                                )}
+                                {todayAttendance.check_in_time && todayAttendance.check_out_time && (
+                                  <span style={{ color: "#dc2626" }}>● Done ({formatTime(todayAttendance.check_in_time, timeFormat)} - {formatTime(todayAttendance.check_out_time, timeFormat)})</span>
+                                )}
+                              </div>
+                            ) : ended ? (
+                              <div style={{ marginTop: "6px" }}>
+                                <span style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                  background: darkMode ? "rgba(148, 163, 184, 0.15)" : "#f1f5f9",
+                                  color: textSecondary,
+                                  padding: "2px 8px",
+                                  borderRadius: "6px",
+                                  fontSize: "12px",
+                                  fontWeight: 600,
+                                  border: `1px solid ${borderColor}`
+                                }}>
+                                  --
+                                </span>
+                              </div>
+                            ) : (
+                              <div style={{ marginTop: "6px" }}>
+                                <span style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                  background: "#f0fdf4",
+                                  color: "#16a34a",
+                                  padding: "2px 8px",
+                                  borderRadius: "6px",
+                                  fontSize: "11px",
+                                  fontWeight: 600,
+                                  border: "1px solid #bbf7d0"
+                                }}>
+                                  ● Available for Attendance
+                                </span>
                               </div>
                             )}
+
                             {isInSelectedBlock && (
-                              <div style={{ marginTop: "4px", fontSize: "11px", color: "#2563eb", fontWeight: 600 }}>
-                                {selectedShiftId === a.shift_id ? "Selected" : "Consecutive Block"}
+                              <div style={{ marginTop: "6px", fontSize: "11px", color: "#2563eb", fontWeight: 600 }}>
+                                {selectedShiftId === a.shift_id ? "Selected Shift" : "Consecutive Block"}
                               </div>
                             )}
                           </div>
@@ -801,31 +875,73 @@ const Attendance = () => {
                       })}
                     </div>
 
-                    <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                      {getSelectedAssignment() && !getTodayForShift(selectedShiftId) && (
-                        <button className="primary-btn" onClick={handleCheckIn}>IN</button>
-                      )}
-                      {getSelectedAssignment() && getTodayForShift(selectedShiftId) && !getTodayForShift(selectedShiftId)?.check_out_time && (
-                        <>
-                          <div className="profile-info-group">
-                            <div className="profile-info-label">Checked In At</div>
-                            <div className="profile-info-value" style={{ color: "#15803d" }}>{formatTime(getTodayForShift(selectedShiftId).check_in_time, timeFormat)}</div>
-                          </div>
-                          <button className="primary-btn" onClick={handleCheckOut} style={{ background: "linear-gradient(135deg,#f97316,#ea580c)" }}>OUT</button>
-                        </>
-                      )}
-                      {getSelectedAssignment() && getTodayForShift(selectedShiftId)?.check_out_time && (
-                        <div style={{ display: "flex", gap: "12px" }}>
-                          <div className="profile-info-group">
-                            <div className="profile-info-label">Checked In</div>
-                            <div className="profile-info-value" style={{ color: "#15803d" }}>{formatTime(getTodayForShift(selectedShiftId).check_in_time, timeFormat)}</div>
-                          </div>
-                          <div className="profile-info-group">
-                            <div className="profile-info-label">Checked Out</div>
-                            <div className="profile-info-value" style={{ color: "#dc2626" }}>{formatTime(getTodayForShift(selectedShiftId).check_out_time, timeFormat)}</div>
-                          </div>
-                        </div>
-                      )}
+                    {/* Action buttons based on current shift status */}
+                    <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                      {(() => {
+                        const selectedAss = getSelectedAssignment();
+                        const selectedAtt = selectedAss ? getTodayForShift(selectedAss.shift_id) : null;
+                        const selectedEnded = selectedAss ? isShiftEnded(selectedAss) : false;
+
+                        if (selectedEnded && !selectedAtt) {
+                          return (
+                            <div style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              padding: "8px 14px",
+                              borderRadius: "8px",
+                              background: darkMode ? "rgba(148, 163, 184, 0.1)" : "#f8fafc",
+                              border: `1px solid ${borderColor}`,
+                              color: textSecondary,
+                              fontSize: "13px",
+                              fontWeight: 500
+                            }}>
+                              Shift time has passed (--)
+                            </div>
+                          );
+                        }
+
+                        if (selectedAss && !selectedAtt) {
+                          return <button className="primary-btn" onClick={handleCheckIn}>IN</button>;
+                        }
+
+                        if (selectedAss && selectedAtt && !selectedAtt.check_out_time) {
+                          return (
+                            <>
+                              <div className="profile-info-group">
+                                <div className="profile-info-label">Checked In At</div>
+                                <div className="profile-info-value" style={{ color: "#15803d" }}>
+                                  {formatTime(selectedAtt.check_in_time, timeFormat)}
+                                </div>
+                              </div>
+                              <button className="primary-btn" onClick={handleCheckOut} style={{ background: "linear-gradient(135deg,#f97316,#ea580c)" }}>
+                                OUT
+                              </button>
+                            </>
+                          );
+                        }
+
+                        if (selectedAss && selectedAtt?.check_out_time) {
+                          return (
+                            <div style={{ display: "flex", gap: "12px" }}>
+                              <div className="profile-info-group">
+                                <div className="profile-info-label">Checked In</div>
+                                <div className="profile-info-value" style={{ color: "#15803d" }}>
+                                  {formatTime(selectedAtt.check_in_time, timeFormat)}
+                                </div>
+                              </div>
+                              <div className="profile-info-group">
+                                <div className="profile-info-label">Checked Out</div>
+                                <div className="profile-info-value" style={{ color: "#dc2626" }}>
+                                  {formatTime(selectedAtt.check_out_time, timeFormat)}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return null;
+                      })()}
                     </div>
                   </>
                 ) : (
