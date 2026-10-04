@@ -1,4 +1,5 @@
 const mongoClient = require("../config/mongoClient");
+const cache = require("../utils/cache");
 
 const formatFeePlan = (fp) => ({
   id: fp.id,
@@ -11,6 +12,16 @@ const formatFeePlan = (fp) => ({
 
 const getFeePlans = async (req, res) => {
   try {
+    const branchId = req.user.branchId || 1;
+    const cacheKey = `branch_${branchId}_fee_plans`;
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.json({
+        success: true,
+        data: cached,
+      });
+    }
+
     // Ensure default Registration Fee plan exists (100 INR demo plan)
     let regPlan = await mongoClient.feePlan.findFirst({
       where: { planType: "REGISTRATION", branchId: req.user.branchId },
@@ -38,9 +49,12 @@ const getFeePlans = async (req, res) => {
       ],
     });
 
+    const formatted = plans.map(formatFeePlan);
+    cache.set(cacheKey, formatted, 30000);
+
     res.json({
       success: true,
-      data: plans.map(formatFeePlan),
+      data: formatted,
     });
   } catch (error) {
     res.status(500).json({
@@ -89,6 +103,8 @@ const createFeePlan = async (req, res) => {
         branchId: req.user.branchId,
       },
     });
+
+    cache.invalidateBranch(req.user.branchId);
 
     res.status(201).json({
       success: true,
@@ -253,6 +269,8 @@ const deleteFeePlan = async (req, res) => {
     const deleted = await mongoClient.feePlan.delete({
       where: { id: fpId },
     });
+
+    cache.invalidateBranch(req.user.branchId);
 
     res.json({
       success: true,

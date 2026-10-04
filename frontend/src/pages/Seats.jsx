@@ -445,7 +445,7 @@ const Seats = () => {
       <div className="page-title-row">
         <div>
           <h1>Seats Control</h1>
-          <p>Generate and manage library seats · {new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+          <p>Generate and manage library seats.</p>
         </div>
         <div style={{ display: "flex", gap: "10px" }}>
           <button className="secondary-btn" onClick={handleRenumber} disabled={actionLoading === "renumber"} style={{ color: "#f59e0b", display: "flex", alignItems: "center", gap: "6px" }}>
@@ -575,6 +575,16 @@ const Seats = () => {
             placeholder="Search seat number..."
             style={{ border: "none", outline: "none", background: "transparent", fontSize: "14px", color: textPrimary, width: "100%" }}
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              title="Clear search"
+              style={{ border: "none", background: "transparent", color: textMuted, cursor: "pointer", display: "flex", alignItems: "center", padding: "2px" }}
+            >
+              <FaTimes />
+            </button>
+          )}
         </div>
         <span style={{ fontSize: "13px", color: textMuted, marginLeft: "auto" }}>
           Showing {filteredSeats.length} of {totalCount} seats

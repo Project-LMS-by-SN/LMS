@@ -9,6 +9,7 @@ router.post("/forgot-password", loginLimiter, userController.forgotPassword);
 router.get("/reset-password", userController.resetPassword);
 router.post("/reset-password", userController.resetPassword);
 router.get("/profile", userController.getProfile);
+router.get("/qr-info", userController.getMyBranchQrInfo);
 router.put("/profile", userController.updateProfile);
 router.put("/change-password", userController.changePassword);
 router.delete("/account", userController.deleteAccount);

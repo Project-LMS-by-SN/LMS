@@ -14,14 +14,14 @@ const Payments = () => {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("30d");
   const [customDate, setCustomDate] = useState("");
   const { darkMode, timeFormat } = useTheme();
 
   const DATE_FILTERS = [
     { label: "All time", value: "all" },
     { label: "Today", value: "today" },
-    { label: "30 Days", value: "30d" },
+    { label: "1 Month", value: "30d" },
     { label: "3 Months", value: "3m" },
     { label: "6 Months", value: "6m" },
     { label: "1 Year", value: "1y" },
@@ -32,10 +32,31 @@ const Payments = () => {
     const now = new Date();
     switch (filter) {
       case "today": { const d = new Date(now); d.setHours(0,0,0,0); return d; }
-      case "30d": return new Date(now - 30 * 24 * 60 * 60 * 1000);
-      case "3m": return new Date(now - 90 * 24 * 60 * 60 * 1000);
-      case "6m": return new Date(now - 180 * 24 * 60 * 60 * 1000);
-      case "1y": return new Date(now - 365 * 24 * 60 * 60 * 1000);
+      case "30d":
+      case "1m": {
+        const d = new Date(now);
+        d.setMonth(d.getMonth() - 1);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      }
+      case "3m": {
+        const d = new Date(now);
+        d.setMonth(d.getMonth() - 3);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      }
+      case "6m": {
+        const d = new Date(now);
+        d.setMonth(d.getMonth() - 6);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      }
+      case "1y": {
+        const d = new Date(now);
+        d.setFullYear(d.getFullYear() - 1);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      }
       case "custom": {
         if (!customDate) return null;
         const d = new Date(customDate);
@@ -120,7 +141,7 @@ const Payments = () => {
             <FaWallet style={{ color: "#3b82f6" }} /> Payment History & Search
           </h1>
           <p style={{ color: textMuted, marginTop: "4px" }}>
-            Search, filter, and review completed payment transactions · {new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+            Search, filter, and review completed payment transactions.
           </p>
         </div>
       </div>

@@ -10,12 +10,14 @@ const {
   checkoutAllActive,
   publicSearchStudent,
   publicCheckInOrOut,
+  getPublicBranchInfo,
 } = require("../controllers/attendance.controller");
 
 const {
   publicAttendanceLimiter
 } = require("../middleware/rateLimiter");
 
+router.get("/branch-info", publicAttendanceLimiter, getPublicBranchInfo);
 router.get("/public-search", publicAttendanceLimiter, publicSearchStudent);
 router.post("/public-checkin", publicAttendanceLimiter, publicCheckInOrOut);
 

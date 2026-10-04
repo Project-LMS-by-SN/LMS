@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { FaUserCircle, FaCamera, FaCheckCircle } from "react-icons/fa";
+import { FaUserCircle, FaCamera, FaCheckCircle, FaTimes, FaInbox, FaTrash } from "react-icons/fa";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
@@ -109,6 +109,47 @@ const Admission = () => {
       return res.data.data || [];
     },
   });
+
+  const [showRequestsModal, setShowRequestsModal] = useState(false);
+  const { data: pendingRequests = [], refetch: refetchRequests } = useQuery({
+    queryKey: ['admissionRequests'],
+    queryFn: async () => {
+      const res = await api.get("/admission-requests");
+      return res.data.data || [];
+    },
+  });
+
+  const handleLoadRequest = (req) => {
+    setFormData((prev) => ({
+      ...prev,
+      full_name: req.full_name || "",
+      email: req.email || "",
+      mobile: req.mobile || "",
+      gender: req.gender || "MALE",
+      dob: req.dob || "",
+      address: req.address || "",
+      aadhar_number: req.aadhar_number || "",
+      profilePhotoUrl: req.profile_photo_url || "",
+      requestId: req.id,
+      fee_plan_id: req.preferred_fee_plan_id ? String(req.preferred_fee_plan_id) : prev.fee_plan_id,
+      shift_ids: req.preferred_shift_id ? [req.preferred_shift_id] : prev.shift_ids,
+    }));
+    if (req.profile_photo_url) {
+      setPhotoPreview(req.profile_photo_url);
+    }
+    setShowRequestsModal(false);
+  };
+
+  const handleRejectRequest = async (id, e) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to reject this admission request?")) return;
+    try {
+      await api.delete(`/admission-requests/${id}`);
+      refetchRequests();
+    } catch (err) {
+      alert("Failed to reject request");
+    }
+  };
 
   const uniqueFloors = useMemo(() => {
     return [...new Set(seats.filter(s => s.is_active !== false).map(s => s.floor).filter(Boolean))].sort();
@@ -431,9 +472,33 @@ const Admission = () => {
 
   return (
     <div className="page admission-page">
-      <div className="page-title-row">
-        <h1>Admission Portal</h1>
-        <p style={{ color: textMuted, fontSize: '14px', marginTop: '4px' }}>{new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+      <div className="page-title-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+        <div>
+          <h1>Admission Portal</h1>
+          <p style={{ color: textMuted, fontSize: '14px', marginTop: '4px' }}>{new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+        </div>
+        {pendingRequests.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowRequestsModal(true)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "10px 18px",
+              borderRadius: "12px",
+              background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
+              color: "#fff",
+              border: "none",
+              fontWeight: 700,
+              fontSize: "13px",
+              cursor: "pointer",
+              boxShadow: "0 4px 14px rgba(37, 99, 235, 0.4)",
+            }}
+          >
+            <FaInbox /> Online QR Applications ({pendingRequests.length})
+          </button>
+        )}
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -883,6 +948,147 @@ const Admission = () => {
           </button>
         </div>
       </form>
+
+      {/* Online QR Applications Modal */}
+      {showRequestsModal && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.75)",
+          backdropFilter: "blur(6px)", zIndex: 1000,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: "20px"
+        }}>
+          <div style={{
+            background: darkMode ? "#1e293b" : "#ffffff",
+            border: `1px solid ${border}`,
+            borderRadius: "20px",
+            width: "100%",
+            maxWidth: "680px",
+            maxHeight: "85vh",
+            display: "flex",
+            flexDirection: "column",
+            boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)",
+            overflow: "hidden"
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: "18px 24px",
+              borderBottom: `1px solid ${border}`,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center"
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700, color: textPrimary, display: "flex", alignItems: "center", gap: "8px" }}>
+                  <FaInbox style={{ color: "#2563eb" }} /> Online QR Admission Applications
+                </h3>
+                <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: textMuted }}>
+                  Click "Fill Form" on any student to auto-populate their application details
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRequestsModal(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: textMuted,
+                  cursor: "pointer",
+                  fontSize: "18px",
+                  padding: "4px"
+                }}
+              >
+                <FaTimes />
+              </button>
+            </div>
+
+            {/* Modal List */}
+            <div style={{ padding: "16px 24px", overflowY: "auto", flex: 1 }}>
+              {pendingRequests.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "40px 0", color: textMuted }}>
+                  No pending online admission requests at this moment.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {pendingRequests.map((req) => (
+                    <div
+                      key={req.id}
+                      style={{
+                        background: darkMode ? "rgba(255,255,255,0.03)" : "#f8fafc",
+                        border: `1px solid ${border}`,
+                        borderRadius: "14px",
+                        padding: "16px",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        gap: "12px"
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                          <span style={{ fontSize: "15px", fontWeight: 700, color: textPrimary }}>
+                            {req.full_name}
+                          </span>
+                          <span style={{
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            padding: "2px 8px",
+                            borderRadius: "10px",
+                            background: "rgba(37, 99, 235, 0.1)",
+                            color: "#2563eb"
+                          }}>
+                            {req.gender}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: "13px", color: textMuted, display: "flex", gap: "14px", flexWrap: "wrap" }}>
+                          <span>📱 {req.mobile}</span>
+                          {req.email && <span>✉️ {req.email}</span>}
+                          {req.address && <span>📍 {req.address}</span>}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                        <button
+                          type="button"
+                          onClick={() => handleLoadRequest(req)}
+                          style={{
+                            background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "8px",
+                            padding: "8px 14px",
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            boxShadow: "0 2px 6px rgba(37, 99, 235, 0.3)"
+                          }}
+                        >
+                          Fill Form & Admit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleRejectRequest(req.id, e)}
+                          style={{
+                            background: "rgba(239, 68, 68, 0.1)",
+                            color: "#dc2626",
+                            border: "1px solid rgba(239, 68, 68, 0.2)",
+                            borderRadius: "8px",
+                            padding: "8px 10px",
+                            fontSize: "12px",
+                            cursor: "pointer"
+                          }}
+                          title="Reject / Remove"
+                        >
+                          <FaTrash />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

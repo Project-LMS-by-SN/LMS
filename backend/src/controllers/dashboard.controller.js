@@ -61,7 +61,6 @@ const getDashboardStats = async (req, res) => {
       mongoClient.student.count({ where: { accountStatus: { in: ["INACTIVE", "DISABLED"] }, deletedAt: null, branchId } }),
       mongoClient.studentValidity.count({
         where: {
-          startDate: { lte: todayEnd },
           endDate: { gte: todayStart },
           student: { deletedAt: null, accountStatus: "ACTIVE", branchId },
         },
@@ -550,7 +549,7 @@ const getStudentsByMetric = async (req, res) => {
 
     if (metric === "total_students") {
       students = await mongoClient.student.findMany({
-        where: { accountStatus: "ACTIVE", deletedAt: null, branchId },
+        where: { deletedAt: null, branchId },
         include: {
           validities: {
             select: {
@@ -561,26 +560,21 @@ const getStudentsByMetric = async (req, res) => {
         orderBy: { fullName: "asc" },
       });
     } else if (metric === "active_students") {
-      const validities = await mongoClient.studentValidity.findMany({
+      students = await mongoClient.student.findMany({
         where: {
-          startDate: { lte: todayEnd },
-          endDate: { gte: todayStart },
-          student: { deletedAt: null, accountStatus: "ACTIVE", branchId },
+          accountStatus: "ACTIVE",
+          deletedAt: null,
+          branchId,
         },
         include: {
-          student: {
-            include: {
-              validities: {
-                select: {
-                  accessType: true,
-                },
-              },
+          validities: {
+            select: {
+              accessType: true,
             },
           },
         },
-        orderBy: { student: { fullName: "asc" } },
+        orderBy: { fullName: "asc" },
       });
-      students = validities.map((v) => v.student).filter(Boolean);
     } else if (metric === "inactive") {
       students = await mongoClient.student.findMany({
         where: { accountStatus: { in: ["INACTIVE", "DISABLED"] }, deletedAt: null, branchId },

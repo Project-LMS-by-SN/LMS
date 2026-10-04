@@ -309,7 +309,7 @@ const Dashboard = () => {
 
       <section className="stats-grid dashboard-stats">
         {statsCards.map((card, i) => {
-          const isClickable = ["total_students", "active_students", "inactive", "expiring_soon", "today_present", "unpaid"].includes(card.key);
+          const isClickable = ["total_students", "active_students", "suspended", "inactive", "expiring_soon", "today_present", "unpaid"].includes(card.key);
           return (
             <div 
               className="stats-card" 

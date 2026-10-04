@@ -66,10 +66,10 @@ const createExpense = async (req, res) => {
 
     const { category, description, date, amount } = req.body;
 
-    if (!category || !description || !date || amount === undefined) {
+    if (!category || !date || amount === undefined) {
       return res.status(400).json({
         success: false,
-        message: "category, description, date, and amount are required",
+        message: "category, date, and amount are required",
       });
     }
 
@@ -84,7 +84,7 @@ const createExpense = async (req, res) => {
     const expense = await mongoClient.expense.create({
       data: {
         category,
-        description,
+        description: description ? description.trim() : "",
         date: new Date(date),
         amount: amountFloat,
         branchId: req.user.branchId,

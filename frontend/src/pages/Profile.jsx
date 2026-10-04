@@ -192,33 +192,35 @@ const Profile = () => {
       <div className="page-title-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <h1>My Profile</h1>
-          <p>Manage and view your administrator profile & library details</p>
+          <p>{profile?.role === "STAFF" ? "View your staff profile & library details" : "Manage and view your administrator profile & library details"}</p>
         </div>
-        {!isEditing ? (
-          <button
-            className="primary-btn"
-            onClick={() => setIsEditing(true)}
-            style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 18px", fontSize: "14px" }}
-          >
-            <FaEdit /> Edit Profile
-          </button>
-        ) : (
-          <button
-            className="secondary-btn"
-            onClick={() => {
-              setIsEditing(false);
-              setFormData({
-                library_name: profile?.library_name || "",
-                name: profile?.name || "",
-                email: profile?.email || "",
-                contact: profile?.contact || "",
-                address: profile?.address || "",
-              });
-            }}
-            style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 18px", fontSize: "14px" }}
-          >
-            <FaTimes /> Cancel Editing
-          </button>
+        {profile?.role !== "STAFF" && (
+          !isEditing ? (
+            <button
+              className="primary-btn"
+              onClick={() => setIsEditing(true)}
+              style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 18px", fontSize: "14px" }}
+            >
+              <FaEdit /> Edit Profile
+            </button>
+          ) : (
+            <button
+              className="secondary-btn"
+              onClick={() => {
+                setIsEditing(false);
+                setFormData({
+                  library_name: profile?.library_name || "",
+                  name: profile?.name || "",
+                  email: profile?.email || "",
+                  contact: profile?.contact || "",
+                  address: profile?.address || "",
+                });
+              }}
+              style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 18px", fontSize: "14px" }}
+            >
+              <FaTimes /> Cancel Editing
+            </button>
+          )
         )}
       </div>
 
@@ -252,7 +254,7 @@ const Profile = () => {
             <FaUser />
           </div>
           <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: "22px", color: textPrimary, margin: 0 }}>{profile?.name || "Admin User"}</h2>
+            <h2 style={{ fontSize: "22px", color: textPrimary, margin: 0 }}>{profile?.name || (profile?.role === "STAFF" ? "Staff User" : "Admin User")}</h2>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px", flexWrap: "wrap" }}>
               <span style={{ fontSize: "14px", color: "#2563eb", fontWeight: 600 }}>
                 {profile?.library_name || "Libraryly Main Branch"}
@@ -273,9 +275,21 @@ const Profile = () => {
                 </span>
               )}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "6px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "6px", flexWrap: "wrap" }}>
               <span className="status-badge" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
                 <FaCheckCircle style={{ fontSize: "10px" }} /> Active Session
+              </span>
+              <span style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                padding: "2px 8px",
+                borderRadius: "6px",
+                background: profile?.role === "STAFF" ? "rgba(99, 102, 241, 0.15)" : "rgba(34, 197, 94, 0.15)",
+                color: profile?.role === "STAFF" ? "#6366f1" : "#16a34a",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px"
+              }}>
+                {profile?.role === "STAFF" ? "Staff Account" : "Owner / Admin"}
               </span>
             </div>
           </div>
@@ -390,10 +404,10 @@ const Profile = () => {
               )}
             </div>
 
-            {/* 2. Owner Name */}
+            {/* 2. User Name */}
             <div className="profile-info-group">
               <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, color: textMuted, marginBottom: "6px" }}>
-                <FaUser style={{ color: "#3b82f6" }} /> Owner / Admin Name
+                <FaUser style={{ color: "#3b82f6" }} /> {profile?.role === "STAFF" ? "Staff Name" : "Owner / Admin Name"}
               </label>
               {isEditing ? (
                 <input
@@ -401,19 +415,19 @@ const Profile = () => {
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
-                  placeholder="Enter owner full name"
+                  placeholder="Enter full name"
                   style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: inputBg, color: textPrimary, fontSize: "14px", outline: "none" }}
                   required
                 />
               ) : (
-                <div style={{ fontSize: "15px", fontWeight: 600, color: textPrimary }}>{profile?.name || "N/A"}</div>
+                <div style={{ fontSize: "15px", fontWeight: 600, color: textPrimary }}>{profile?.name || (profile?.role === "STAFF" ? "Staff Member" : "N/A")}</div>
               )}
             </div>
 
-            {/* 3. Email ID (Editable) */}
+            {/* 3. Email ID */}
             <div className="profile-info-group">
               <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, color: textMuted, marginBottom: "6px" }}>
-                <FaEnvelope style={{ color: "#3b82f6" }} /> Email Address (Editable)
+                <FaEnvelope style={{ color: "#3b82f6" }} /> {profile?.role === "STAFF" ? "Staff Email Address" : "Email Address"}
               </label>
               {isEditing ? (
                 <input
@@ -430,29 +444,31 @@ const Profile = () => {
               )}
             </div>
 
-            {/* 4. Contact / Phone (Editable) */}
-            <div className="profile-info-group">
-              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, color: textMuted, marginBottom: "6px" }}>
-                <FaPhone style={{ color: "#3b82f6" }} /> Contact / Phone Number (Editable)
-              </label>
-              {isEditing ? (
-                <input
-                  type="tel"
-                  name="contact"
-                  value={formData.contact}
-                  onChange={handleChange}
-                  placeholder="Enter phone/contact number"
-                  style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: inputBg, color: textPrimary, fontSize: "14px", outline: "none" }}
-                />
-              ) : (
-                <div style={{ fontSize: "15px", fontWeight: 600, color: textPrimary }}>{profile?.contact || "Not Provided"}</div>
-              )}
-            </div>
+            {/* 4. Contact / Phone (Only for OWNER, hidden for STAFF) */}
+            {profile?.role !== "STAFF" && (
+              <div className="profile-info-group">
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, color: textMuted, marginBottom: "6px" }}>
+                  <FaPhone style={{ color: "#3b82f6" }} /> Contact / Phone Number
+                </label>
+                {isEditing ? (
+                  <input
+                    type="tel"
+                    name="contact"
+                    value={formData.contact}
+                    onChange={handleChange}
+                    placeholder="Enter phone/contact number"
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: inputBg, color: textPrimary, fontSize: "14px", outline: "none" }}
+                  />
+                ) : (
+                  <div style={{ fontSize: "15px", fontWeight: 600, color: textPrimary }}>{profile?.contact || "Not Provided"}</div>
+                )}
+              </div>
+            )}
 
             {/* 5. Address (Editable) */}
             <div className="profile-info-group">
               <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, color: textMuted, marginBottom: "6px" }}>
-                <FaMapMarkerAlt style={{ color: "#3b82f6" }} /> Library Address (Editable)
+                <FaMapMarkerAlt style={{ color: "#3b82f6" }} /> Library Address 
               </label>
               {isEditing ? (
                 <input
@@ -474,8 +490,12 @@ const Profile = () => {
                 <FaUserShield style={{ color: "#3b82f6" }} /> Access Role
               </label>
               <div style={{ fontSize: "14px" }}>
-                <span className="status-badge" style={{ background: "rgba(59,130,246,0.15)", color: "#2563eb", fontWeight: 700 }}>
-                  {profile?.role || "OWNER"}
+                <span className="status-badge" style={{
+                  background: profile?.role === "STAFF" ? "rgba(99, 102, 241, 0.15)" : "rgba(59, 130, 246, 0.15)",
+                  color: profile?.role === "STAFF" ? "#6366f1" : "#2563eb",
+                  fontWeight: 700
+                }}>
+                  {profile?.role === "STAFF" ? "Staff" : "Owner / Admin"}
                 </span>
               </div>
             </div>
@@ -569,144 +589,146 @@ const Profile = () => {
         </form>
       </div>
 
-      {/* Change Password Security Card */}
-      <div className="form-card" style={{ maxWidth: "650px", margin: "24px auto 40px", padding: "24px", border: `1px solid ${cardBorder}` }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: showPwSection ? "20px" : "0" }}>
-          <div>
-            <h3 style={{ fontSize: "16px", fontWeight: 700, color: textPrimary, margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
-              <FaLock style={{ color: "#eab308" }} /> Password & Security
-            </h3>
-            <p style={{ fontSize: "13px", color: textMuted, margin: "2px 0 0 0" }}>Update your account password securely</p>
+      {/* Change Password Security Card — Only for Owners / Non-Staff */}
+      {profile?.role !== "STAFF" && (
+        <div className="form-card" style={{ maxWidth: "650px", margin: "24px auto 40px", padding: "24px", border: `1px solid ${cardBorder}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: showPwSection ? "20px" : "0" }}>
+            <div>
+              <h3 style={{ fontSize: "16px", fontWeight: 700, color: textPrimary, margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                <FaLock style={{ color: "#eab308" }} /> Password & Security
+              </h3>
+              <p style={{ fontSize: "13px", color: textMuted, margin: "2px 0 0 0" }}>Update your account password securely</p>
+            </div>
+            <button
+              type="button"
+              className={showPwSection ? "secondary-btn" : "primary-btn"}
+              onClick={() => {
+                setShowPwSection(!showPwSection);
+                setPwMsg(null);
+                setOldPassword("");
+                setNewPassword("");
+                setConfirmPassword("");
+              }}
+              style={{ fontSize: "13px", padding: "8px 16px", display: "flex", alignItems: "center", gap: "6px" }}
+            >
+              {showPwSection ? <FaTimes /> : <FaKey />} {showPwSection ? "Cancel" : "Change Password"}
+            </button>
           </div>
-          <button
-            type="button"
-            className={showPwSection ? "secondary-btn" : "primary-btn"}
-            onClick={() => {
-              setShowPwSection(!showPwSection);
-              setPwMsg(null);
-              setOldPassword("");
-              setNewPassword("");
-              setConfirmPassword("");
-            }}
-            style={{ fontSize: "13px", padding: "8px 16px", display: "flex", alignItems: "center", gap: "6px" }}
-          >
-            {showPwSection ? <FaTimes /> : <FaKey />} {showPwSection ? "Cancel" : "Change Password"}
-          </button>
-        </div>
 
-        {showPwSection && (
-          <form onSubmit={handleChangePassword} style={{ borderTop: `1px solid ${cardBorder}`, paddingTop: "20px" }}>
-            {pwMsg && (
-              <div style={{
-                padding: "10px 14px",
-                borderRadius: "8px",
-                marginBottom: "16px",
-                fontSize: "13px",
-                fontWeight: 600,
-                background: pwMsg.type === "success" ? (darkMode ? "rgba(34,197,94,0.15)" : "#f0fdf4") : (darkMode ? "rgba(220,38,38,0.15)" : "#fef2f2"),
-                color: pwMsg.type === "success" ? "#16a34a" : "#dc2626",
-                border: `1px solid ${pwMsg.type === "success" ? "#bbf7d0" : "#fecaca"}`,
-              }}>
-                {pwMsg.text}
-              </div>
-            )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
-              <div>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: textMuted, display: "block", marginBottom: "6px" }}>Current Password</label>
-                <div style={{ position: "relative", width: "100%" }}>
-                  <input
-                    type={showOldPw ? "text" : "password"}
-                    value={oldPassword}
-                    onChange={(e) => setOldPassword(e.target.value)}
-                    placeholder="Enter current password"
-                    required
-                    style={{ width: "100%", padding: "10px 40px 10px 12px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: inputBg, color: textPrimary, fontSize: "14px" }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowOldPw(!showOldPw)}
-                    style={{
-                      position: "absolute", right: "12px", top: "50%",
-                      transform: "translateY(-50%)", background: "none",
-                      border: "none", cursor: "pointer", fontSize: "15px",
-                      color: textMuted, padding: "0",
-                      display: "flex", alignItems: "center", justifyContent: "center"
-                    }}
-                    title={showOldPw ? "Hide password" : "Show password"}
-                  >
-                    {showOldPw ? <FaEyeSlash /> : <FaEye />}
-                  </button>
+          {showPwSection && (
+            <form onSubmit={handleChangePassword} style={{ borderTop: `1px solid ${cardBorder}`, paddingTop: "20px" }}>
+              {pwMsg && (
+                <div style={{
+                  padding: "10px 14px",
+                  borderRadius: "8px",
+                  marginBottom: "16px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  background: pwMsg.type === "success" ? (darkMode ? "rgba(34,197,94,0.15)" : "#f0fdf4") : (darkMode ? "rgba(220,38,38,0.15)" : "#fef2f2"),
+                  color: pwMsg.type === "success" ? "#16a34a" : "#dc2626",
+                  border: `1px solid ${pwMsg.type === "success" ? "#bbf7d0" : "#fecaca"}`,
+                }}>
+                  {pwMsg.text}
+                </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "13px", fontWeight: 600, color: textMuted, display: "block", marginBottom: "6px" }}>Current Password</label>
+                  <div style={{ position: "relative", width: "100%" }}>
+                    <input
+                      type={showOldPw ? "text" : "password"}
+                      value={oldPassword}
+                      onChange={(e) => setOldPassword(e.target.value)}
+                      placeholder="Enter current password"
+                      required
+                      style={{ width: "100%", padding: "10px 40px 10px 12px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: inputBg, color: textPrimary, fontSize: "14px" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowOldPw(!showOldPw)}
+                      style={{
+                        position: "absolute", right: "12px", top: "50%",
+                        transform: "translateY(-50%)", background: "none",
+                        border: "none", cursor: "pointer", fontSize: "15px",
+                        color: textMuted, padding: "0",
+                        display: "flex", alignItems: "center", justifyContent: "center"
+                      }}
+                      title={showOldPw ? "Hide password" : "Show password"}
+                    >
+                      {showOldPw ? <FaEyeSlash /> : <FaEye />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontSize: "13px", fontWeight: 600, color: textMuted, display: "block", marginBottom: "6px" }}>New Password</label>
+                  <div style={{ position: "relative", width: "100%" }}>
+                    <input
+                      type={showNewPw ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Min 8 characters & 1 number"
+                      required
+                      minLength={8}
+                      style={{ width: "100%", padding: "10px 40px 10px 12px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: inputBg, color: textPrimary, fontSize: "14px" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPw(!showNewPw)}
+                      style={{
+                        position: "absolute", right: "12px", top: "50%",
+                        transform: "translateY(-50%)", background: "none",
+                        border: "none", cursor: "pointer", fontSize: "15px",
+                        color: textMuted, padding: "0",
+                        display: "flex", alignItems: "center", justifyContent: "center"
+                      }}
+                      title={showNewPw ? "Hide password" : "Show password"}
+                    >
+                      {showNewPw ? <FaEyeSlash /> : <FaEye />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontSize: "13px", fontWeight: 600, color: textMuted, display: "block", marginBottom: "6px" }}>Confirm New Password</label>
+                  <div style={{ position: "relative", width: "100%" }}>
+                    <input
+                      type={showConfirmPw ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Re-enter new password"
+                      required
+                      style={{ width: "100%", padding: "10px 40px 10px 12px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: inputBg, color: textPrimary, fontSize: "14px" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPw(!showConfirmPw)}
+                      style={{
+                        position: "absolute", right: "12px", top: "50%",
+                        transform: "translateY(-50%)", background: "none",
+                        border: "none", cursor: "pointer", fontSize: "15px",
+                        color: textMuted, padding: "0",
+                        display: "flex", alignItems: "center", justifyContent: "center"
+                      }}
+                      title={showConfirmPw ? "Hide password" : "Show password"}
+                    >
+                      {showConfirmPw ? <FaEyeSlash /> : <FaEye />}
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: textMuted, display: "block", marginBottom: "6px" }}>New Password</label>
-                <div style={{ position: "relative", width: "100%" }}>
-                  <input
-                    type={showNewPw ? "text" : "password"}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Min 8 characters & 1 number"
-                    required
-                    minLength={8}
-                    style={{ width: "100%", padding: "10px 40px 10px 12px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: inputBg, color: textPrimary, fontSize: "14px" }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowNewPw(!showNewPw)}
-                    style={{
-                      position: "absolute", right: "12px", top: "50%",
-                      transform: "translateY(-50%)", background: "none",
-                      border: "none", cursor: "pointer", fontSize: "15px",
-                      color: textMuted, padding: "0",
-                      display: "flex", alignItems: "center", justifyContent: "center"
-                    }}
-                    title={showNewPw ? "Hide password" : "Show password"}
-                  >
-                    {showNewPw ? <FaEyeSlash /> : <FaEye />}
-                  </button>
-                </div>
+              <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="submit"
+                  className="primary-btn"
+                  disabled={pwLoading}
+                  style={{ padding: "10px 24px", fontSize: "14px", display: "flex", alignItems: "center", gap: "8px" }}
+                >
+                  <FaLock /> {pwLoading ? "Updating Password..." : "Update Password"}
+                </button>
               </div>
-              <div>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: textMuted, display: "block", marginBottom: "6px" }}>Confirm New Password</label>
-                <div style={{ position: "relative", width: "100%" }}>
-                  <input
-                    type={showConfirmPw ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter new password"
-                    required
-                    style={{ width: "100%", padding: "10px 40px 10px 12px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: inputBg, color: textPrimary, fontSize: "14px" }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPw(!showConfirmPw)}
-                    style={{
-                      position: "absolute", right: "12px", top: "50%",
-                      transform: "translateY(-50%)", background: "none",
-                      border: "none", cursor: "pointer", fontSize: "15px",
-                      color: textMuted, padding: "0",
-                      display: "flex", alignItems: "center", justifyContent: "center"
-                    }}
-                    title={showConfirmPw ? "Hide password" : "Show password"}
-                  >
-                    {showConfirmPw ? <FaEyeSlash /> : <FaEye />}
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end" }}>
-              <button
-                type="submit"
-                className="primary-btn"
-                disabled={pwLoading}
-                style={{ padding: "10px 24px", fontSize: "14px", display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <FaLock /> {pwLoading ? "Updating Password..." : "Update Password"}
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
+            </form>
+          )}
+        </div>
+      )}
     </div>
   );
 };

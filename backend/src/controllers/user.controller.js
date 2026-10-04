@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const mongoClient = require("../config/mongoClient");
 const authUtil = require("../utils/auth");
 const { generateUniqueLibraryCode, ensureAllBranchesHaveCode } = require("../utils/libraryCode");
+const { generateSecureToken, ensureAllBranchesHaveTokens } = require("../utils/branchTokens");
 const { Resend } = require("resend");
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const emailFrom = process.env.EMAIL_FROM || "noreply@dashurl.in";
@@ -216,6 +217,7 @@ const seedAdminUser = async () => {
         console.log(`💳 Default fee plans seeded for Branch ${bId}`);
       }
     }
+    await ensureAllBranchesHaveTokens(mongoClient);
     seedAdminUserRan = true;
   } catch (err) {
     console.error("❌ Failed to seed default branches / admin users:", err.message);
@@ -312,8 +314,19 @@ exports.login = async (req, res) => {
           if (cleanEmail !== "admin@admin.com" && duplicateUser && duplicateUser.email !== cleanEmail) {
             return res.status(403).json({
               success: false,
-              message: "Account limit/duplicate exploitation protection: Another library user has already registered from this computer/IP. Please use your existing account."
+              message: "An account has already been registered from this device/IP. Please log in using your existing account."
             });
+          }
+
+          // Free any stale deleted user holding this email so creation never fails with duplicate key error
+          const staleDeletedOwner = await mongoClient.user.findFirst({
+            where: { email: cleanEmail, deletedAt: { not: null } }
+          });
+          if (staleDeletedOwner) {
+            await mongoClient.user.update({
+              where: { id: staleDeletedOwner.id },
+              data: { email: `deleted_${Date.now()}_${staleDeletedOwner.email}` }
+            }).catch(() => {});
           }
 
           // Initialize owner account in the database
@@ -422,7 +435,7 @@ exports.login = async (req, res) => {
           });
           return res.status(401).json({
             success: false,
-            message: "Your email is not whitelisted. Please add your email to the OWNER_EMAILS variable in your backend .env file, then log in using the default owner password (we recommend changing it on first login)."
+            message: "Invalid credentials."
           });
         }
       } else {
@@ -678,7 +691,7 @@ exports.login = async (req, res) => {
     return res.json({
       success: true,
       token,
-      mustChangePassword: user.mustChangePassword,
+      mustChangePassword: user.role === "STAFF" ? false : user.mustChangePassword,
       user: {
         id: user.id,
         name: user.name,
@@ -827,6 +840,29 @@ exports.getProfile = async (req, res) => {
       }
     }
 
+    let admissionToken = user.branch ? user.branch.admissionToken : null;
+    let attendanceToken = user.branch ? user.branch.attendanceToken : null;
+    if (user.branch && (!admissionToken || !attendanceToken)) {
+      let needsBUpdate = false;
+      const bUpdate = {};
+      if (!admissionToken) {
+        admissionToken = generateSecureToken("adm");
+        bUpdate.admissionToken = admissionToken;
+        needsBUpdate = true;
+      }
+      if (!attendanceToken) {
+        attendanceToken = generateSecureToken("att");
+        bUpdate.attendanceToken = attendanceToken;
+        needsBUpdate = true;
+      }
+      if (needsBUpdate) {
+        await mongoClient.branch.update({
+          where: { id: user.branch.id },
+          data: bUpdate
+        });
+      }
+    }
+
     const responseData = {
       id: user.id,
       name: user.name,
@@ -838,16 +874,75 @@ exports.getProfile = async (req, res) => {
       pendingTier: user.pendingTier,
       pendingExpiryDays: user.pendingExpiryDays,
       createdAt: user.createdAt,
+      branchId: user.branch ? user.branch.id : (user.branchId || 1),
+      branch_id: user.branch ? user.branch.id : (user.branchId || 1),
       library_name: user.branch ? user.branch.name : "Libraryly Main Branch",
       library_code: libraryCode || "LB100001",
-      contact: user.branch ? user.branch.phone || "" : "",
+      contact: user.role === "STAFF" ? "" : (user.branch ? user.branch.phone || "" : ""),
       address: user.branch ? user.branch.address || "" : "",
+      admissionToken,
+      attendanceToken,
+      admission_token: admissionToken,
+      attendance_token: attendanceToken,
     };
 
     return res.status(200).json({ success: true, data: responseData });
   } catch (error) {
     console.error("Error fetching user profile:", error);
     return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+// GET /api/users/qr-info
+exports.getMyBranchQrInfo = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    const branchId = req.user.branchId || 1;
+    let branch = await mongoClient.branch.findFirst({ where: { id: branchId } });
+    if (!branch) {
+      branch = await mongoClient.branch.findFirst({ where: { id: 1 } });
+    }
+    if (!branch) {
+      return res.status(404).json({ success: false, message: "Branch not found" });
+    }
+
+    let { admissionToken, attendanceToken } = branch;
+    let needsUpdate = false;
+    const bUpdate = {};
+    if (!admissionToken || !admissionToken.startsWith("adm_")) {
+      admissionToken = generateSecureToken("adm");
+      bUpdate.admissionToken = admissionToken;
+      needsUpdate = true;
+    }
+    if (!attendanceToken || !attendanceToken.startsWith("att_")) {
+      attendanceToken = generateSecureToken("att");
+      bUpdate.attendanceToken = attendanceToken;
+      needsUpdate = true;
+    }
+    if (needsUpdate) {
+      await mongoClient.branch.update({
+        where: { id: branch.id },
+        data: bUpdate,
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        branchId: branch.id,
+        branchName: branch.name,
+        branchCode: branch.code,
+        address: branch.address,
+        phone: branch.phone,
+        admissionToken,
+        attendanceToken,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching branch QR info:", error);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -869,15 +964,35 @@ exports.updateProfile = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
+    if (existingUser.role === "STAFF") {
+      return res.status(403).json({ success: false, message: "Staff accounts are not permitted to edit profile information." });
+    }
+
     if (email && email.toLowerCase() !== existingUser.email.toLowerCase()) {
+      const cleanEmail = email.toLowerCase().trim();
       const emailExists = await mongoClient.user.findFirst({
         where: {
-          email: email.toLowerCase(),
-          id: { not: req.user.id }
+          email: cleanEmail,
+          id: { not: req.user.id },
+          deletedAt: null
         }
       });
       if (emailExists) {
         return res.status(400).json({ success: false, message: "Email is already in use by another account" });
+      }
+
+      // Free any stale deleted record holding this email so update succeeds cleanly
+      const staleDeleted = await mongoClient.user.findFirst({
+        where: {
+          email: cleanEmail,
+          deletedAt: { not: null }
+        }
+      });
+      if (staleDeleted) {
+        await mongoClient.user.update({
+          where: { id: staleDeleted.id },
+          data: { email: `deleted_${Date.now()}_${staleDeleted.email}` }
+        }).catch(() => {});
       }
     }
 
@@ -971,6 +1086,10 @@ exports.changePassword = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
+    if (user.role === "STAFF") {
+      return res.status(403).json({ success: false, message: "Staff accounts are not permitted to change passwords. Please contact the library owner." });
+    }
+
     // Verify current password hash or default password if they must change password
     const valid = authUtil.comparePassword(oldPassword, user.passwordHash);
     if (!valid) {
@@ -1036,12 +1155,19 @@ exports.deleteAccount = async (req, res) => {
       return res.status(401).json({ success: false, message: "Password is incorrect" });
     }
 
-    // Perform soft delete to preserve relations & audit trail
+    // Clean up active sessions
+    await mongoClient.userSession.deleteMany({
+      where: { userId: user.id }
+    }).catch(() => {});
+
+    // Perform soft delete and archive email so it is immediately free for future re-registration
     await mongoClient.user.update({
       where: { id: user.id },
       data: {
+        email: `deleted_${Date.now()}_${user.email}`,
         deletedAt: new Date(),
         isActive: false,
+        isLoggedIn: false
       },
     });
 
@@ -1217,21 +1343,33 @@ exports.createStaff = async (req, res) => {
       });
     }
 
+    const cleanEmail = email.toLowerCase().trim();
     const existingUser = await mongoClient.user.findFirst({
-      where: { email: email.toLowerCase().trim() }
+      where: { email: cleanEmail, deletedAt: null }
     });
     if (existingUser) {
       return res.status(409).json({ success: false, message: "Email already registered" });
     }
 
+    // If an inactive / deleted record still holds this exact email, archive its email so creation never fails
+    const staleDeletedUser = await mongoClient.user.findFirst({
+      where: { email: cleanEmail, deletedAt: { not: null } }
+    });
+    if (staleDeletedUser) {
+      await mongoClient.user.update({
+        where: { id: staleDeletedUser.id },
+        data: { email: `deleted_${Date.now()}_${staleDeletedUser.email}` }
+      }).catch(() => {});
+    }
+
     const newStaff = await mongoClient.user.create({
       data: {
         name,
-        email: email.toLowerCase().trim(),
+        email: cleanEmail,
         passwordHash: authUtil.hashPassword(password),
         role: "STAFF",
         isActive: true,
-        mustChangePassword: true,
+        mustChangePassword: false,
         branchId: owner.branchId || 1,
         subscriptionTier: owner.subscriptionTier
       }
@@ -1278,9 +1416,20 @@ exports.deleteStaff = async (req, res) => {
       return res.status(404).json({ success: false, message: "Staff member not found" });
     }
 
+    // Clean up active sessions
+    await mongoClient.userSession.deleteMany({
+      where: { userId: staffId }
+    }).catch(() => {});
+
+    // Soft delete and archive the email address so the email is immediately free to be reused
     await mongoClient.user.update({
       where: { id: staffId },
-      data: { deletedAt: new Date(), isActive: false }
+      data: {
+        email: `deleted_${Date.now()}_${staff.email}`,
+        deletedAt: new Date(),
+        isActive: false,
+        isLoggedIn: false
+      }
     });
 
     return res.json({ success: true, message: "Staff member deleted successfully" });

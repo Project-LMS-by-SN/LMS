@@ -1,10 +1,31 @@
 import React, { useState, useEffect } from "react";
 import api from "../api/axios";
-import { FaMoon, FaSun, FaLock, FaTrash, FaShieldAlt, FaInfoCircle, FaUsers, FaCalendarAlt, FaExclamationTriangle, FaClock, FaEye, FaEyeSlash } from "react-icons/fa";
+import {
+  FaMoon,
+  FaSun,
+  FaLock,
+  FaTrash,
+  FaShieldAlt,
+  FaInfoCircle,
+  FaUsers,
+  FaCalendarAlt,
+  FaExclamationTriangle,
+  FaEye,
+  FaEyeSlash,
+  FaQrcode,
+  FaDownload,
+  FaCopy,
+  FaCheck,
+  FaExternalLinkAlt,
+  FaUserGraduate,
+  FaUserCheck,
+} from "react-icons/fa";
+import QRCodeLib from "qrcode";
+import { downloadQrPoster } from "../utils/qrPoster";
 import { useTheme } from "../context/ThemeContext";
 
 const Settings = () => {
-  const { darkMode, toggleDarkMode, timeFormat, toggleTimeFormat } = useTheme();
+  const { darkMode, toggleDarkMode } = useTheme();
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -33,6 +54,14 @@ const Settings = () => {
   const [staffNewPw, setStaffNewPw] = useState("");
   const [staffPwLoading, setStaffPwLoading] = useState(false);
   const [staffPwMsg, setStaffPwMsg] = useState(null);
+
+  // QR Code states
+  const [qrInfo, setQrInfo] = useState(null);
+  const [admissionQrData, setAdmissionQrData] = useState("");
+  const [attendanceQrData, setAttendanceQrData] = useState("");
+  const [copiedAdmission, setCopiedAdmission] = useState(false);
+  const [copiedAttendance, setCopiedAttendance] = useState(false);
+  const [qrLoading, setQrLoading] = useState(false);
 
   const initialUser = (() => {
     try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); }
@@ -94,9 +123,106 @@ const Settings = () => {
       } catch (err) {
         console.error("Failed to load profile in settings:", err);
       }
+
+      // Fetch QR Code data
+      try {
+        setQrLoading(true);
+        const qrRes = await api.get("/users/qr-info");
+        if (qrRes.data?.success) {
+          const qData = qrRes.data.data;
+          setQrInfo(qData);
+          const baseUrl = window.location.origin;
+          if (qData.admissionToken) {
+            const admUrl = `${baseUrl}/public-admission?token=${qData.admissionToken}`;
+            QRCodeLib.toDataURL(admUrl, {
+              width: 320,
+              margin: 2,
+              color: { dark: "#0f172a", light: "#ffffff" },
+              errorCorrectionLevel: "H",
+            }).then(url => setAdmissionQrData(url)).catch(() => {});
+          }
+          if (qData.attendanceToken) {
+            const attUrl = `${baseUrl}/public-attendance?token=${qData.attendanceToken}`;
+            QRCodeLib.toDataURL(attUrl, {
+              width: 320,
+              margin: 2,
+              color: { dark: "#0f172a", light: "#ffffff" },
+              errorCorrectionLevel: "H",
+            }).then(url => setAttendanceQrData(url)).catch(() => {});
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load QR info in settings:", err);
+      } finally {
+        setQrLoading(false);
+      }
     };
     fetchStatsAndProfile();
   }, []);
+
+  const handleDownloadAdmissionPNG = () => {
+    if (!admissionQrData) return;
+    const link = document.createElement("a");
+    link.href = admissionQrData;
+    link.download = `${(qrInfo?.branchName || "library").toLowerCase().replace(/\s+/g, "-")}-admission-qr.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDownloadAdmissionPoster = async () => {
+    if (!qrInfo?.admissionToken) return;
+    const baseUrl = window.location.origin;
+    await downloadQrPoster({
+      type: "ADMISSION",
+      libraryName: qrInfo.branchName || profile?.library_name || "Library",
+      libraryCode: qrInfo.branchCode || profile?.library_code || "",
+      libraryAddress: qrInfo.address || profile?.address || "",
+      libraryPhone: qrInfo.phone || profile?.contact || "",
+      qrUrl: `${baseUrl}/public-admission?token=${qrInfo.admissionToken}`,
+      fileName: `${(qrInfo.branchName || "library").toLowerCase().replace(/\s+/g, "-")}-admission-poster.png`,
+    });
+  };
+
+  const handleCopyAdmissionLink = () => {
+    if (!qrInfo?.admissionToken) return;
+    const url = `${window.location.origin}/public-admission?token=${qrInfo.admissionToken}`;
+    navigator.clipboard.writeText(url);
+    setCopiedAdmission(true);
+    setTimeout(() => setCopiedAdmission(false), 2000);
+  };
+
+  const handleDownloadAttendancePNG = () => {
+    if (!attendanceQrData) return;
+    const link = document.createElement("a");
+    link.href = attendanceQrData;
+    link.download = `${(qrInfo?.branchName || "library").toLowerCase().replace(/\s+/g, "-")}-attendance-qr.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDownloadAttendancePoster = async () => {
+    if (!qrInfo?.attendanceToken) return;
+    const baseUrl = window.location.origin;
+    await downloadQrPoster({
+      type: "ATTENDANCE",
+      libraryName: qrInfo.branchName || profile?.library_name || "Library",
+      libraryCode: qrInfo.branchCode || profile?.library_code || "",
+      libraryAddress: qrInfo.address || profile?.address || "",
+      libraryPhone: qrInfo.phone || profile?.contact || "",
+      qrUrl: `${baseUrl}/public-attendance?token=${qrInfo.attendanceToken}`,
+      fileName: `${(qrInfo.branchName || "library").toLowerCase().replace(/\s+/g, "-")}-attendance-poster.png`,
+    });
+  };
+
+  const handleCopyAttendanceLink = () => {
+    if (!qrInfo?.attendanceToken) return;
+    const url = `${window.location.origin}/public-attendance?token=${qrInfo.attendanceToken}`;
+    navigator.clipboard.writeText(url);
+    setCopiedAttendance(true);
+    setTimeout(() => setCopiedAttendance(false), 2000);
+  };
 
   const currentTier = profile.subscriptionTier || "FREE";
   const subscriptionExpiry = profile.subscriptionExpiry;
@@ -327,15 +453,16 @@ const Settings = () => {
         </div>
       </div>
 
-      {/* Dark Mode */}
+      {/* Dark / Light Mode */}
       <div className="form-card" style={{ borderColor: cardBorder }}>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-          <div style={iconBox("linear-gradient(135deg,#6366f1,#4f46e5)")}>
-            {darkMode ? <FaMoon /> : <FaSun />}
+          <div style={iconBox(darkMode ? "linear-gradient(135deg,#f59e0b,#d97706)" : "linear-gradient(135deg,#6366f1,#4f46e5)")}>
+            {darkMode ? <FaSun /> : <FaMoon />}
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: "16px", color: textPrimary }}>Dark Mode (Beta)</div>
-            <div style={{ fontSize: "13px", color: textSecondary, marginTop: "2px" }}>Toggle between light and dark appearance</div>
+            <div style={{ fontWeight: 600, fontSize: "16px", color: textPrimary }}>
+              {darkMode ? "Light Mode" : "Dark Mode"}
+            </div>
           </div>
           <button
             onClick={toggleDarkMode}
@@ -363,36 +490,6 @@ const Settings = () => {
                 boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
               }}
             />
-          </button>
-        </div>
-      </div>
-
-      {/* Time Format */}
-      <div className="form-card" style={{ borderColor: cardBorder }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-          <div style={iconBox("linear-gradient(135deg,#0ea5e9,#0284c7)")}>
-            <FaClock />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: "16px", color: textPrimary }}>Time Format</div>
-            <div style={{ fontSize: "13px", color: textSecondary, marginTop: "2px" }}>Choose between 12-hour (AM/PM) and 24-hour time display</div>
-          </div>
-          <button
-            type="button"
-            onClick={toggleTimeFormat}
-            style={{
-              padding: "8px 16px",
-              fontSize: "13px",
-              fontWeight: 700,
-              borderRadius: "10px",
-              background: "#0ea5e9",
-              color: "#fff",
-              border: "none",
-              cursor: "pointer",
-              boxShadow: "0 2px 6px rgba(14,165,233,0.3)"
-            }}
-          >
-            {timeFormat === "24hr" ? "24-Hour" : "12-Hour (AM/PM)"}
           </button>
         </div>
       </div>
@@ -509,6 +606,352 @@ const Settings = () => {
             </div>
           </div>
         </div>
+
+      {/* Library QR Codes & Posters */}
+      <div className="form-card" style={{ borderColor: cardBorder }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={iconBox("linear-gradient(135deg,#6366f1,#4f46e5)")}>
+              <FaQrcode />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: "17px", color: textPrimary }}>
+                Branch QR Codes & Posters
+              </div>
+              <div style={{ fontSize: "13px", color: textSecondary }}>
+                Download official entrance posters & unique registration QR codes for {qrInfo?.branchName || profile?.library_name || "your branch"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Two Panels: 1. Student Admission QR, 2. Daily Attendance QR */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+          gap: "24px"
+        }}>
+          {/* Card 1: Student Admission QR */}
+          <div style={{
+            background: darkMode ? "rgba(255,255,255,0.02)" : "#f8fafc",
+            border: `1px solid ${cardBorder}`,
+            borderRadius: "16px",
+            padding: "20px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            textAlign: "center"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", width: "100%", marginBottom: "12px" }}>
+              <div style={{
+                width: "38px", height: "38px", borderRadius: "10px",
+                background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
+                color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px"
+              }}>
+                <FaUserGraduate />
+              </div>
+              <div style={{ textAlign: "left" }}>
+                <h4 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: textPrimary }}>Student Admission QR</h4>
+                <p style={{ margin: 0, fontSize: "12px", color: textSecondary }}>For student self-registration desk</p>
+              </div>
+            </div>
+
+            {/* QR Image Container */}
+            <div style={{
+              background: "#ffffff",
+              padding: "16px",
+              borderRadius: "14px",
+              border: `2px solid ${cardBorder}`,
+              marginBottom: "16px",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}>
+              {admissionQrData ? (
+                <img src={admissionQrData} alt="Admission QR Code" style={{ width: "200px", height: "200px", display: "block" }} />
+              ) : (
+                <div style={{ width: "200px", height: "200px", display: "flex", alignItems: "center", justifyContent: "center", color: textSecondary, fontSize: "13px" }}>
+                  Generating QR...
+                </div>
+              )}
+            </div>
+
+            {/* Unique Link preview & copy */}
+            <div style={{
+              width: "100%",
+              background: darkMode ? "rgba(15, 23, 42, 0.6)" : "#ffffff",
+              border: `1px solid ${cardBorder}`,
+              borderRadius: "10px",
+              padding: "8px 12px",
+              marginBottom: "16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "8px",
+              boxSizing: "border-box"
+            }}>
+              <span style={{
+                fontSize: "12px",
+                color: textSecondary,
+                fontFamily: "monospace",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap"
+              }}>
+                .../public-admission?token={qrInfo?.admissionToken ? qrInfo.admissionToken.slice(0, 16) + "..." : "loading"}
+              </span>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button
+                  type="button"
+                  onClick={handleCopyAdmissionLink}
+                  style={{
+                    background: copiedAdmission ? "rgba(16, 185, 129, 0.15)" : (darkMode ? "#334155" : "#e2e8f0"),
+                    color: copiedAdmission ? "#10b981" : textPrimary,
+                    border: "none",
+                    borderRadius: "6px",
+                    padding: "4px 8px",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px"
+                  }}
+                  title="Copy Admission Link"
+                >
+                  {copiedAdmission ? <FaCheck /> : <FaCopy />} {copiedAdmission ? "Copied!" : "Copy"}
+                </button>
+                {qrInfo?.admissionToken && (
+                  <a
+                    href={`/public-admission?token=${qrInfo.admissionToken}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      background: darkMode ? "#334155" : "#e2e8f0",
+                      color: textPrimary,
+                      borderRadius: "6px",
+                      padding: "4px 8px",
+                      fontSize: "11px",
+                      display: "flex",
+                      alignItems: "center",
+                      textDecoration: "none"
+                    }}
+                    title="Open Admission Form in New Tab"
+                  >
+                    <FaExternalLinkAlt />
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* Buttons: Download Poster & Download QR */}
+            <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px" }}>
+              <button
+                type="button"
+                onClick={handleDownloadAdmissionPoster}
+                className="primary-btn"
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  borderRadius: "10px",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
+                  boxShadow: "0 4px 12px rgba(37, 99, 235, 0.3)"
+                }}
+              >
+                <FaDownload /> Download Admission Poster (PNG)
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadAdmissionPNG}
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  borderRadius: "8px",
+                  border: `1px solid ${cardBorder}`,
+                  background: "transparent",
+                  color: textPrimary,
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px"
+                }}
+              >
+                <FaDownload /> Download QR Code Only (PNG)
+              </button>
+            </div>
+          </div>
+
+          {/* Card 2: Daily Attendance QR */}
+          <div style={{
+            background: darkMode ? "rgba(255,255,255,0.02)" : "#f8fafc",
+            border: `1px solid ${cardBorder}`,
+            borderRadius: "16px",
+            padding: "20px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            textAlign: "center"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", width: "100%", marginBottom: "12px" }}>
+              <div style={{
+                width: "38px", height: "38px", borderRadius: "10px",
+                background: "linear-gradient(135deg, #10b981, #059669)",
+                color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px"
+              }}>
+                <FaUserCheck />
+              </div>
+              <div style={{ textAlign: "left" }}>
+                <h4 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: textPrimary }}>Daily Attendance QR</h4>
+                <p style={{ margin: 0, fontSize: "12px", color: textSecondary }}>For library entrance gate / desk</p>
+              </div>
+            </div>
+
+            {/* QR Image Container */}
+            <div style={{
+              background: "#ffffff",
+              padding: "16px",
+              borderRadius: "14px",
+              border: `2px solid ${cardBorder}`,
+              marginBottom: "16px",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}>
+              {attendanceQrData ? (
+                <img src={attendanceQrData} alt="Attendance QR Code" style={{ width: "200px", height: "200px", display: "block" }} />
+              ) : (
+                <div style={{ width: "200px", height: "200px", display: "flex", alignItems: "center", justifyContent: "center", color: textSecondary, fontSize: "13px" }}>
+                  Generating QR...
+                </div>
+              )}
+            </div>
+
+            {/* Unique Link preview & copy */}
+            <div style={{
+              width: "100%",
+              background: darkMode ? "rgba(15, 23, 42, 0.6)" : "#ffffff",
+              border: `1px solid ${cardBorder}`,
+              borderRadius: "10px",
+              padding: "8px 12px",
+              marginBottom: "16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "8px",
+              boxSizing: "border-box"
+            }}>
+              <span style={{
+                fontSize: "12px",
+                color: textSecondary,
+                fontFamily: "monospace",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap"
+              }}>
+                .../public-attendance?token={qrInfo?.attendanceToken ? qrInfo.attendanceToken.slice(0, 16) + "..." : "loading"}
+              </span>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button
+                  type="button"
+                  onClick={handleCopyAttendanceLink}
+                  style={{
+                    background: copiedAttendance ? "rgba(16, 185, 129, 0.15)" : (darkMode ? "#334155" : "#e2e8f0"),
+                    color: copiedAttendance ? "#10b981" : textPrimary,
+                    border: "none",
+                    borderRadius: "6px",
+                    padding: "4px 8px",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px"
+                  }}
+                  title="Copy Attendance Link"
+                >
+                  {copiedAttendance ? <FaCheck /> : <FaCopy />} {copiedAttendance ? "Copied!" : "Copy"}
+                </button>
+                {qrInfo?.attendanceToken && (
+                  <a
+                    href={`/public-attendance?token=${qrInfo.attendanceToken}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      background: darkMode ? "#334155" : "#e2e8f0",
+                      color: textPrimary,
+                      borderRadius: "6px",
+                      padding: "4px 8px",
+                      fontSize: "11px",
+                      display: "flex",
+                      alignItems: "center",
+                      textDecoration: "none"
+                    }}
+                    title="Open Attendance Gate in New Tab"
+                  >
+                    <FaExternalLinkAlt />
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* Buttons: Download Poster & Download QR */}
+            <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px" }}>
+              <button
+                type="button"
+                onClick={handleDownloadAttendancePoster}
+                className="primary-btn"
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  borderRadius: "10px",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  background: "linear-gradient(135deg, #10b981, #059669)",
+                  boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)"
+                }}
+              >
+                <FaDownload /> Download Attendance Poster (PNG)
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadAttendancePNG}
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  borderRadius: "8px",
+                  border: `1px solid ${cardBorder}`,
+                  background: "transparent",
+                  color: textPrimary,
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px"
+                }}
+              >
+                <FaDownload /> Download QR Code Only (PNG)
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Change Password */}
       {profile.role === "OWNER" && (

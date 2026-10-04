@@ -9,15 +9,16 @@ import {
   FaPhoneAlt,
   FaEnvelope,
   FaWhatsapp,
-  FaUsers
+  FaUsers,
+  FaUserSlash,
 } from "react-icons/fa";
 import { useAdminData } from "../context/AdminDataContext";
 
 const StudentsDirectory = () => {
   const { data, stats } = useAdminData();
 
-  // Status Section Tab: 'ACTIVE' | 'INACTIVE' | 'DELETED'
-  const [statusTab, setStatusTab] = useState("ACTIVE");
+  // Status Section Tab: 'ALL' | 'ACTIVE' | 'SUSPENDED' | 'INACTIVE' | 'DELETED'
+  const [statusTab, setStatusTab] = useState("ALL");
 
   // Search States: Search by Student & Search by Library
   const [studentSearch, setStudentSearch] = useState("");
@@ -27,7 +28,19 @@ const StudentsDirectory = () => {
   const filteredStudents = useMemo(() => {
     return data.students.filter((s) => {
       // 1. Status Section match
-      if (s.status !== statusTab) return false;
+      if (statusTab === "ALL") {
+        // all student me active, inactive, or suspend student hona chahiye (excludes deleted)
+        if (s.status === "DELETED") return false;
+      } else if (statusTab === "ACTIVE") {
+        // active student me suspend or inactive student nahi dikhna chahiye
+        if (s.status !== "ACTIVE") return false;
+      } else if (statusTab === "SUSPENDED") {
+        if (s.status !== "SUSPENDED") return false;
+      } else if (statusTab === "INACTIVE") {
+        if (s.status !== "INACTIVE") return false;
+      } else if (statusTab === "DELETED") {
+        if (s.status !== "DELETED") return false;
+      }
 
       // 2. Dropdown Library Filter
       if (
@@ -61,7 +74,7 @@ const StudentsDirectory = () => {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      {/* Top Banner with 3 Status Section Tabs */}
+      {/* Top Banner with Status Section Tabs */}
       <div
         style={{
           backgroundColor: "#ffffff",
@@ -79,6 +92,27 @@ const StudentsDirectory = () => {
         {/* Status Selection Pills */}
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <button
+            onClick={() => setStatusTab("ALL")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "9px 16px",
+              borderRadius: "8px",
+              border: "none",
+              backgroundColor: statusTab === "ALL" ? "#2563eb" : "#f1f5f9",
+              color: statusTab === "ALL" ? "#ffffff" : "#475569",
+              fontWeight: "700",
+              fontSize: "13px",
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <FaUsers />
+            All Students ({stats.allStudents ?? (stats.activeStudents + (stats.suspendedStudents || 0) + stats.inactiveStudents)})
+          </button>
+
+          <button
             onClick={() => setStatusTab("ACTIVE")}
             style={{
               display: "flex",
@@ -92,10 +126,32 @@ const StudentsDirectory = () => {
               fontWeight: "700",
               fontSize: "13px",
               cursor: "pointer",
+              transition: "all 0.15s ease",
             }}
           >
             <FaUserCheck />
             Active Students ({stats.activeStudents})
+          </button>
+
+          <button
+            onClick={() => setStatusTab("SUSPENDED")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "9px 16px",
+              borderRadius: "8px",
+              border: "none",
+              backgroundColor: statusTab === "SUSPENDED" ? "#ea580c" : "#f1f5f9",
+              color: statusTab === "SUSPENDED" ? "#ffffff" : "#475569",
+              fontWeight: "700",
+              fontSize: "13px",
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <FaUserSlash />
+            Suspended ({stats.suspendedStudents || 0})
           </button>
 
           <button
@@ -112,6 +168,7 @@ const StudentsDirectory = () => {
               fontWeight: "700",
               fontSize: "13px",
               cursor: "pointer",
+              transition: "all 0.15s ease",
             }}
           >
             <FaUserClock />
@@ -132,6 +189,7 @@ const StudentsDirectory = () => {
               fontWeight: "700",
               fontSize: "13px",
               cursor: "pointer",
+              transition: "all 0.15s ease",
             }}
           >
             <FaUserTimes />
@@ -355,7 +413,7 @@ const StudentsDirectory = () => {
                         </div>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: "700", fontSize: "13px", color: "#0f172a", lineHeight: "1.3" }}>{stu.name}</div>
-                          <div style={{ fontSize: "10.5px", color: "#64748b", whiteSpace: "nowrap" }}>Plan: {stu.plan_name}</div>
+                          <div style={{ fontSize: "10.5px", color: "#64748b", whiteSpace: "nowrap" }}>Plan: {stu.plan_name} | Adm: {stu.admission_date || "—"}</div>
                         </div>
                       </div>
                     </td>
@@ -497,6 +555,28 @@ const StudentsDirectory = () => {
                           </span>
                           <div style={{ fontSize: "10.5px", color: "#64748b", marginTop: "1px", whiteSpace: "nowrap" }}>
                             {stu.validity_end}
+                          </div>
+                        </div>
+                      )}
+
+                      {stu.status === "SUSPENDED" && (
+                        <div>
+                          <span
+                            style={{
+                              display: "inline-block",
+                              padding: "2px 6px",
+                              borderRadius: "10px",
+                              fontSize: "10.5px",
+                              fontWeight: "700",
+                              backgroundColor: "#ffedd5",
+                              color: "#c2410c",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Suspended
+                          </span>
+                          <div style={{ fontSize: "10.5px", color: "#ea580c", marginTop: "1px", whiteSpace: "nowrap" }}>
+                            {stu.validity_end || "Plan Expired"}
                           </div>
                         </div>
                       )}

@@ -1,4 +1,5 @@
 const mongoClient = require("../config/mongoClient");
+const cache = require("../utils/cache");
 
 const parseSeatNumber = (seatNumber) => {
   const match = seatNumber.match(/^([A-Za-z]+)(\d+)$/);
@@ -39,11 +40,22 @@ const renumberAllSeats = async (branchId) => {
     );
   }
 
+  cache.invalidateBranch(branchId);
   return updates.length;
 };
 
 const getSeats = async (req, res) => {
   try {
+    const branchId = req.user.branchId || 1;
+    const cacheKey = `branch_${branchId}_seats`;
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.json({
+        success: true,
+        data: cached,
+      });
+    }
+
     const seats = await mongoClient.seat.findMany({
       where: { branchId: req.user.branchId },
       include: {
@@ -95,6 +107,8 @@ const getSeats = async (req, res) => {
         occupied_shifts: occupiedShifts.length > 0 ? occupiedShifts : [],
       };
     });
+
+    cache.set(cacheKey, formattedData, 25000);
 
     res.json({
       success: true,
@@ -166,6 +180,8 @@ const createSeat = async (req, res) => {
       },
     });
 
+    cache.invalidateBranch(branchId);
+
     res.status(201).json({
       success: true,
       message: "Seat created successfully",
@@ -214,6 +230,8 @@ const updateSeat = async (req, res) => {
         updatedAt: new Date(),
       },
     });
+
+    cache.invalidateBranch(req.user.branchId);
 
     res.json({
       success: true,
@@ -419,6 +437,8 @@ const toggleSeatActive = async (req, res) => {
       where: { id: seatId },
       data: { isActive: !seat.isActive, updatedAt: new Date() },
     });
+
+    cache.invalidateBranch(req.user.branchId);
 
     res.json({
       success: true,

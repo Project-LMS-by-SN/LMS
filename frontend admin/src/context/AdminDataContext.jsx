@@ -320,6 +320,23 @@ const INITIAL_STUDENTS = [
     inactive_reason: "Plan expired, fee not renewed",
   },
   {
+    id: "stu-3b",
+    name: "Manish Tiwari",
+    phone: "9811445566",
+    email: "manish.tiwari@gmail.com",
+    library_id: "lib-1",
+    library_code: "LIB-DEL-01",
+    library_name: "Apex Study & Reading Lounge",
+    seat_number: "C-08",
+    shift_name: "Evening (02:00 PM - 10:00 PM)",
+    plan_name: "Monthly Full Day",
+    fee_status: "PENDING",
+    admission_date: "2024-11-20",
+    validity_end: "2025-02-15",
+    status: "SUSPENDED",
+    inactive_reason: "Account suspended due to overdue fee",
+  },
+  {
     id: "stu-4",
     name: "Aditya Mishra",
     phone: "9711009988",
@@ -759,8 +776,10 @@ export const AdminDataProvider = ({ children }) => {
     const activeLibs = data.libraries.filter((l) => l.status === "ACTIVE").length;
     const totalStudents = data.students.length;
     const activeStudents = data.students.filter((s) => s.status === "ACTIVE").length;
+    const suspendedStudents = data.students.filter((s) => s.status === "SUSPENDED").length;
     const inactiveStudents = data.students.filter((s) => s.status === "INACTIVE").length;
     const deletedStudents = data.students.filter((s) => s.status === "DELETED").length;
+    const allStudents = data.students.filter((s) => s.status !== "DELETED").length;
     const totalSeats = data.libraries.reduce((acc, l) => acc + (Number(l.total_seats) || 0), 0);
     const activeCoupons = data.coupons.filter((c) => c.is_active).length;
     const notifs = data.notifications || [];
@@ -773,7 +792,9 @@ export const AdminDataProvider = ({ children }) => {
       totalLibs,
       activeLibs,
       totalStudents,
+      allStudents,
       activeStudents,
+      suspendedStudents,
       inactiveStudents,
       deletedStudents,
       totalSeats,

@@ -443,7 +443,7 @@ const DashboardLayout = () => {
               {isProfileDropdownOpen && (
                 <div className="profile-dropdown" style={{ minWidth: "220px", padding: "8px 0" }}>
                   <div style={{ padding: "12px 16px", borderBottom: "1px solid #e2e8f0", marginBottom: "4px" }}>
-                    <div style={{ fontWeight: 700, fontSize: "14px", color: "#1e293b" }}>{user.name || "Admin"}</div>
+                    <div style={{ fontWeight: 700, fontSize: "14px", color: "#1e293b" }}>{user.name || (user.role === "STAFF" ? "Staff Member" : "Admin")}</div>
                     <div style={{ fontSize: "12px", color: "#64748b" }}>{user.email || ""}</div>
                     {user.subscriptionTier && (
                       <div style={{
@@ -477,22 +477,26 @@ const DashboardLayout = () => {
                   >
                     <FaUser style={{ fontSize: "14px" }} /> Profile Page
                   </NavLink>
-                  <NavLink
-                    to={`${prefix}/settings`}
-                    onClick={() => { setIsProfileDropdownOpen(false); setIsSidebarOpen(false); }}
-                    className="profile-dropdown-item"
-                    style={{ display: "flex", alignItems: "center", gap: "10px" }}
-                  >
-                    <FaCog style={{ fontSize: "14px" }} /> Settings
-                  </NavLink>
-                  <NavLink
-                    to={`${prefix}/subscription`}
-                    onClick={() => { setIsProfileDropdownOpen(false); setIsSidebarOpen(false); }}
-                    className="profile-dropdown-item"
-                    style={{ display: "flex", alignItems: "center", gap: "10px" }}
-                  >
-                    <FaCreditCard style={{ fontSize: "14px" }} /> Subscription
-                  </NavLink>
+                  {user.role !== "STAFF" && (
+                    <NavLink
+                      to={`${prefix}/settings`}
+                      onClick={() => { setIsProfileDropdownOpen(false); setIsSidebarOpen(false); }}
+                      className="profile-dropdown-item"
+                      style={{ display: "flex", alignItems: "center", gap: "10px" }}
+                    >
+                      <FaCog style={{ fontSize: "14px" }} /> Settings
+                    </NavLink>
+                  )}
+                  {user.role !== "STAFF" && (
+                    <NavLink
+                      to={`${prefix}/subscription`}
+                      onClick={() => { setIsProfileDropdownOpen(false); setIsSidebarOpen(false); }}
+                      className="profile-dropdown-item"
+                      style={{ display: "flex", alignItems: "center", gap: "10px" }}
+                    >
+                      <FaCreditCard style={{ fontSize: "14px" }} /> Subscription
+                    </NavLink>
+                  )}
                   <button
                     onClick={handleLogout}
                     className="profile-dropdown-item logout-btn"

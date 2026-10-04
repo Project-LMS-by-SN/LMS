@@ -1,4 +1,5 @@
 const mongoClient = require("../config/mongoClient");
+const cache = require("../utils/cache");
 
 const formatShift = (s) => ({
   id: s.id,
@@ -20,14 +21,27 @@ const checkTimeOverlap = (start1, end1, start2, end2) => {
 
 const getShifts = async (req, res) => {
   try {
+    const branchId = req.user.branchId || 1;
+    const cacheKey = `branch_${branchId}_shifts`;
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.json({
+        success: true,
+        data: cached,
+      });
+    }
+
     const shifts = await mongoClient.shift.findMany({
       where: { branchId: req.user.branchId },
       orderBy: { id: "asc" },
     });
 
+    const formatted = shifts.map(formatShift);
+    cache.set(cacheKey, formatted, 30000);
+
     res.json({
       success: true,
-      data: shifts.map(formatShift),
+      data: formatted,
     });
   } catch (error) {
     res.status(500).json({
@@ -72,6 +86,8 @@ const createShift = async (req, res) => {
         branchId: req.user.branchId,
       },
     });
+
+    cache.invalidateBranch(req.user.branchId);
 
     res.status(201).json({
       success: true,
@@ -154,6 +170,8 @@ const deleteShift = async (req, res) => {
       where: { id: shiftId },
     });
 
+    cache.invalidateBranch(req.user.branchId);
+
     res.json({
       success: true,
       message: "Shift deleted successfully",
@@ -230,6 +248,8 @@ const updateShift = async (req, res) => {
         updatedAt: new Date(),
       },
     });
+
+    cache.invalidateBranch(req.user.branchId);
 
     res.json({
       success: true,

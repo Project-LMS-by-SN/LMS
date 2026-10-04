@@ -4,6 +4,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const emailFrom = process.env.EMAIL_FROM || "noreply@dashurl.in";
 const { formatDateStr, formatDateTimeStr, parsePaymentDate, generateInvoiceNo } = require("../utils/format");
 const { clearStatsCache } = require("./dashboard.controller");
+const cache = require("../utils/cache");
 
 const formatStudent = (s) => ({
   id: s.id,
@@ -22,8 +23,10 @@ const formatStudent = (s) => ({
   access_type: s.validities && s.validities.length > 0 ? s.validities[s.validities.length - 1].accessType : null,
 });
 
-const logAction = async (action, tableName, recordId, oldValues, newValues, userId) => {
+const logAction = async (action, tableName, recordId, oldValues, newValues, userId, branchId) => {
   try {
+    cache.invalidateBranch(branchId);
+    clearStatsCache();
     await mongoClient.auditLog.create({
       data: {
         action,
@@ -133,6 +136,16 @@ const autoSuspendExpiredStudents = async (branchId) => {
 
 const getStudents = async (req, res) => {
   try {
+    const branchId = req.user.branchId || 1;
+    const cacheKey = `branch_${branchId}_students`;
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.json({
+        success: true,
+        data: cached,
+      });
+    }
+
     await autoSuspendExpiredStudents(req.user.branchId);
 
     // Fetch total active shifts count
@@ -227,6 +240,8 @@ const getStudents = async (req, res) => {
         due_amount: dueAmount > 0 ? dueAmount : 0,
       };
     });
+
+    cache.set(cacheKey, formatted, 25000);
 
     res.json({
       success: true,
@@ -523,6 +538,15 @@ const createStudent = async (req, res) => {
       })();
     }
 
+    if (requestId) {
+      try {
+        await mongoClient.admissionRequest.update({
+          where: { id: parseInt(requestId) },
+          data: { status: "APPROVED" },
+        });
+      } catch (e) {}
+    }
+
     try { clearStatsCache(); } catch (e) {}
 
     res.status(201).json({
@@ -559,6 +583,7 @@ const updateStudent = async (req, res) => {
       dob,
       address,
       aadhar_number,
+      admission_date,
       account_status,
       profile_photo_url,
     } = req.body;
@@ -616,6 +641,7 @@ const updateStudent = async (req, res) => {
         dob: dob !== undefined ? (dob ? new Date(dob) : null) : existing.dob,
         address: address !== undefined ? address : existing.address,
         aadharNumber: aadhar_number !== undefined ? aadhar_number : existing.aadharNumber,
+        admissionDate: admission_date !== undefined ? (admission_date ? new Date(admission_date) : existing.admissionDate) : existing.admissionDate,
         accountStatus: account_status !== undefined ? account_status.toUpperCase() : existing.accountStatus,
         profilePhotoUrl: profile_photo_url !== undefined ? profile_photo_url : existing.profilePhotoUrl,
         updatedAt: new Date(),

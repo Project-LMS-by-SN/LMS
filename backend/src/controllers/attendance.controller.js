@@ -986,14 +986,64 @@ const checkoutAllActive = async (req, res) => {
   }
 };
 
+// Public GET /api/attendance/branch-info?token=...
+const getPublicBranchInfo = async (req, res) => {
+  try {
+    const { token, branchId } = req.query;
+    let branch = null;
+    if (token && typeof token === "string" && token.trim()) {
+      branch = await mongoClient.branch.findFirst({
+        where: { attendanceToken: token.trim(), isActive: true }
+      });
+    }
+    if (!branch && branchId) {
+      branch = await mongoClient.branch.findFirst({
+        where: { id: parseInt(branchId), isActive: true }
+      });
+    }
+    if (!branch) {
+      return res.status(404).json({
+        success: false,
+        message: "Invalid or expired attendance QR code link."
+      });
+    }
+    return res.json({
+      success: true,
+      data: {
+        id: branch.id,
+        name: branch.name,
+        address: branch.address,
+        phone: branch.phone,
+        code: branch.code,
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // Public GET /api/attendance/public-search
 const publicSearchStudent = async (req, res) => {
   try {
-    const { q, branchId } = req.query;
+    const { q, branchId, token } = req.query;
     if (!q || !q.trim()) {
       return res.status(400).json({ success: false, message: "Search term is required" });
     }
-    const targetBranchId = branchId ? parseInt(branchId) : 1;
+
+    let targetBranchId = null;
+    if (token && typeof token === "string" && token.trim()) {
+      const branch = await mongoClient.branch.findFirst({
+        where: { attendanceToken: token.trim(), isActive: true }
+      });
+      if (branch) targetBranchId = branch.id;
+    }
+    if (!targetBranchId && branchId) {
+      targetBranchId = parseInt(branchId);
+    }
+    if (!targetBranchId) {
+      targetBranchId = 1;
+    }
+
     const term = q.trim();
 
     const student = await mongoClient.student.findFirst({
@@ -1051,12 +1101,33 @@ const publicSearchStudent = async (req, res) => {
 // Public POST /api/attendance/public-checkin
 const publicCheckInOrOut = async (req, res) => {
   try {
-    const { studentCodeOrMobile, branchId } = req.body;
+    const { studentCodeOrMobile, branchId, token } = req.body;
     if (!studentCodeOrMobile || !studentCodeOrMobile.trim()) {
       return res.status(400).json({ success: false, message: "Student code or mobile number is required" });
     }
 
-    const targetBranchId = branchId ? parseInt(branchId) : 1;
+    let targetBranchId = null;
+    if (token && typeof token === "string" && token.trim()) {
+      const branch = await mongoClient.branch.findFirst({
+        where: { attendanceToken: token.trim(), isActive: true }
+      });
+      if (branch) {
+        targetBranchId = branch.id;
+      } else {
+        return res.status(404).json({
+          success: false,
+          message: "Invalid or expired attendance QR code. Cannot record attendance."
+        });
+      }
+    }
+
+    if (!targetBranchId && branchId) {
+      targetBranchId = parseInt(branchId);
+    }
+    if (!targetBranchId) {
+      targetBranchId = 1;
+    }
+
     const term = studentCodeOrMobile.trim();
 
     const student = await mongoClient.student.findFirst({
@@ -1294,4 +1365,5 @@ module.exports = {
   checkoutAllActive,
   publicSearchStudent,
   publicCheckInOrOut,
+  getPublicBranchInfo,
 };

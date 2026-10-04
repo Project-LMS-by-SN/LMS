@@ -1,6 +1,8 @@
 const authUtil = require("../utils/auth");
 const mongoClient = require("../config/mongoClient");
 
+const cache = require("../utils/cache");
+
 module.exports = async (req, res, next) => {
   // Allow OPTIONS preflight requests
   if (req.method === "OPTIONS") {
@@ -16,9 +18,13 @@ module.exports = async (req, res, next) => {
     path === "/users/login" ||
     path === "/users/forgot-password" ||
     path === "/users/reset-password" ||
-    ((path === "/admission-requests" || originalUrl.startsWith("/api/admission-requests")) && req.method === "POST") ||
+    path.startsWith("/admission-requests/branch-info") ||
+    originalUrl.includes("/admission-requests/branch-info") ||
+    path.startsWith("/attendance/branch-info") ||
+    originalUrl.includes("/attendance/branch-info") ||
     path.startsWith("/attendance/public") ||
-    originalUrl.startsWith("/api/attendance/public") ||
+    originalUrl.includes("/attendance/public") ||
+    ((path === "/admission-requests" || originalUrl.includes("/api/admission-requests")) && req.method === "POST") ||
     originalUrl.startsWith("/api/users/login") ||
     originalUrl.startsWith("/api/users/forgot-password") ||
     originalUrl.startsWith("/api/users/reset-password");
@@ -39,10 +45,17 @@ module.exports = async (req, res, next) => {
   try {
     const decoded = authUtil.verifyToken(token);
     
-    // Fetch active user from DB
-    const user = await mongoClient.user.findFirst({
-      where: { id: decoded.id, isActive: true, deletedAt: null },
-    });
+    // Fetch active user from DB (with 60s memory cache to avoid roundtrips)
+    const userCacheKey = `auth_user_${decoded.id}`;
+    let user = cache.get(userCacheKey);
+    if (!user) {
+      user = await mongoClient.user.findFirst({
+        where: { id: decoded.id, isActive: true, deletedAt: null },
+      });
+      if (user) {
+        cache.set(userCacheKey, user, 60000);
+      }
+    }
 
     if (!user) {
       return res.status(401).json({

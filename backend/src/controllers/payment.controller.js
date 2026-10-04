@@ -1,6 +1,7 @@
 const mongoClient = require("../config/mongoClient");
 const { formatDateStr, formatDateTimeStr, parsePaymentDate } = require("../utils/format");
 const { clearStatsCache } = require("./dashboard.controller");
+const cache = require("../utils/cache");
 
 const logAction = async (action, tableName, recordId, oldValues, newValues, userId) => {
   try {
@@ -199,7 +200,10 @@ const createPayment = async (req, res) => {
     // Audit Log
     await logAction("CREATE_PAYMENT", "payments", newPayment.id, null, newPayment, req.user ? req.user.id : null);
 
-    try { clearStatsCache(); } catch (e) {}
+    try {
+      clearStatsCache();
+      cache.invalidateBranch(req.user ? req.user.branchId : 1);
+    } catch (e) {}
 
     res.status(201).json({
       success: true,

@@ -405,6 +405,7 @@ const Students = () => {
         email: profileData.email || "",
         gender: profileData.gender || "",
         dob: profileData.dob ? profileData.dob.split("T")[0] : "",
+        admission_date: profileData.admission_date ? profileData.admission_date.split("T")[0] : "",
         aadhar_number: profileData.aadhar_number || "",
         address: profileData.address || "",
         reg_no: profileData.reg_no || "",
@@ -436,6 +437,7 @@ const Students = () => {
         email: editForm.email,
         gender: editForm.gender,
         dob: editForm.dob,
+        admission_date: editForm.admission_date,
         aadhar_number: editForm.aadhar_number,
         address: editForm.address,
         reg_no: editForm.reg_no,
@@ -458,10 +460,11 @@ const Students = () => {
   };
 
   const getStudentStatus = (student) => {
-    if (student.account_status === "DISABLED" || student.account_status === "INACTIVE") {
+    const acc = (student.account_status || "").toUpperCase();
+    if (acc === "DISABLED" || acc === "INACTIVE") {
       return "inactive";
     }
-    if (student.account_status === "SUSPENDED") {
+    if (acc === "SUSPENDED") {
       return "suspended";
     }
 
@@ -475,7 +478,9 @@ const Students = () => {
     twentyDaysAgo.setDate(twentyDaysAgo.getDate() - 20);
 
     if (!student.end_date) {
+      if (!student.admission_date) return "inactive";
       const admissionDate = new Date(student.admission_date);
+      if (isNaN(admissionDate.getTime())) return "inactive";
       admissionDate.setHours(0, 0, 0, 0);
       if (admissionDate < twentyDaysAgo) return "inactive";
       if (admissionDate < sevenDaysAgo) return "suspended";
@@ -483,18 +488,13 @@ const Students = () => {
     }
 
     const endDate = new Date(student.end_date);
+    if (isNaN(endDate.getTime())) return "inactive";
     endDate.setHours(0, 0, 0, 0);
     const next7Days = new Date(today);
     next7Days.setDate(next7Days.getDate() + 7);
 
-    if (student.due_amount > 0) {
-      if (endDate < twentyDaysAgo) return "inactive";
-      if (endDate < sevenDaysAgo) return "suspended";
-      if (endDate < today) return "suspended";
-    }
-
     if (endDate < twentyDaysAgo) return "inactive";
-    if (endDate < today) return "expired";
+    if (endDate < sevenDaysAgo || endDate < today) return "suspended";
     if (endDate <= next7Days) return "expiring_soon";
     return "active";
   };
@@ -507,10 +507,24 @@ const Students = () => {
     });
     return {
       all: base.length,
-      active: base.filter(s => getStudentStatus(s) === "active").length,
+      active: base.filter(s => {
+        const acc = (s.account_status || "").toUpperCase();
+        if (acc === "SUSPENDED" || acc === "INACTIVE" || acc === "DISABLED") return false;
+        const st = getStudentStatus(s);
+        if (st === "suspended" || st === "inactive") return false;
+        return st === "active";
+      }).length,
       expiring_soon: base.filter(s => getStudentStatus(s) === "expiring_soon").length,
-      inactive: base.filter(s => getStudentStatus(s) === "inactive").length,
-      suspended: base.filter(s => getStudentStatus(s) === "suspended").length,
+      inactive: base.filter(s => {
+        const acc = (s.account_status || "").toUpperCase();
+        if (acc === "INACTIVE" || acc === "DISABLED") return true;
+        return getStudentStatus(s) === "inactive";
+      }).length,
+      suspended: base.filter(s => {
+        const acc = (s.account_status || "").toUpperCase();
+        if (acc === "SUSPENDED") return true;
+        return getStudentStatus(s) === "suspended";
+      }).length,
     };
   };
 
@@ -530,20 +544,48 @@ const Students = () => {
     }
 
     if (!matchesSearch) return false;
+    // All students tab includes active, inactive, and suspended members
     if (statusFilter === "all") return true;
+
+    // Active students tab strictly excludes suspended and inactive members
+    if (statusFilter === "active") {
+      const acc = (student.account_status || "").toUpperCase();
+      if (acc === "SUSPENDED" || acc === "INACTIVE" || acc === "DISABLED") return false;
+      const st = getStudentStatus(student);
+      if (st === "suspended" || st === "inactive") return false;
+      return st === "active";
+    }
+
+    if (statusFilter === "suspended") {
+      const acc = (student.account_status || "").toUpperCase();
+      if (acc === "SUSPENDED") return true;
+      return getStudentStatus(student) === "suspended";
+    }
+
+    if (statusFilter === "inactive") {
+      const acc = (student.account_status || "").toUpperCase();
+      if (acc === "INACTIVE" || acc === "DISABLED") return true;
+      return getStudentStatus(student) === "inactive";
+    }
+
     return getStudentStatus(student) === statusFilter;
   });
 
   const getStatusBadge = (status) => {
-    if (status === "ACTIVE") return "status-badge";
-    if (status === "DISABLED") return "danger-badge";
+    const s = (status || "").toUpperCase();
+    if (s === "ACTIVE") return "status-badge";
+    if (s === "SUSPENDED") return "warning-badge";
+    if (s === "DISABLED" || s === "INACTIVE") return "danger-badge";
     return "status-badge";
   };
 
   const getStatusText = (status) => {
-    if (status === "ACTIVE") return "Active";
-    if (status === "DISABLED") return "Disabled";
-    return "Unknown";
+    const s = (status || "").toUpperCase();
+    if (s === "ACTIVE") return "Active";
+    if (s === "SUSPENDED") return "Suspended";
+    if (s === "DISABLED") return "Disabled";
+    if (s === "INACTIVE") return "Inactive";
+    return status || "Unknown";
   };
 
 
@@ -604,12 +646,16 @@ const Students = () => {
                     style={{
                       width: "80px",
                       height: "80px",
+                      minWidth: "80px",
+                      minHeight: "80px",
                       borderRadius: "50%",
+                      aspectRatio: "1 / 1",
+                      flexShrink: 0,
                       background: "linear-gradient(135deg, #3b82f6, #1d4ed8)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: "32px",
+                      fontSize: "30px",
                       fontWeight: "bold",
                       color: "white",
                       textTransform: "uppercase",
@@ -629,7 +675,7 @@ const Students = () => {
                   <div>
                     <h2 style={{ margin: 0, fontSize: "24px", color: "#ffffff" }}>{profileData.full_name}</h2>
                     <p style={{ margin: "4px 0", opacity: 0.8, fontSize: "14px", color: "#cbd5e1" }}>
-                      Code: {profileData.student_code} | Reg No: {profileData.reg_no || "N/A"}{profileData.email ? ` | ${profileData.email}` : ""}
+                      Code: {profileData.student_code} | Reg No: {profileData.reg_no || "N/A"}
                     </p>
                     <span
                       className="status-badge"
@@ -637,8 +683,15 @@ const Students = () => {
                         background:
                           profileData.account_status === "ACTIVE"
                             ? "rgba(34,197,94,0.2)"
+                            : profileData.account_status === "SUSPENDED"
+                            ? "rgba(249,115,22,0.2)"
                             : "rgba(239,68,68,0.2)",
-                        color: profileData.account_status === "ACTIVE" ? "#4ade80" : "#fca5a5",
+                        color:
+                          profileData.account_status === "ACTIVE"
+                            ? "#4ade80"
+                            : profileData.account_status === "SUSPENDED"
+                            ? "#fb923c"
+                            : "#fca5a5",
                         display: "inline-block",
                         marginTop: "8px",
                       }}
@@ -653,6 +706,10 @@ const Students = () => {
               <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
                 <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "16px", fontWeight: "700" }}>Personal Details</h3>
                 <div className="responsive-grid-1-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                  <div className="profile-info-group">
+                    <div className="profile-info-label">Admission Date</div>
+                    <div className="profile-info-value" style={{ color: textPrimary, fontWeight: 600 }}>{formatDate(profileData.admission_date) || "N/A"}</div>
+                  </div>
                   <div className="profile-info-group">
                     <div className="profile-info-label">Mobile Number</div>
                     <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.mobile}</div>
@@ -1344,6 +1401,7 @@ const Students = () => {
                     { label: "Reg No", field: "reg_no", type: "text" },
                     { label: "Gender *", field: "gender", type: "select", options: ["Male", "Female", "Other"] },
                     { label: "Date of Birth", field: "dob", type: "date" },
+                    { label: "Admission Date", field: "admission_date", type: "date" },
                     { label: "Aadhar Number", field: "aadhar_number", type: "text" },
                   ].map(({ label, field, type, options }) => (
                     <div key={field} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -1813,14 +1871,50 @@ const Students = () => {
         })}
       </div>
 
-      <div className="search-box" style={{ border: '1px solid #d4d4d8', marginBottom: '24px', background: 'white' }}>
-        <FaSearch style={{ color: '#999', fontSize: '18px' }} />
+      <div className="search-box" style={{ border: `1px solid ${darkMode ? borderColor : '#d4d4d8'}`, marginBottom: '24px', background: darkMode ? cardBg : 'white', display: 'flex', alignItems: 'center' }}>
+        <FaSearch style={{ color: '#999', fontSize: '18px', flexShrink: 0 }} />
         <input
           type="text"
           placeholder="Search by name, code, reg no, or mobile..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          style={{ flex: 1, color: darkMode ? '#f1f5f9' : '#1e293b' }}
         />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery("")}
+            title="Clear search"
+            aria-label="Clear search"
+            style={{
+              background: darkMode ? "rgba(255,255,255,0.1)" : "#e2e8f0",
+              border: "none",
+              color: darkMode ? "#94a3b8" : "#64748b",
+              cursor: "pointer",
+              fontSize: "13px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "26px",
+              height: "26px",
+              borderRadius: "50%",
+              flexShrink: 0,
+              padding: 0,
+              marginLeft: "8px",
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = darkMode ? "rgba(255,255,255,0.2)" : "#cbd5e1";
+              e.currentTarget.style.color = darkMode ? "#ffffff" : "#1e293b";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = darkMode ? "rgba(255,255,255,0.1)" : "#e2e8f0";
+              e.currentTarget.style.color = darkMode ? "#94a3b8" : "#64748b";
+            }}
+          >
+            <FaTimes />
+          </button>
+        )}
       </div>
 
       <style>{`

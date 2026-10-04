@@ -2,9 +2,10 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
-import { FaCreditCard, FaCamera, FaSearch, FaDownload, FaBolt, FaExclamationTriangle, FaCheckCircle } from "react-icons/fa";
+import { FaCreditCard, FaCamera, FaSearch, FaDownload, FaBolt, FaExclamationTriangle, FaCheckCircle, FaTimes, FaCopy, FaCheck } from "react-icons/fa";
 import QRCodeLib from "qrcode";
 import CustomDatePicker from "../components/CustomDatePicker";
+import { downloadQrPoster } from "../utils/qrPoster";
 
 const formatDateLocal = (d) => {
   const year = d.getFullYear();
@@ -64,19 +65,33 @@ const Attendance = () => {
   const [attendanceMode, setAttendanceMode] = useState("manual"); // "manual", "qr"
   const [simulatedCode, setSimulatedCode] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
+  const [qrFullUrl, setQrFullUrl] = useState("");
+  const [branchDetails, setBranchDetails] = useState(null);
+  const [copiedLink, setCopiedLink] = useState(false);
   const { darkMode, timeFormat } = useTheme();
 
   useEffect(() => {
-    const baseUrl = window.location.origin;
-    const currentUser = (() => { try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); } catch { return {}; } })();
-    const currentBranchId = currentUser.branchId || 1;
-    const attendanceUrl = `${baseUrl}/public-attendance?branchId=${currentBranchId}`;
-    QRCodeLib.toDataURL(attendanceUrl, {
-      width: 280,
-      margin: 2,
-      color: { dark: "#0f172a", light: "#ffffff" },
-      errorCorrectionLevel: "H",
-    }).then((url) => setQrDataUrl(url)).catch(() => {});
+    const fetchQrInfo = async () => {
+      try {
+        const baseUrl = window.location.origin;
+        const res = await api.get("/users/qr-info");
+        if (res.data?.success) {
+          const data = res.data.data;
+          setBranchDetails(data);
+          const fullUrl = `${baseUrl}/public-attendance?token=${data.attendanceToken}`;
+          setQrFullUrl(fullUrl);
+          QRCodeLib.toDataURL(fullUrl, {
+            width: 280,
+            margin: 2,
+            color: { dark: "#0f172a", light: "#ffffff" },
+            errorCorrectionLevel: "H",
+          }).then((url) => setQrDataUrl(url)).catch(() => {});
+        }
+      } catch (err) {
+        console.error("Failed to fetch branch QR info:", err);
+      }
+    };
+    fetchQrInfo();
   }, []);
 
   const debounceTimer = useRef(null);
@@ -220,6 +235,7 @@ const Attendance = () => {
 
       const res = await api.post("/attendance/public-checkin", {
         studentCodeOrMobile: query,
+        token: branchDetails?.attendanceToken || undefined,
         branchId: currentBranchId,
       });
 
@@ -242,10 +258,30 @@ const Attendance = () => {
     if (!qrDataUrl) return;
     const link = document.createElement("a");
     link.href = qrDataUrl;
-    link.download = "library-attendance-qr.png";
+    link.download = `${(branchDetails?.branchName || "library").toLowerCase().replace(/\s+/g, "-")}-attendance-qr.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleDownloadPoster = async () => {
+    if (!qrFullUrl) return;
+    await downloadQrPoster({
+      type: "ATTENDANCE",
+      libraryName: branchDetails?.branchName || "Library",
+      libraryCode: branchDetails?.branchCode || "",
+      libraryAddress: branchDetails?.address || "",
+      libraryPhone: branchDetails?.phone || "",
+      qrUrl: qrFullUrl,
+      fileName: `${(branchDetails?.branchName || "library").toLowerCase().replace(/\s+/g, "-")}-attendance-poster.png`,
+    });
+  };
+
+  const handleCopyLink = () => {
+    if (!qrFullUrl) return;
+    navigator.clipboard.writeText(qrFullUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   const getConsecutiveBlockForShift = (targetShiftId, assignments) => {
@@ -503,7 +539,6 @@ const Attendance = () => {
       <div className="page-title-row">
         <div>
           <h1>Attendance</h1>
-          <p>Redesigned attendance module with QR scanner and fast filters · {today}</p>
         </div>
       </div>
 
@@ -651,6 +686,32 @@ const Attendance = () => {
                       onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                       autoComplete="off"
                     />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery("");
+                          setSuggestions([]);
+                          setShowSuggestions(false);
+                          fetchAttendance(currentDate);
+                        }}
+                        title="Clear search"
+                        aria-label="Clear search"
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: textSecondary,
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "4px",
+                        }}
+                      >
+                        <FaTimes />
+                      </button>
+                    )}
                   </div>
                 </form>
                 {showSuggestions && suggestions.length > 0 && (
@@ -723,14 +784,85 @@ const Attendance = () => {
                   )}
                 </div>
 
-                {/* Download Button */}
-                <button
-                  onClick={handleDownloadPNG}
-                  className="primary-btn"
-                  style={{ width: "100%", padding: "12px", borderRadius: "8px", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
-                >
-                  <FaDownload /> Download QR Code (PNG)
-                </button>
+                {/* Actions: Download Poster & QR & Copy Link */}
+                <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "10px" }}>
+                  <button
+                    onClick={handleDownloadPoster}
+                    className="primary-btn"
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      borderRadius: "10px",
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                      background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                      color: "#fff",
+                      boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)"
+                    }}
+                  >
+                    <FaDownload /> Download Printable Entrance Poster (PNG)
+                  </button>
+
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <button
+                      onClick={handleDownloadPNG}
+                      style={{
+                        flex: 1,
+                        padding: "10px",
+                        borderRadius: "8px",
+                        fontWeight: 600,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "6px",
+                        border: `1px solid ${borderColor}`,
+                        background: cardBg,
+                        color: textPrimary,
+                        cursor: "pointer",
+                        fontSize: "13px"
+                      }}
+                    >
+                      <FaDownload /> QR Only
+                    </button>
+                    <button
+                      onClick={handleCopyLink}
+                      style={{
+                        flex: 1,
+                        padding: "10px",
+                        borderRadius: "8px",
+                        fontWeight: 600,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "6px",
+                        border: `1px solid ${copiedLink ? "#10b981" : borderColor}`,
+                        background: copiedLink ? "rgba(16, 185, 129, 0.1)" : cardBg,
+                        color: copiedLink ? "#10b981" : textPrimary,
+                        cursor: "pointer",
+                        fontSize: "13px"
+                      }}
+                    >
+                      {copiedLink ? <FaCheck /> : <FaCopy />} {copiedLink ? "Link Copied!" : "Copy Unique URL"}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{
+                  fontSize: "12px",
+                  color: "#10b981",
+                  background: darkMode ? "rgba(16, 185, 129, 0.1)" : "#f0fdf4",
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  width: "100%",
+                  textAlign: "center",
+                  border: "1px solid rgba(16, 185, 129, 0.2)",
+                  boxSizing: "border-box"
+                }}>
+                  Exclusive attendance link for {branchDetails?.branchName || "your library"}.
+                </div>
 
                 {/* Instant Barcode / QR Scanner Input */}
                 <div style={{ width: "100%", borderTop: `1px solid ${borderColor}`, paddingTop: "16px", marginTop: "4px" }}>

@@ -48,6 +48,8 @@ const branchSchema = new mongoose.Schema(
     address: { type: String, default: null },
     phone: { type: String, default: null },
     isActive: { type: Boolean, default: true },
+    admissionToken: { type: String, unique: true, sparse: true, index: true },
+    attendanceToken: { type: String, unique: true, sparse: true, index: true },
   },
   { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } }
 );
@@ -306,15 +308,18 @@ const admissionRequestSchema = new mongoose.Schema(
   {
     id: { type: Number, unique: true, index: true },
     fullName: { type: String, required: true },
-    email: { type: String, required: true },
+    email: { type: String, default: "" },
     mobile: { type: String, required: true },
-    gender: { type: String, enum: ["MALE", "FEMALE", "OTHER"], required: true },
+    gender: { type: String, enum: ["MALE", "FEMALE", "OTHER"], default: "OTHER" },
     dob: { type: Date, default: null },
     address: { type: String, default: null },
     aadharNumber: { type: String, default: null },
     profilePhotoUrl: { type: String, default: null },
-    branchId: { type: Number, default: null },
-    status: { type: String, default: "PENDING" },
+    branchId: { type: Number, default: null, index: true },
+    preferredShiftId: { type: Number, default: null },
+    preferredFeePlanId: { type: Number, default: null },
+    remarks: { type: String, default: null },
+    status: { type: String, default: "PENDING", index: true },
   },
   { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } }
 );
@@ -325,7 +330,7 @@ const expenseSchema = new mongoose.Schema(
   {
     id: { type: Number, unique: true, index: true },
     category: { type: String, required: true },
-    description: { type: String, required: true },
+    description: { type: String, required: false, default: "" },
     date: { type: Date, required: true },
     amount: { type: Number, required: true },
     branchId: { type: Number, default: null },

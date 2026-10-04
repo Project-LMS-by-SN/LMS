@@ -74,8 +74,8 @@ const Expenses = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.description || !formData.date || !formData.amount) {
-      showToast("All fields are required", "error");
+    if (!formData.category || !formData.date || !formData.amount) {
+      showToast("Category, Date and Amount are required", "error");
       return;
     }
 
@@ -94,7 +94,8 @@ const Expenses = () => {
   };
 
   const handleDelete = async (id, description) => {
-    if (!window.confirm(`Delete expense "${description}"?`)) return;
+    const descText = description ? `"${description}"` : "this expense";
+    if (!window.confirm(`Delete expense ${descText}?`)) return;
     try {
       await api.delete(`/expenses/${id}`);
       showToast("Expense removed successfully");
@@ -379,7 +380,7 @@ const Expenses = () => {
                         • {exp.category}
                       </span>
                     </td>
-                    <td style={{ padding: "16px", maxWidth: "320px", wordBreak: "break-word" }}>{exp.description}</td>
+                    <td style={{ padding: "16px", maxWidth: "320px", wordBreak: "break-word" }}>{exp.description || "—"}</td>
                     <td style={{ padding: "16px", color: textSecondary }}>
                       {new Date(exp.date).toLocaleDateString("en-IN", {
                         day: "2-digit",
@@ -496,7 +497,7 @@ const Expenses = () => {
 
               <div className="form-group" style={{ marginBottom: "18px" }}>
                 <label style={{ display: "block", marginBottom: "6px", fontWeight: "600", fontSize: "13px", color: textPrimary }}>
-                  Description *
+                  Description (Optional)
                 </label>
                 <input
                   type="text"
@@ -504,7 +505,6 @@ const Expenses = () => {
                   placeholder="e.g. Monthly rent, office cleaning supplies"
                   value={formData.description}
                   onChange={handleChange}
-                  required
                   style={{
                     width: "100%",
                     padding: "10px 14px",
