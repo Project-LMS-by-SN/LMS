@@ -1,5 +1,18 @@
-import { useState, useEffect } from "react";
-import { FaClock, FaCheckCircle, FaSignOutAlt, FaSignInAlt, FaUserCheck, FaExclamationTriangle, FaTimes, FaSpinner, FaBuilding } from "react-icons/fa";
+import { useState, useEffect, useRef } from "react";
+import {
+  FaClock,
+  FaCheckCircle,
+  FaSignOutAlt,
+  FaSignInAlt,
+  FaUserCheck,
+  FaExclamationTriangle,
+  FaSpinner,
+  FaBuilding,
+  FaCamera,
+  FaTimes,
+  FaRedo
+} from "react-icons/fa";
+import { Html5Qrcode } from "html5-qrcode";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 
@@ -16,6 +29,11 @@ const PublicAttendance = () => {
   const [branchLoading, setBranchLoading] = useState(true);
   const [branchError, setBranchError] = useState("");
 
+  // Live Camera Scanner State
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState("");
+  const html5QrCodeRef = useRef(null);
+
   // Update clock every second
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -25,20 +43,35 @@ const PublicAttendance = () => {
   // Fetch branch info on load to verify token and display library name
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
-    const token = searchParams.get("token");
-    const branchId = searchParams.get("branchId");
+    const token = searchParams.get("token") || searchParams.get("attendanceToken");
+    const branchId = searchParams.get("branchId") || searchParams.get("branch");
+    const code = searchParams.get("code") || searchParams.get("branchCode");
 
-    if (!token && !branchId) {
-      setBranchError("Invalid or missing attendance link. Please scan the official QR code at your library entrance.");
-      setBranchLoading(false);
-      return;
+    const loggedInUser = (() => {
+      try {
+        return JSON.parse(localStorage.getItem("lms_user") || "{}");
+      } catch {
+        return {};
+      }
+    })();
+
+    let query = "";
+    if (token && token.trim()) {
+      query = `token=${encodeURIComponent(token.trim())}`;
+    } else if (branchId && branchId.trim()) {
+      query = `branchId=${encodeURIComponent(branchId.trim())}`;
+    } else if (code && code.trim()) {
+      query = `code=${encodeURIComponent(code.trim())}`;
+    } else if (loggedInUser?.branchId) {
+      query = `branchId=${encodeURIComponent(loggedInUser.branchId)}`;
+    } else {
+      query = `token=default`;
     }
 
     const fetchInfo = async () => {
       try {
         setBranchLoading(true);
         setBranchError("");
-        const query = token ? `token=${encodeURIComponent(token)}` : `branchId=${encodeURIComponent(branchId)}`;
         const res = await api.get(`/attendance/branch-info?${query}`);
         if (res.data?.success) {
           setBranchInfo(res.data.data);
@@ -55,7 +88,7 @@ const PublicAttendance = () => {
     fetchInfo();
   }, []);
 
-  // 5-second countdown & auto close timer when result is displayed
+  // 5-second countdown & auto-reset when result is displayed
   useEffect(() => {
     let timer;
     if (result) {
@@ -64,13 +97,9 @@ const PublicAttendance = () => {
         setCountdown((prev) => {
           if (prev <= 1) {
             clearInterval(timer);
-            try {
-              window.close();
-            } catch (e) {}
-            try {
-              window.open("", "_self", "").close();
-            } catch (e) {}
-            return 0;
+            setResult(null);
+            setStudentCodeOrMobile("");
+            return 5;
           }
           return prev - 1;
         });
@@ -79,10 +108,70 @@ const PublicAttendance = () => {
     return () => clearInterval(timer);
   }, [result]);
 
-  const handleMarkAttendance = async (e) => {
-    if (e) e.preventDefault();
-    if (!studentCodeOrMobile || !studentCodeOrMobile.trim()) {
-      setErrorMsg("Please enter your Student Code or Mobile Number.");
+  // Clean up camera scanner on unmount
+  useEffect(() => {
+    return () => {
+      if (html5QrCodeRef.current) {
+        html5QrCodeRef.current.stop().catch(() => {}).then(() => {
+          html5QrCodeRef.current.clear();
+        });
+      }
+    };
+  }, []);
+
+  const handleStartScanner = async () => {
+    setScannerOpen(true);
+    setScannerError("");
+    setTimeout(async () => {
+      try {
+        const qrContainer = document.getElementById("public-qr-scanner-view");
+        if (!qrContainer) return;
+
+        if (html5QrCodeRef.current) {
+          try {
+            await html5QrCodeRef.current.stop();
+          } catch (e) {}
+        }
+
+        const qrScanner = new Html5Qrcode("public-qr-scanner-view");
+        html5QrCodeRef.current = qrScanner;
+
+        await qrScanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 240, height: 240 },
+          },
+          (decodedText) => {
+            // Found QR Code
+            handleStopScanner();
+            setStudentCodeOrMobile(decodedText);
+            executeCheckIn(decodedText);
+          },
+          () => {}
+        );
+      } catch (err) {
+        console.error("Camera scanner start error:", err);
+        setScannerError("Camera access failed. Please ensure camera permissions are allowed.");
+      }
+    }, 200);
+  };
+
+  const handleStopScanner = async () => {
+    if (html5QrCodeRef.current) {
+      try {
+        await html5QrCodeRef.current.stop();
+        html5QrCodeRef.current.clear();
+      } catch (e) {}
+      html5QrCodeRef.current = null;
+    }
+    setScannerOpen(false);
+  };
+
+  const executeCheckIn = async (codeToMark) => {
+    const term = (codeToMark || studentCodeOrMobile || "").trim();
+    if (!term) {
+      setErrorMsg("Please enter or scan your Student Code or Mobile Number.");
       return;
     }
 
@@ -92,25 +181,22 @@ const PublicAttendance = () => {
 
     try {
       const searchParams = new URLSearchParams(window.location.search);
-      const token = searchParams.get("token");
-      const branchId = searchParams.get("branchId");
+      const token = searchParams.get("token") || branchInfo?.attendanceToken;
+      const branchId = searchParams.get("branchId") || branchInfo?.id || 1;
 
       const payload = {
-        studentCodeOrMobile: studentCodeOrMobile.trim(),
+        studentCodeOrMobile: term,
+        token: token || undefined,
+        branchId: parseInt(branchId) || 1,
       };
-      if (token) {
-        payload.token = token.trim();
-      } else if (branchId) {
-        payload.branchId = parseInt(branchId);
-      } else {
-        payload.branchId = 1;
-      }
 
       const res = await api.post("/attendance/public-checkin", payload);
 
       if (res.data && res.data.success) {
         setResult(res.data);
         setStudentCodeOrMobile("");
+      } else {
+        setErrorMsg(res.data?.message || "Failed to mark attendance.");
       }
     } catch (err) {
       setErrorMsg(err.response?.data?.message || "Failed to mark attendance. Please verify details.");
@@ -119,13 +205,16 @@ const PublicAttendance = () => {
     }
   };
 
-  const handleManualClose = () => {
-    try {
-      window.close();
-    } catch (e) {}
-    try {
-      window.open("", "_self", "").close();
-    } catch (e) {}
+  const handleMarkAttendance = async (e) => {
+    if (e) e.preventDefault();
+    executeCheckIn(studentCodeOrMobile);
+  };
+
+  const handleResetForNext = () => {
+    setResult(null);
+    setErrorMsg("");
+    setStudentCodeOrMobile("");
+    setCountdown(5);
   };
 
   const formattedTime = currentTime.toLocaleTimeString("en-US", {
@@ -280,7 +369,7 @@ const PublicAttendance = () => {
                 border: "1px solid rgba(255,255,255,0.08)",
                 borderRadius: "16px",
                 padding: "16px",
-                marginBottom: "24px",
+                marginBottom: "20px",
               }}
             >
               <div className="att-time" style={{ fontSize: "36px", fontWeight: 900, color: "#34d399", letterSpacing: "1px" }}>
@@ -291,15 +380,70 @@ const PublicAttendance = () => {
               </div>
             </div>
 
+            {/* Camera Scanner View Modal */}
+            {scannerOpen && (
+              <div
+                style={{
+                  background: "rgba(15, 23, 42, 0.95)",
+                  border: "2px solid #3b82f6",
+                  borderRadius: "18px",
+                  padding: "16px",
+                  marginBottom: "20px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                  <span style={{ fontSize: "14px", fontWeight: 700, color: "#60a5fa", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <FaCamera /> Point Camera at Student ID QR
+                  </span>
+                  <button
+                    onClick={handleStopScanner}
+                    style={{
+                      background: "rgba(239, 68, 68, 0.2)",
+                      border: "none",
+                      color: "#f87171",
+                      borderRadius: "6px",
+                      padding: "4px 8px",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <FaTimes /> Close
+                  </button>
+                </div>
+                <div
+                  id="public-qr-scanner-view"
+                  style={{
+                    width: "100%",
+                    borderRadius: "12px",
+                    overflow: "hidden",
+                    background: "#000",
+                  }}
+                />
+                {scannerError && (
+                  <p style={{ color: "#f87171", fontSize: "12px", marginTop: "8px", margin: 0 }}>
+                    {scannerError}
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Result Alert */}
             {result && (
               <div
                 style={{
-                  background: result.action === "CHECK_IN" ? "rgba(16, 185, 129, 0.15)" : result.action === "CHECK_OUT" ? "rgba(245, 158, 11, 0.15)" : "rgba(59, 130, 246, 0.15)",
-                  border: `2px solid ${result.action === "CHECK_IN" ? "#10b981" : result.action === "CHECK_OUT" ? "#f59e0b" : "#3b82f6"}`,
+                  background:
+                    result.action === "CHECK_IN"
+                      ? "rgba(16, 185, 129, 0.15)"
+                      : result.action === "CHECK_OUT"
+                      ? "rgba(245, 158, 11, 0.15)"
+                      : "rgba(59, 130, 246, 0.15)",
+                  border: `2px solid ${
+                    result.action === "CHECK_IN" ? "#10b981" : result.action === "CHECK_OUT" ? "#f59e0b" : "#3b82f6"
+                  }`,
                   borderRadius: "18px",
-                  padding: "22px 18px",
-                  marginBottom: "24px",
+                  padding: "20px 18px",
+                  marginBottom: "20px",
                 }}
               >
                 <div
@@ -307,13 +451,14 @@ const PublicAttendance = () => {
                     width: "56px",
                     height: "56px",
                     borderRadius: "50%",
-                    background: result.action === "CHECK_IN" ? "#10b981" : result.action === "CHECK_OUT" ? "#f59e0b" : "#3b82f6",
+                    background:
+                      result.action === "CHECK_IN" ? "#10b981" : result.action === "CHECK_OUT" ? "#f59e0b" : "#3b82f6",
                     color: "#fff",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     fontSize: "26px",
-                    margin: "0 auto 14px",
+                    margin: "0 auto 12px",
                   }}
                 >
                   {result.action === "CHECK_IN" ? <FaSignInAlt /> : result.action === "CHECK_OUT" ? <FaSignOutAlt /> : <FaCheckCircle />}
@@ -323,12 +468,32 @@ const PublicAttendance = () => {
                   {result.message}
                 </h3>
 
-                <p style={{ fontSize: "14px", color: "#cbd5e1", lineHeight: "1.5", margin: "6px 0 12px 0" }}>
+                <p style={{ fontSize: "14px", color: "#cbd5e1", lineHeight: "1.5", margin: "6px 0 14px 0" }}>
                   {result.subMessage}
                 </p>
 
-                <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#94a3b8", background: "rgba(0,0,0,0.25)", padding: "4px 12px", borderRadius: "20px" }}>
-                  <FaClock /> Closing in {countdown}s...
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "12px", color: "#94a3b8", background: "rgba(0,0,0,0.3)", padding: "5px 12px", borderRadius: "20px", display: "inline-flex", alignItems: "center", gap: "5px" }}>
+                    <FaClock /> Resetting in {countdown}s...
+                  </span>
+                  <button
+                    onClick={handleResetForNext}
+                    style={{
+                      background: "rgba(255, 255, 255, 0.15)",
+                      border: "none",
+                      color: "#fff",
+                      borderRadius: "20px",
+                      padding: "5px 14px",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "5px",
+                    }}
+                  >
+                    <FaRedo /> Next Student
+                  </button>
                 </div>
               </div>
             )}
@@ -354,9 +519,9 @@ const PublicAttendance = () => {
               </div>
             )}
 
-            {/* Input Form */}
+            {/* Input Form & Camera Trigger */}
             <form onSubmit={handleMarkAttendance}>
-              <div style={{ marginBottom: "18px" }}>
+              <div style={{ marginBottom: "14px" }}>
                 <input
                   type="text"
                   className="att-input"
@@ -368,37 +533,61 @@ const PublicAttendance = () => {
                 />
               </div>
 
-              <button
-                type="submit"
-                disabled={submitting}
-                style={{
-                  width: "100%",
-                  padding: "16px",
-                  borderRadius: "16px",
-                  border: "none",
-                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                  color: "#fff",
-                  fontSize: "17px",
-                  fontWeight: 800,
-                  cursor: submitting ? "not-allowed" : "pointer",
-                  boxShadow: "0 10px 24px rgba(16, 185, 129, 0.35)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "10px",
-                  transition: "all 0.2s",
-                }}
-              >
-                {submitting ? (
-                  <>
-                    <FaSpinner style={{ animation: "spin 1s linear infinite" }} /> Processing...
-                  </>
-                ) : (
-                  <>
-                    <FaCheckCircle /> Mark Attendance
-                  </>
+              <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  style={{
+                    flex: 1,
+                    padding: "16px",
+                    borderRadius: "16px",
+                    border: "none",
+                    background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                    color: "#fff",
+                    fontSize: "16px",
+                    fontWeight: 800,
+                    cursor: submitting ? "not-allowed" : "pointer",
+                    boxShadow: "0 10px 24px rgba(16, 185, 129, 0.35)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  {submitting ? (
+                    <>
+                      <FaSpinner style={{ animation: "spin 1s linear infinite" }} /> Processing...
+                    </>
+                  ) : (
+                    <>
+                      <FaCheckCircle /> Mark Attendance
+                    </>
+                  )}
+                </button>
+
+                {!scannerOpen && (
+                  <button
+                    type="button"
+                    onClick={handleStartScanner}
+                    title="Open Camera QR Scanner"
+                    style={{
+                      padding: "16px 20px",
+                      borderRadius: "16px",
+                      border: "1px solid rgba(59, 130, 246, 0.5)",
+                      background: "rgba(59, 130, 246, 0.15)",
+                      color: "#60a5fa",
+                      cursor: "pointer",
+                      fontSize: "18px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <FaCamera />
+                  </button>
                 )}
-              </button>
+              </div>
             </form>
           </>
         )}

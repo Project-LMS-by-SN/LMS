@@ -410,29 +410,29 @@ const getSeatAvailability = async (req, res) => {
 
 const getNotifications = async (req, res) => {
   try {
-    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const daysCount = parseInt(req.query.days) || 7;
+    const cutoffDate = new Date(Date.now() - daysCount * 24 * 60 * 60 * 1000);
 
     // Ensure status transitions (suspended/inactive) are evaluated for branch
     if (req.user && req.user.branchId) {
       await autoSuspendExpiredStudents(req.user.branchId);
     }
 
-    const [inactiveStudents, pendingRequests, forceLoginEvents] = await Promise.all([
-      // 1. Inactive students updated within the last 48 hours
+    const [inactiveStudents, admissionRequests, forceLoginEvents, newStudents] = await Promise.all([
+      // 1. Inactive students updated within the last 7 days
       mongoClient.student.findMany({
         where: {
-          accountStatus: { in: ["INACTIVE", "DISABLED"] },
+          accountStatus: { in: ["INACTIVE", "DISABLED", "SUSPENDED"] },
           deletedAt: null,
           branchId: req.user.branchId,
-          updatedAt: { gte: fortyEightHoursAgo },
+          updatedAt: { gte: cutoffDate },
         },
         orderBy: { updatedAt: "desc" },
       }),
-      // 2. Admission requests created within the last 48 hours
+      // 2. Admission requests created within the last 7 days
       mongoClient.admissionRequest.findMany({
         where: {
-          status: "PENDING",
-          createdAt: { gte: fortyEightHoursAgo },
+          createdAt: { gte: cutoffDate },
           OR: [
             { branchId: req.user.branchId },
             { branchId: null },
@@ -440,27 +440,51 @@ const getNotifications = async (req, res) => {
         },
         orderBy: { id: "desc" },
       }),
-      // 3. Security events occurred within the last 48 hours
+      // 3. Security events occurred within the last 7 days
       mongoClient.securityEvent.findMany({
         where: {
           eventType: "FORCE_LOGIN_LOGOUT",
-          createdAt: { gte: fortyEightHoursAgo },
+          createdAt: { gte: cutoffDate },
           ...(req.user.email ? { email: req.user.email } : {}),
         },
         orderBy: { id: "desc" },
-        take: 10,
+        take: 30,
+      }),
+      // 4. Newly admitted students within the last 7 days
+      mongoClient.student.findMany({
+        where: {
+          deletedAt: null,
+          branchId: req.user.branchId,
+          admissionDate: { gte: cutoffDate },
+        },
+        orderBy: { id: "desc" },
+        take: 30,
       }),
     ]);
 
-    const requestNotifications = pendingRequests.map((r) => ({
+    const requestNotifications = admissionRequests.map((r) => ({
       type: "ADMISSION_REQUEST",
       id: `admission-${r.id}`,
       raw_id: r.id,
       full_name: r.fullName,
       email: r.email,
       mobile: r.mobile,
-      message: `User ${r.fullName} has requested for admission`,
-      created_at: r.createdAt,
+      status: r.status,
+      message: r.status === "PENDING"
+        ? `New Online Admission Request from ${r.fullName} (${r.mobile})`
+        : `Admission application for ${r.fullName} is ${r.status}`,
+      created_at: r.createdAt ? r.createdAt.toISOString() : new Date().toISOString(),
+    }));
+
+    const newStudentNotifications = newStudents.map((s) => ({
+      type: "NEW_ADMISSION",
+      id: `new-student-${s.id}`,
+      raw_id: s.id,
+      full_name: s.fullName,
+      student_code: s.studentCode,
+      mobile: s.mobile || null,
+      message: `New Student Admission: ${s.fullName} (${s.studentCode}) enrolled successfully.`,
+      created_at: s.admissionDate ? s.admissionDate.toISOString() : (s.createdAt ? s.createdAt.toISOString() : new Date().toISOString()),
     }));
 
     const forceLoginNotifications = forceLoginEvents.map((e) => ({
@@ -469,7 +493,7 @@ const getNotifications = async (req, res) => {
       raw_id: e.id,
       email: e.email,
       message: `New login from ${e.userAgent || "unknown"} (IP: ${e.ipAddress || "unknown"}). Previous session for ${e.email} has been logged out.`,
-      created_at: e.createdAt,
+      created_at: e.createdAt ? e.createdAt.toISOString() : new Date().toISOString(),
     }));
 
     const inactiveNotifications = inactiveStudents.map((s) => ({
@@ -479,8 +503,10 @@ const getNotifications = async (req, res) => {
       full_name: s.fullName,
       student_code: s.studentCode,
       mobile: s.mobile || null,
-      message: `Student ${s.fullName} (${s.studentCode}) moved to Inactive section (unpaid > 20 days).`,
-      created_at: s.updatedAt,
+      message: s.accountStatus === "SUSPENDED"
+        ? `Student ${s.fullName} (${s.studentCode}) has unpaid dues (7+ days). Marked as SUSPENDED.`
+        : `Student ${s.fullName} (${s.studentCode}) moved to Inactive section (unpaid > 20 days).`,
+      created_at: s.updatedAt ? s.updatedAt.toISOString() : new Date().toISOString(),
     }));
 
     // Library Plan expiry alert (library owner plan)
@@ -507,14 +533,18 @@ const getNotifications = async (req, res) => {
       }
     }
 
+    const allCombined = [
+      ...libraryNotifications,
+      ...requestNotifications,
+      ...newStudentNotifications,
+      ...inactiveNotifications,
+      ...forceLoginNotifications,
+    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
     res.json({
       success: true,
-      data: [
-        ...libraryNotifications,
-        ...requestNotifications,
-        ...inactiveNotifications,
-        ...forceLoginNotifications,
-      ],
+      timeframeDays: daysCount,
+      data: allCombined,
     });
   } catch (error) {
     res.status(500).json({

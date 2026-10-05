@@ -987,20 +987,64 @@ const checkoutAllActive = async (req, res) => {
 };
 
 // Public GET /api/attendance/branch-info?token=...
+const resolveAttendanceBranch = async ({ token, branchId, branchCode }) => {
+  const cleanToken = (token || "").trim();
+  const cleanCode = (branchCode || "").trim();
+  const cleanBranchId = parseInt(branchId || (!isNaN(cleanToken) && cleanToken ? cleanToken : null));
+
+  let branch = null;
+  if (cleanToken && cleanToken !== "default" && cleanToken !== "undefined" && cleanToken !== "null") {
+    // 1. Try attendanceToken
+    branch = await mongoClient.branch.findFirst({
+      where: { attendanceToken: cleanToken, isActive: true }
+    });
+    // 2. Try admissionToken
+    if (!branch) {
+      branch = await mongoClient.branch.findFirst({
+        where: { admissionToken: cleanToken, isActive: true }
+      });
+    }
+    // 3. Try branch code
+    if (!branch) {
+      branch = await mongoClient.branch.findFirst({
+        where: { code: cleanToken, isActive: true }
+      });
+    }
+  }
+
+  if (!branch && cleanCode) {
+    branch = await mongoClient.branch.findFirst({
+      where: { code: cleanCode, isActive: true }
+    });
+  }
+
+  if (!branch && cleanBranchId) {
+    branch = await mongoClient.branch.findFirst({
+      where: { id: cleanBranchId, isActive: true }
+    });
+  }
+
+  // Graceful fallback to first active branch
+  if (!branch && (!cleanToken || cleanToken === "default" || cleanToken === "undefined" || cleanToken === "null")) {
+    branch = await mongoClient.branch.findFirst({
+      where: { isActive: true },
+      orderBy: { id: "asc" }
+    });
+  }
+
+  return branch;
+};
+
+// Public GET /api/attendance/branch-info?token=...
 const getPublicBranchInfo = async (req, res) => {
   try {
-    const { token, branchId } = req.query;
-    let branch = null;
-    if (token && typeof token === "string" && token.trim()) {
-      branch = await mongoClient.branch.findFirst({
-        where: { attendanceToken: token.trim(), isActive: true }
-      });
-    }
-    if (!branch && branchId) {
-      branch = await mongoClient.branch.findFirst({
-        where: { id: parseInt(branchId), isActive: true }
-      });
-    }
+    const { token, branchId, code, branchCode } = req.query;
+    const branch = await resolveAttendanceBranch({
+      token,
+      branchId,
+      branchCode: code || branchCode,
+    });
+
     if (!branch) {
       return res.status(404).json({
         success: false,
@@ -1015,6 +1059,7 @@ const getPublicBranchInfo = async (req, res) => {
         address: branch.address,
         phone: branch.phone,
         code: branch.code,
+        attendanceToken: branch.attendanceToken,
       }
     });
   } catch (error) {
@@ -1025,36 +1070,31 @@ const getPublicBranchInfo = async (req, res) => {
 // Public GET /api/attendance/public-search
 const publicSearchStudent = async (req, res) => {
   try {
-    const { q, branchId, token } = req.query;
+    const { q, branchId, token, code, branchCode } = req.query;
     if (!q || !q.trim()) {
       return res.status(400).json({ success: false, message: "Search term is required" });
     }
 
-    let targetBranchId = null;
-    if (token && typeof token === "string" && token.trim()) {
-      const branch = await mongoClient.branch.findFirst({
-        where: { attendanceToken: token.trim(), isActive: true }
-      });
-      if (branch) targetBranchId = branch.id;
-    }
-    if (!targetBranchId && branchId) {
-      targetBranchId = parseInt(branchId);
-    }
-    if (!targetBranchId) {
-      targetBranchId = 1;
-    }
+    const branch = await resolveAttendanceBranch({
+      token,
+      branchId,
+      branchCode: code || branchCode,
+    });
+    const targetBranchId = branch ? branch.id : 1;
 
-    const term = q.trim();
+    let term = q.trim();
 
     const student = await mongoClient.student.findFirst({
       where: {
         deletedAt: null,
         branchId: targetBranchId,
         OR: [
-          { studentCode: { contains: term } },
-          { regNo: { contains: term } },
+          { studentCode: { contains: term, mode: "insensitive" } },
+          { regNo: { contains: term, mode: "insensitive" } },
           { mobile: { contains: term } },
-          { fullName: { contains: term } },
+          { fullName: { contains: term, mode: "insensitive" } },
+          { studentCode: term },
+          { regNo: term },
         ],
       },
     });
@@ -1101,44 +1141,59 @@ const publicSearchStudent = async (req, res) => {
 // Public POST /api/attendance/public-checkin
 const publicCheckInOrOut = async (req, res) => {
   try {
-    const { studentCodeOrMobile, branchId, token } = req.body;
-    if (!studentCodeOrMobile || !studentCodeOrMobile.trim()) {
+    const { studentCodeOrMobile, branchId, token, code, branchCode } = req.body;
+    if (!studentCodeOrMobile || !String(studentCodeOrMobile).trim()) {
       return res.status(400).json({ success: false, message: "Student code or mobile number is required" });
     }
 
-    let targetBranchId = null;
-    if (token && typeof token === "string" && token.trim()) {
-      const branch = await mongoClient.branch.findFirst({
-        where: { attendanceToken: token.trim(), isActive: true }
-      });
-      if (branch) {
-        targetBranchId = branch.id;
-      } else {
-        return res.status(404).json({
-          success: false,
-          message: "Invalid or expired attendance QR code. Cannot record attendance."
-        });
-      }
+    const branch = await resolveAttendanceBranch({
+      token,
+      branchId,
+      branchCode: code || branchCode,
+    });
+    const targetBranchId = branch ? branch.id : 1;
+
+    let term = String(studentCodeOrMobile).trim();
+
+    // Check if scanned value is a full URL (e.g. from ID card QR or web scanner)
+    if (term.startsWith("http://") || term.startsWith("https://")) {
+      try {
+        const parsedUrl = new URL(term);
+        const codeParam = parsedUrl.searchParams.get("code") || parsedUrl.searchParams.get("studentCode") || parsedUrl.searchParams.get("q") || parsedUrl.searchParams.get("id");
+        if (codeParam) {
+          term = codeParam.trim();
+        } else {
+          const pathSegments = parsedUrl.pathname.split("/").filter(Boolean);
+          if (pathSegments.length > 0) {
+            term = pathSegments[pathSegments.length - 1];
+          }
+        }
+      } catch (e) {}
     }
 
-    if (!targetBranchId && branchId) {
-      targetBranchId = parseInt(branchId);
-    }
-    if (!targetBranchId) {
-      targetBranchId = 1;
+    // Check if scanned value is JSON (e.g. {"studentCode":"STD00001"})
+    if (term.startsWith("{") && term.endsWith("}")) {
+      try {
+        const parsedJson = JSON.parse(term);
+        term = parsedJson.studentCode || parsedJson.code || parsedJson.mobile || parsedJson.regNo || term;
+      } catch (e) {}
     }
 
-    const term = studentCodeOrMobile.trim();
+    // Strip common barcode prefixes like "ID: STD00001"
+    term = term.replace(/^(ID|CODE|STUDENT|MOBILE):\s*/i, "").trim();
 
     const student = await mongoClient.student.findFirst({
       where: {
         deletedAt: null,
         branchId: targetBranchId,
         OR: [
+          { studentCode: { contains: term, mode: "insensitive" } },
+          { regNo: { contains: term, mode: "insensitive" } },
+          { mobile: { contains: term } },
+          { fullName: { contains: term, mode: "insensitive" } },
           { studentCode: term },
           { regNo: term },
           { mobile: term },
-          { fullName: { contains: term } }
         ]
       },
       include: {

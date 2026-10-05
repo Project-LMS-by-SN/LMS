@@ -180,9 +180,22 @@ const Admission = () => {
 
   const [paymentMode, setPaymentMode] = useState("");
   const [utrNumber, setUtrNumber] = useState("");
-  const [paymentDate, setPaymentDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
+
+  const getLocalDateStr = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayStr = useMemo(() => getLocalDateStr(new Date()), []);
+  const yesterdayStr = useMemo(() => {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    return getLocalDateStr(y);
+  }, []);
+
+  const [paymentDate, setPaymentDate] = useState(() => getLocalDateStr(new Date()));
   const [includeRegistrationFee, setIncludeRegistrationFee] = useState(false);
   const [customRegistrationFee, setCustomRegistrationFee] = useState("100");
   const [admissionRemark, setAdmissionRemark] = useState("");
@@ -391,6 +404,11 @@ const Admission = () => {
       return;
     }
 
+    if (!paymentDate || paymentDate < yesterdayStr || paymentDate > todayStr) {
+      alert("Payment date must be Today or Yesterday only.");
+      return;
+    }
+
     const defaultRemark = includeRegistrationFee
       ? `(Admission Fee + Registration Fee)`
       : `(Admission Fee)`;
@@ -438,7 +456,7 @@ const Admission = () => {
       setSelectedSeat(null);
       setPaymentMode("");
       setUtrNumber("");
-      setPaymentDate(new Date().toISOString().split("T")[0]);
+      setPaymentDate(todayStr);
 
       // Navigate to Students overview page with the admitted student's overview open
       const user = (() => {
@@ -877,11 +895,21 @@ const Admission = () => {
             })()}
 
             <div className="form-group">
-              <label>Payment Date</label>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                <label style={{ margin: 0, fontWeight: 600 }}>
+                  Payment Date <span style={{ color: "#ef4444" }}>*</span>
+                </label>
+                <span style={{ fontSize: "11px", fontWeight: 600, color: "#2563eb", background: darkMode ? "rgba(37,99,235,0.15)" : "#eff6ff", padding: "2px 8px", borderRadius: "4px" }}>
+                 
+                </span>
+              </div>
               <CustomDatePicker
                 value={paymentDate}
                 onChange={(e) => setPaymentDate(e.target.value)}
                 placeholder="Payment date"
+                min={yesterdayStr}
+                max={todayStr}
+                required
               />
             </div>
 

@@ -21,6 +21,7 @@ import SubscriptionInvoice from "./pages/SubscriptionInvoice";
 import Expenses from "./pages/Expenses";
 import CollectFee from "./pages/CollectFee";
 import PublicAttendance from "./pages/PublicAttendance";
+import Support from "./pages/Support";
 
 const isAuthenticated = () => !!localStorage.getItem("lms_token");
 
@@ -103,6 +104,7 @@ const App = () => {
           <Route path=":role/:name/invoice" element={<SubscriptionInvoice />} />
           <Route path=":role/:name/expenses" element={<Expenses />} />
           <Route path=":role/:name/collect-fee" element={<CollectFee />} />
+          <Route path=":role/:name/support" element={<Support />} />
 
           {/* Legacy Fallback Paths for compatibility */}
           <Route path="admission" element={<Admission />} />
@@ -122,6 +124,7 @@ const App = () => {
           <Route path="subscription/invoice" element={<SubscriptionInvoice />} />
           <Route path="invoice" element={<SubscriptionInvoice />} />
           <Route path="expenses" element={<Expenses />} />
+          <Route path="support" element={<Support />} />
         </Route>
 
         <Route path="*" element={<Navigate to={isAuthenticated() ? "/dashboard" : "/login"} replace />} />

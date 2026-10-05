@@ -25,7 +25,8 @@ import {
   FaUser,
   FaSignOutAlt,
   FaPhoneAlt,
-  FaSyncAlt
+  FaSyncAlt,
+  FaHeadset
 } from "react-icons/fa";
 
 const DashboardLayout = () => {
@@ -316,6 +317,9 @@ const DashboardLayout = () => {
           <NavLink to={`${prefix}/settings`} onClick={() => setIsSidebarOpen(false)}>
             <FaCog style={{ fontSize: "16px", minWidth: "18px" }} /> Settings
           </NavLink>
+          <NavLink to={`${prefix}/support`} onClick={() => setIsSidebarOpen(false)}>
+            <FaHeadset style={{ fontSize: "16px", minWidth: "18px" }} /> Support & Notification
+          </NavLink>
           <button
             onClick={handleLogout}
             style={{
@@ -338,31 +342,6 @@ const DashboardLayout = () => {
           >
             <FaSignOutAlt style={{ fontSize: "16px", minWidth: "18px" }} /> Logout
           </button>
-
-          {/* Support Link */}
-          <a
-            href="tel:+919142025447"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              padding: "10px 14px",
-              borderRadius: "8px",
-              border: darkMode ? "1px solid #334155" : "1px solid #e2e8f0",
-              background: darkMode ? "rgba(59,130,246,0.1)" : "#eff6ff",
-              color: "#2563eb",
-              fontSize: "13px",
-              fontWeight: 700,
-              cursor: "pointer",
-              width: "100%",
-              textAlign: "left",
-              marginTop: "8px",
-              textDecoration: "none",
-              transition: "all 0.2s"
-            }}
-          >
-            <FaPhoneAlt style={{ fontSize: "14px", minWidth: "18px" }} /> Support: 9142025447
-          </a>
         </nav>
       </aside>
 

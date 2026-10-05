@@ -1,19 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   FaBookOpen,
   FaCheckCircle,
   FaExclamationTriangle,
-  FaUser,
   FaPhone,
-  FaEnvelope,
   FaMapMarkerAlt,
-  FaIdCard,
-  FaClock,
-  FaMoneyBillWave,
+  FaCamera,
   FaSpinner,
   FaBuilding,
 } from "react-icons/fa";
 import api from "../api/axios";
+import CustomDatePicker from "../components/CustomDatePicker";
 
 const PublicAdmission = () => {
   const [token, setToken] = useState("");
@@ -29,10 +26,13 @@ const PublicAdmission = () => {
     dob: "",
     address: "",
     aadharNumber: "",
-    preferredShiftId: "",
-    preferredFeePlanId: "",
+    profilePhotoUrl: "",
     remarks: "",
   });
+
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(null);
@@ -40,23 +40,39 @@ const PublicAdmission = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const urlToken = params.get("token");
+    const urlToken = params.get("token") || params.get("admToken") || params.get("admissionToken");
+    const urlBranchId = params.get("branchId") || params.get("branch");
+    const urlCode = params.get("code") || params.get("branchCode");
 
-    if (!urlToken || !urlToken.trim()) {
-      setErrorMsg("Invalid or missing admission link. Please scan the official QR code displayed at your library.");
-      setLoading(false);
-      return;
+    // Check if user is logged in for dashboard preview
+    const loggedInUser = (() => {
+      try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); } catch { return {}; }
+    })();
+
+    let query = "";
+    if (urlToken && urlToken.trim()) {
+      query = `token=${encodeURIComponent(urlToken.trim())}`;
+      setToken(urlToken.trim());
+    } else if (urlBranchId && urlBranchId.trim()) {
+      query = `branchId=${encodeURIComponent(urlBranchId.trim())}`;
+    } else if (urlCode && urlCode.trim()) {
+      query = `code=${encodeURIComponent(urlCode.trim())}`;
+    } else if (loggedInUser?.branchId) {
+      query = `branchId=${encodeURIComponent(loggedInUser.branchId)}`;
+    } else {
+      query = `token=default`;
     }
-
-    setToken(urlToken.trim());
 
     const fetchBranchInfo = async () => {
       try {
         setLoading(true);
         setErrorMsg("");
-        const res = await api.get(`/admission-requests/branch-info?token=${encodeURIComponent(urlToken.trim())}`);
+        const res = await api.get(`/admission-requests/branch-info?${query}`);
         if (res.data?.success) {
           setBranchData(res.data.data);
+          if (res.data.data?.branch?.admissionToken) {
+            setToken(res.data.data.branch.admissionToken);
+          }
         } else {
           setErrorMsg(res.data?.message || "Invalid admission link.");
         }
@@ -75,6 +91,28 @@ const PublicAdmission = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handlePhotoFile = (file) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image size should be less than 5MB");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setPhotoPreview(e.target.result);
+      setFormData((prev) => ({ ...prev, profilePhotoUrl: e.target.result }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handlePhotoFile(e.dataTransfer.files[0]);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError("");
@@ -85,6 +123,19 @@ const PublicAdmission = () => {
     }
     if (!formData.mobile.trim() || formData.mobile.trim().length < 10) {
       setSubmitError("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+    if (!formData.email.trim()) {
+      setSubmitError("Please enter your email address.");
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email.trim())) {
+      setSubmitError("Please enter a valid email address.");
+      return;
+    }
+    if (!formData.dob) {
+      setSubmitError("Please select your date of birth.");
       return;
     }
 
@@ -99,8 +150,7 @@ const PublicAdmission = () => {
         dob: formData.dob || null,
         address: formData.address.trim() || null,
         aadhar_number: formData.aadharNumber.trim() || null,
-        preferred_shift_id: formData.preferredShiftId ? Number(formData.preferredShiftId) : null,
-        preferred_fee_plan_id: formData.preferredFeePlanId ? Number(formData.preferredFeePlanId) : null,
+        profile_photo_url: formData.profilePhotoUrl || null,
         remarks: formData.remarks.trim() || null,
       };
 
@@ -126,10 +176,10 @@ const PublicAdmission = () => {
       dob: "",
       address: "",
       aadharNumber: "",
-      preferredShiftId: "",
-      preferredFeePlanId: "",
+      profilePhotoUrl: "",
       remarks: "",
     });
+    setPhotoPreview(null);
     setSubmitSuccess(null);
     setSubmitError("");
   };
@@ -156,7 +206,6 @@ const PublicAdmission = () => {
           border: "1px solid rgba(255, 255, 255, 0.12)",
           borderRadius: "24px",
           boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
-          overflow: "hidden",
         }}
       >
         {/* Top Header Card */}
@@ -166,6 +215,8 @@ const PublicAdmission = () => {
             padding: "28px 24px",
             textAlign: "center",
             position: "relative",
+            borderTopLeftRadius: "23px",
+            borderTopRightRadius: "23px",
           }}
         >
           <div
@@ -353,6 +404,106 @@ const PublicAdmission = () => {
                 </div>
               )}
 
+              {/* Profile Photo Uploader */}
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "8px" }}>
+                  Profile Photo (Optional)
+                </label>
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    border: `2px dashed ${isDragging ? "#38bdf8" : "rgba(255, 255, 255, 0.2)"}`,
+                    borderRadius: "14px",
+                    padding: "14px 18px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "16px",
+                    cursor: "pointer",
+                    background: isDragging ? "rgba(56, 189, 248, 0.12)" : "rgba(15, 23, 42, 0.6)",
+                    transition: "all 0.2s ease",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  {photoPreview ? (
+                    <img
+                      src={photoPreview}
+                      alt="Preview"
+                      style={{
+                        width: "60px",
+                        height: "60px",
+                        borderRadius: "50%",
+                        objectFit: "cover",
+                        border: "2px solid #38bdf8",
+                        flexShrink: 0,
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: "60px",
+                        height: "60px",
+                        borderRadius: "50%",
+                        background: "rgba(255, 255, 255, 0.08)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "22px",
+                        color: "#94a3b8",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FaCamera />
+                    </div>
+                  )}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: "13px", color: "#f8fafc", display: "flex", alignItems: "center", gap: "6px" }}>
+                      {photoPreview ? (
+                        <>
+                          <FaCheckCircle style={{ color: "#10b981" }} /> Photo selected
+                        </>
+                      ) : (
+                        "Drag & drop or click to upload photo"
+                      )}
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "3px" }}>
+                      JPG, PNG, WebP up to 5MB
+                    </div>
+                    {photoPreview && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPhotoPreview(null);
+                          setFormData((prev) => ({ ...prev, profilePhotoUrl: "" }));
+                        }}
+                        style={{
+                          marginTop: "6px",
+                          fontSize: "12px",
+                          color: "#f87171",
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          padding: 0,
+                          fontWeight: 500,
+                        }}
+                      >
+                        Remove photo
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={(e) => handlePhotoFile(e.target.files[0])}
+                />
+              </div>
+
               {/* Grid 2 Columns */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px", marginBottom: "16px" }}>
                 {/* Full Name */}
@@ -360,28 +511,25 @@ const PublicAdmission = () => {
                   <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "6px" }}>
                     Full Name <span style={{ color: "#ef4444" }}>*</span>
                   </label>
-                  <div style={{ position: "relative" }}>
-                    <input
-                      type="text"
-                      name="fullName"
-                      value={formData.fullName}
-                      onChange={handleChange}
-                      placeholder="e.g. Rahul Sharma"
-                      required
-                      style={{
-                        width: "100%",
-                        padding: "12px 14px 12px 38px",
-                        background: "rgba(15, 23, 42, 0.7)",
-                        border: "1px solid rgba(255, 255, 255, 0.15)",
-                        borderRadius: "12px",
-                        color: "#ffffff",
-                        fontSize: "14px",
-                        outline: "none",
-                        boxSizing: "border-box",
-                      }}
-                    />
-                    <FaUser style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "#64748b", fontSize: "14px" }} />
-                  </div>
+                  <input
+                    type="text"
+                    name="fullName"
+                    value={formData.fullName}
+                    onChange={handleChange}
+                    placeholder="e.g. Rahul Sharma"
+                    required
+                    style={{
+                      width: "100%",
+                      padding: "12px 14px",
+                      background: "rgba(15, 23, 42, 0.7)",
+                      border: "1px solid rgba(255, 255, 255, 0.15)",
+                      borderRadius: "12px",
+                      color: "#ffffff",
+                      fontSize: "14px",
+                      outline: "none",
+                      boxSizing: "border-box",
+                    }}
+                  />
                 </div>
 
                 {/* Mobile Number */}
@@ -389,57 +537,52 @@ const PublicAdmission = () => {
                   <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "6px" }}>
                     Mobile Number <span style={{ color: "#ef4444" }}>*</span>
                   </label>
-                  <div style={{ position: "relative" }}>
-                    <input
-                      type="tel"
-                      name="mobile"
-                      value={formData.mobile}
-                      onChange={handleChange}
-                      placeholder="10-digit mobile number"
-                      maxLength={10}
-                      required
-                      style={{
-                        width: "100%",
-                        padding: "12px 14px 12px 38px",
-                        background: "rgba(15, 23, 42, 0.7)",
-                        border: "1px solid rgba(255, 255, 255, 0.15)",
-                        borderRadius: "12px",
-                        color: "#ffffff",
-                        fontSize: "14px",
-                        outline: "none",
-                        boxSizing: "border-box",
-                      }}
-                    />
-                    <FaPhone style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "#64748b", fontSize: "14px" }} />
-                  </div>
+                  <input
+                    type="tel"
+                    name="mobile"
+                    value={formData.mobile}
+                    onChange={handleChange}
+                    placeholder="10-digit mobile number"
+                    maxLength={10}
+                    required
+                    style={{
+                      width: "100%",
+                      padding: "12px 14px",
+                      background: "rgba(15, 23, 42, 0.7)",
+                      border: "1px solid rgba(255, 255, 255, 0.15)",
+                      borderRadius: "12px",
+                      color: "#ffffff",
+                      fontSize: "14px",
+                      outline: "none",
+                      boxSizing: "border-box",
+                    }}
+                  />
                 </div>
 
                 {/* Email Address */}
                 <div>
                   <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "6px" }}>
-                    Email Address
+                    Email Address <span style={{ color: "#ef4444" }}>*</span>
                   </label>
-                  <div style={{ position: "relative" }}>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleChange}
-                      placeholder="email@example.com"
-                      style={{
-                        width: "100%",
-                        padding: "12px 14px 12px 38px",
-                        background: "rgba(15, 23, 42, 0.7)",
-                        border: "1px solid rgba(255, 255, 255, 0.15)",
-                        borderRadius: "12px",
-                        color: "#ffffff",
-                        fontSize: "14px",
-                        outline: "none",
-                        boxSizing: "border-box",
-                      }}
-                    />
-                    <FaEnvelope style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "#64748b", fontSize: "14px" }} />
-                  </div>
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="email@example.com"
+                    required
+                    style={{
+                      width: "100%",
+                      padding: "12px 14px",
+                      background: "rgba(15, 23, 42, 0.7)",
+                      border: "1px solid rgba(255, 255, 255, 0.15)",
+                      borderRadius: "12px",
+                      color: "#ffffff",
+                      fontSize: "14px",
+                      outline: "none",
+                      boxSizing: "border-box",
+                    }}
+                  />
                 </div>
 
                 {/* Gender */}
@@ -472,13 +615,39 @@ const PublicAdmission = () => {
                 {/* Date of Birth */}
                 <div>
                   <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "6px" }}>
-                    Date of Birth
+                    Date of Birth <span style={{ color: "#ef4444" }}>*</span>
                   </label>
-                  <input
-                    type="date"
+                  <CustomDatePicker
                     name="dob"
                     value={formData.dob}
                     onChange={handleChange}
+                    placeholder="Select date of birth"
+                    required
+                    forceDark={true}
+                    max={new Date().toISOString().split("T")[0]}
+                    triggerStyle={{
+                      padding: "12px 14px",
+                      borderRadius: "12px",
+                      background: "rgba(15, 23, 42, 0.7)",
+                      border: "1px solid rgba(255, 255, 255, 0.15)",
+                      color: "#ffffff",
+                      minHeight: "46px",
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+
+                {/* Aadhar / ID Card */}
+                <div>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "6px" }}>
+                    Aadhar / ID Number (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    name="aadharNumber"
+                    value={formData.aadharNumber}
+                    onChange={handleChange}
+                    placeholder="e.g. 12-digit Aadhar"
                     style={{
                       width: "100%",
                       padding: "12px 14px",
@@ -489,105 +658,8 @@ const PublicAdmission = () => {
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
-                      colorScheme: "dark",
                     }}
                   />
-                </div>
-
-                {/* Aadhar / ID Card */}
-                <div>
-                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "6px" }}>
-                    Aadhar / ID Number (Optional)
-                  </label>
-                  <div style={{ position: "relative" }}>
-                    <input
-                      type="text"
-                      name="aadharNumber"
-                      value={formData.aadharNumber}
-                      onChange={handleChange}
-                      placeholder="e.g. 12-digit Aadhar"
-                      style={{
-                        width: "100%",
-                        padding: "12px 14px 12px 38px",
-                        background: "rgba(15, 23, 42, 0.7)",
-                        border: "1px solid rgba(255, 255, 255, 0.15)",
-                        borderRadius: "12px",
-                        color: "#ffffff",
-                        fontSize: "14px",
-                        outline: "none",
-                        boxSizing: "border-box",
-                      }}
-                    />
-                    <FaIdCard style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "#64748b", fontSize: "14px" }} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Preferences Section (Shift & Plan) */}
-              <div style={{ background: "rgba(15, 23, 42, 0.5)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "16px", padding: "18px", marginBottom: "16px" }}>
-                <h4 style={{ margin: "0 0 14px 0", fontSize: "14px", fontWeight: 700, color: "#38bdf8", display: "flex", alignItems: "center", gap: "8px" }}>
-                  <FaClock /> Membership Preferences
-                </h4>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" }}>
-                  {/* Preferred Shift */}
-                  <div>
-                    <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "6px" }}>
-                      Preferred Shift
-                    </label>
-                    <select
-                      name="preferredShiftId"
-                      value={formData.preferredShiftId}
-                      onChange={handleChange}
-                      style={{
-                        width: "100%",
-                        padding: "12px 14px",
-                        background: "rgba(15, 23, 42, 0.8)",
-                        border: "1px solid rgba(255, 255, 255, 0.15)",
-                        borderRadius: "12px",
-                        color: "#ffffff",
-                        fontSize: "14px",
-                        outline: "none",
-                        boxSizing: "border-box",
-                      }}
-                    >
-                      <option value="" style={{ background: "#1e293b", color: "#94a3b8" }}>-- Select Shift (Optional) --</option>
-                      {branchData?.shifts?.map((s) => (
-                        <option key={s.id} value={s.id} style={{ background: "#1e293b", color: "#fff" }}>
-                          {s.name} ({s.start_time} - {s.end_time})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Preferred Fee Plan */}
-                  <div>
-                    <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "6px" }}>
-                      Preferred Membership Plan
-                    </label>
-                    <select
-                      name="preferredFeePlanId"
-                      value={formData.preferredFeePlanId}
-                      onChange={handleChange}
-                      style={{
-                        width: "100%",
-                        padding: "12px 14px",
-                        background: "rgba(15, 23, 42, 0.8)",
-                        border: "1px solid rgba(255, 255, 255, 0.15)",
-                        borderRadius: "12px",
-                        color: "#ffffff",
-                        fontSize: "14px",
-                        outline: "none",
-                        boxSizing: "border-box",
-                      }}
-                    >
-                      <option value="" style={{ background: "#1e293b", color: "#94a3b8" }}>-- Select Plan (Optional) --</option>
-                      {branchData?.feePlans?.map((p) => (
-                        <option key={p.id} value={p.id} style={{ background: "#1e293b", color: "#fff" }}>
-                          {p.name} — ₹{p.amount} ({p.duration_days} days)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
                 </div>
               </div>
 

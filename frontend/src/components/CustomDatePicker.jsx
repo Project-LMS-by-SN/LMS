@@ -34,8 +34,11 @@ export const CustomDatePicker = ({
   required = false,
   style = {},
   className = "",
+  forceDark = false,
+  triggerStyle = {},
 }) => {
-  const { darkMode } = useTheme();
+  const themeContext = useTheme();
+  const darkMode = forceDark ? true : (themeContext?.darkMode ?? false);
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
 
@@ -245,6 +248,7 @@ export const CustomDatePicker = ({
           transition: "all 0.2s ease",
           userSelect: "none",
           opacity: disabled ? 0.6 : 1,
+          ...triggerStyle,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "9px" }}>

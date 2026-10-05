@@ -19,22 +19,63 @@ const formatRequest = (r) => ({
   created_at: r.createdAt ? r.createdAt.toISOString() : new Date().toISOString(),
 });
 
+const resolveBranchFromInput = async ({ token, branchId, branchCode }) => {
+  const cleanToken = (token || "").trim();
+  const cleanCode = (branchCode || "").trim();
+  const cleanBranchId = parseInt(branchId || (!isNaN(cleanToken) && cleanToken ? cleanToken : null));
+
+  let branch = null;
+  if (cleanToken && cleanToken !== "default" && cleanToken !== "undefined" && cleanToken !== "null") {
+    // 1. By admissionToken
+    branch = await mongoClient.branch.findFirst({
+      where: { admissionToken: cleanToken, isActive: true },
+    });
+    // 2. By attendanceToken
+    if (!branch) {
+      branch = await mongoClient.branch.findFirst({
+        where: { attendanceToken: cleanToken, isActive: true },
+      });
+    }
+    // 3. By branch code
+    if (!branch) {
+      branch = await mongoClient.branch.findFirst({
+        where: { code: cleanToken, isActive: true },
+      });
+    }
+  }
+
+  if (!branch && cleanCode) {
+    branch = await mongoClient.branch.findFirst({
+      where: { code: cleanCode, isActive: true },
+    });
+  }
+
+  if (!branch && cleanBranchId) {
+    branch = await mongoClient.branch.findFirst({
+      where: { id: cleanBranchId, isActive: true },
+    });
+  }
+
+  // Graceful fallback to first active branch
+  if (!branch && (!cleanToken || cleanToken === "default" || cleanToken === "undefined" || cleanToken === "null")) {
+    branch = await mongoClient.branch.findFirst({
+      where: { isActive: true },
+      orderBy: { id: "asc" },
+    });
+  }
+
+  return branch;
+};
+
 // Public GET /api/admission-requests/branch-info?token=...
 const getBranchInfoByToken = async (req, res) => {
   try {
-    const { token } = req.query;
-    if (!token || typeof token !== "string" || !token.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Admission QR token is required",
-      });
-    }
+    const { token, branchId, code, branchCode } = req.query;
 
-    const branch = await mongoClient.branch.findFirst({
-      where: {
-        admissionToken: token.trim(),
-        isActive: true,
-      },
+    const branch = await resolveBranchFromInput({
+      token,
+      branchId,
+      branchCode: code || branchCode,
     });
 
     if (!branch) {
@@ -65,6 +106,7 @@ const getBranchInfoByToken = async (req, res) => {
           address: branch.address,
           phone: branch.phone,
           code: branch.code,
+          admissionToken: branch.admissionToken,
         },
         shifts: shifts.map((s) => ({
           id: s.id,
@@ -97,6 +139,8 @@ const createRequest = async (req, res) => {
     const {
       token,
       branchId,
+      code,
+      branchCode,
       full_name,
       fullName,
       email,
@@ -126,19 +170,12 @@ const createRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: "Mobile number is required." });
     }
 
-    // Resolve branch strictly via unguessable token
-    let targetBranch = null;
-    if (token && typeof token === "string" && token.trim()) {
-      targetBranch = await mongoClient.branch.findFirst({
-        where: { admissionToken: token.trim(), isActive: true },
-      });
-    }
-
-    if (!targetBranch && branchId) {
-      targetBranch = await mongoClient.branch.findFirst({
-        where: { id: parseInt(branchId), isActive: true },
-      });
-    }
+    // Resolve branch flexibly
+    const targetBranch = await resolveBranchFromInput({
+      token,
+      branchId,
+      branchCode: code || branchCode,
+    });
 
     if (!targetBranch) {
       return res.status(404).json({

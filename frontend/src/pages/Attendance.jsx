@@ -4,6 +4,7 @@ import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
 import { FaCreditCard, FaCamera, FaSearch, FaDownload, FaBolt, FaExclamationTriangle, FaCheckCircle, FaTimes, FaCopy, FaCheck } from "react-icons/fa";
 import QRCodeLib from "qrcode";
+import { Html5Qrcode } from "html5-qrcode";
 import CustomDatePicker from "../components/CustomDatePicker";
 import { downloadQrPoster } from "../utils/qrPoster";
 
@@ -68,6 +69,9 @@ const Attendance = () => {
   const [qrFullUrl, setQrFullUrl] = useState("");
   const [branchDetails, setBranchDetails] = useState(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
+  const [cameraScannerError, setCameraScannerError] = useState("");
+  const staffQrScannerRef = useRef(null);
   const { darkMode, timeFormat } = useTheme();
 
   useEffect(() => {
@@ -223,15 +227,88 @@ const Attendance = () => {
     }
   };
 
+  useEffect(() => {
+    return () => {
+      if (staffQrScannerRef.current) {
+        staffQrScannerRef.current.stop().catch(() => {}).then(() => {
+          staffQrScannerRef.current.clear();
+        });
+      }
+    };
+  }, []);
+
+  const handleStartStaffScanner = () => {
+    setCameraScannerOpen(true);
+    setCameraScannerError("");
+    setTimeout(async () => {
+      try {
+        const qrContainer = document.getElementById("staff-qr-scanner-view");
+        if (!qrContainer) return;
+
+        if (staffQrScannerRef.current) {
+          try { await staffQrScannerRef.current.stop(); } catch (e) {}
+        }
+
+        const scanner = new Html5Qrcode("staff-qr-scanner-view");
+        staffQrScannerRef.current = scanner;
+
+        await scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 220, height: 220 } },
+          (decodedText) => {
+            handleStopStaffScanner();
+            handleQRScan(decodedText);
+          },
+          () => {}
+        );
+      } catch (err) {
+        console.error("Camera scanner error:", err);
+        setCameraScannerError("Unable to access camera. Please allow camera permissions.");
+      }
+    }, 200);
+  };
+
+  const handleStopStaffScanner = async () => {
+    if (staffQrScannerRef.current) {
+      try {
+        await staffQrScannerRef.current.stop();
+        staffQrScannerRef.current.clear();
+      } catch (e) {}
+      staffQrScannerRef.current = null;
+    }
+    setCameraScannerOpen(false);
+  };
+
   const handleQRScan = async (scannedCode) => {
     if (!scannedCode) return;
     setError("");
     setSuccessMsg("");
     setLoading(true);
     try {
-      const query = scannedCode.trim();
+      let query = String(scannedCode).trim();
+      // If scanned code is a URL (e.g. from mobile camera or web)
+      if (query.startsWith("http://") || query.startsWith("https://")) {
+        try {
+          const parsed = new URL(query);
+          const p = parsed.searchParams.get("code") || parsed.searchParams.get("studentCode") || parsed.searchParams.get("q") || parsed.searchParams.get("id");
+          if (p) {
+            query = p.trim();
+          } else {
+            const parts = parsed.pathname.split("/").filter(Boolean);
+            if (parts.length > 0) query = parts[parts.length - 1];
+          }
+        } catch (e) {}
+      }
+      if (query.startsWith("{") && query.endsWith("}")) {
+        try {
+          const parsed = JSON.parse(query);
+          query = parsed.studentCode || parsed.code || parsed.mobile || query;
+        } catch (e) {}
+      }
+      query = query.replace(/^(ID|CODE|STUDENT|MOBILE):\s*/i, "").trim();
+
       const currentUser = (() => { try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); } catch { return {}; } })();
-      const currentBranchId = currentUser.branchId || 1;
+      const currentBranchId = currentUser.branchId || branchDetails?.branchId || 1;
 
       const res = await api.post("/attendance/public-checkin", {
         studentCodeOrMobile: query,
@@ -866,6 +943,34 @@ const Attendance = () => {
 
                 {/* Instant Barcode / QR Scanner Input */}
                 <div style={{ width: "100%", borderTop: `1px solid ${borderColor}`, paddingTop: "16px", marginTop: "4px" }}>
+                  {cameraScannerOpen && (
+                    <div style={{ marginBottom: "14px", padding: "12px", background: darkMode ? "#0f172a" : "#f1f5f9", borderRadius: "12px", border: "1px solid #3b82f6" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        <span style={{ fontSize: "12px", fontWeight: 700, color: "#3b82f6", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <FaCamera /> Point Camera at Student ID Card / QR:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleStopStaffScanner}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "#ef4444",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          <FaTimes /> Close
+                        </button>
+                      </div>
+                      <div id="staff-qr-scanner-view" style={{ width: "100%", borderRadius: "8px", overflow: "hidden" }} />
+                      {cameraScannerError && (
+                        <p style={{ color: "#ef4444", fontSize: "11px", margin: "6px 0 0 0" }}>{cameraScannerError}</p>
+                      )}
+                    </div>
+                  )}
+
                   <form onSubmit={(e) => { e.preventDefault(); handleQRScan(simulatedCode); setSimulatedCode(""); }}>
                     <label style={{ fontSize: "12px", fontWeight: 600, color: textSecondary, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
                       <FaBolt style={{ color: "#eab308" }} /> Scan Barcode / Enter Student Code for Instant Check-In/Out:
@@ -881,8 +986,28 @@ const Attendance = () => {
                           border: `1px solid ${borderColor}`, background: cardBg, color: textPrimary, fontSize: "14px", outline: "none"
                         }}
                       />
-                      <button type="submit" className="primary-btn" disabled={loading} style={{ padding: "8px 16px", fontSize: "13px" }}>
-                        {loading ? "Processing..." : "Submit"}
+                      <button type="submit" className="primary-btn" disabled={loading} style={{ padding: "8px 14px", fontSize: "13px" }}>
+                        {loading ? "..." : "Submit"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cameraScannerOpen ? handleStopStaffScanner : handleStartStaffScanner}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: "8px",
+                          border: `1px solid ${cameraScannerOpen ? "#ef4444" : "#3b82f6"}`,
+                          background: cameraScannerOpen ? "rgba(239, 68, 68, 0.1)" : "rgba(59, 130, 246, 0.1)",
+                          color: cameraScannerOpen ? "#ef4444" : "#3b82f6",
+                          fontWeight: 600,
+                          fontSize: "13px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          cursor: "pointer",
+                        }}
+                        title="Scan with Camera"
+                      >
+                        <FaCamera /> {cameraScannerOpen ? "Close" : "Camera"}
                       </button>
                     </div>
                   </form>

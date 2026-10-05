@@ -242,6 +242,34 @@ const NotificationBell = () => {
               );
             })
           )}
+          <div
+            onClick={() => {
+              setOpen(false);
+              const user = (() => {
+                try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); } catch { return {}; }
+              })();
+              if (user && user.role && user.name) {
+                const roleSegment = user.role.toLowerCase();
+                const nameSegment = (user.name || "user").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+                navigate(`/${roleSegment}/${nameSegment}/support`);
+              } else {
+                navigate("/support");
+              }
+            }}
+            style={{
+              padding: "10px 14px",
+              textAlign: "center",
+              fontSize: "12px",
+              fontWeight: 700,
+              color: "#2563eb",
+              cursor: "pointer",
+              borderTop: "1px solid rgba(0, 0, 0, 0.08)",
+              background: "rgba(37, 99, 235, 0.06)",
+              transition: "background 0.2s"
+            }}
+          >
+            Open Full Support & Notification Center →
+          </div>
         </div>
       )}
     </div>
