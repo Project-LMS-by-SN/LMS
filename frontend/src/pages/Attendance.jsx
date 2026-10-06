@@ -52,6 +52,54 @@ const Attendance = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [countdown, setCountdown] = useState(null);
+  const countdownTimerRef = useRef(null);
+
+  const startAutoClose = useCallback((seconds = 5) => {
+    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    setCountdown(seconds);
+    countdownTimerRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          clearInterval(countdownTimerRef.current);
+          countdownTimerRef.current = null;
+          setStudentData(null);
+          setSearchQuery("");
+          setSuccessMsg("");
+          setSelectedShiftId(null);
+          setShowSuggestions(false);
+          setSuggestions([]);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  const cancelAutoClose = useCallback(() => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setCountdown(null);
+  }, []);
+
+  const closeImmediately = useCallback(() => {
+    cancelAutoClose();
+    setStudentData(null);
+    setSearchQuery("");
+    setSuccessMsg("");
+    setSelectedShiftId(null);
+    setShowSuggestions(false);
+    setSuggestions([]);
+  }, [cancelAutoClose]);
+
+  useEffect(() => {
+    return () => {
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    };
+  }, []);
 
   const todayStr = formatDateLocal(new Date());
   const yesterdayStr = (() => {
@@ -166,6 +214,7 @@ const Attendance = () => {
 
   const handleSearch = async (e, queryOverride) => {
     if (e) e.preventDefault();
+    cancelAutoClose();
     const query = queryOverride ?? searchQuery.trim();
     if (!query) return;
     setLoading(true);
@@ -331,6 +380,7 @@ const Attendance = () => {
       if (res.data?.success) {
         const fullMsg = res.data.message + (res.data.subMessage ? ` - ${res.data.subMessage}` : "");
         setSuccessMsg(fullMsg);
+        startAutoClose(5);
         fetchAttendance();
         fetchActiveCheckIns();
       } else {
@@ -474,6 +524,7 @@ const Attendance = () => {
         shift_id: selected.shift_id
       });
       setSuccessMsg(res.data.message);
+      startAutoClose(5);
 
       if (res.data?.data?.check_in_time) {
         const serverInTime = res.data.data.check_in_time;
@@ -532,6 +583,7 @@ const Attendance = () => {
         shift_id: selected.shift_id
       });
       setSuccessMsg(res.data.message);
+      startAutoClose(5);
 
       if (res.data?.data?.check_out_time) {
         const serverOutTime = res.data.data.check_out_time;
@@ -591,6 +643,7 @@ const Attendance = () => {
         shift_id: activeCheckIn.shift_id
       });
       setSuccessMsg(res.data.message || `Checked out ${sData.student.full_name}`);
+      startAutoClose(5);
       fetchAttendance();
       fetchActiveCheckIns();
       if (studentData && studentData.student.student_code === studentCode) {
@@ -602,14 +655,16 @@ const Attendance = () => {
     }
   };
 
-  const studentHistory = studentData
-    ? filteredAttendanceList.filter((a) => {
-        if (a.student_id && studentData.student?.id) {
-          return a.student_id === studentData.student.id;
-        }
-        return a.student_code === studentData.student?.student_code;
-      })
-    : [];
+  const studentHistory = (studentData?.attendanceHistory && studentData.attendanceHistory.length > 0)
+    ? studentData.attendanceHistory
+    : (studentData
+      ? attendanceList.filter((a) => {
+          if (a.student_id && studentData.student?.id) {
+            return a.student_id === studentData.student.id;
+          }
+          return a.student_code === studentData.student?.student_code;
+        })
+      : []);
 
   const today = new Date().toLocaleDateString("en-IN", {
     weekday: "long",
@@ -664,6 +719,22 @@ const Attendance = () => {
           }}
         >
           Yesterday
+        </button>
+        <button
+          onClick={() => handleDateModeChange("last30")}
+          style={{
+            padding: "8px 18px",
+            borderRadius: "8px",
+            fontWeight: 600,
+            fontSize: "13px",
+            cursor: "pointer",
+            border: `1px solid ${dateMode === "last30" ? "#2563eb" : borderColor}`,
+            background: dateMode === "last30" ? "#eff6ff" : cardBg,
+            color: dateMode === "last30" ? "#2563eb" : textSecondary,
+            transition: "all 0.2s"
+          }}
+        >
+          Last 30 Days
         </button>
         <div style={{ width: "200px" }}>
           <CustomDatePicker
@@ -1038,10 +1109,83 @@ const Attendance = () => {
           )}
 
           {successMsg && (
-            <div className="form-card" style={{ borderColor: "#bbf7d0", background: "#f0fdf4", maxWidth: "500px", marginBottom: "20px" }}>
-              <p style={{ color: "#15803d", fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
-                <FaCheckCircle /> {successMsg}
-              </p>
+            <div
+              className="form-card"
+              style={{
+                borderColor: "#bbf7d0",
+                background: darkMode ? "rgba(16, 185, 129, 0.12)" : "#f0fdf4",
+                maxWidth: "600px",
+                marginBottom: "20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "12px",
+                flexWrap: "wrap",
+                padding: "12px 16px",
+                borderRadius: "12px",
+                border: "1px solid #86efac",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: "220px" }}>
+                <FaCheckCircle style={{ color: "#16a34a", fontSize: "18px", flexShrink: 0 }} />
+                <span style={{ color: darkMode ? "#86efac" : "#15803d", fontWeight: 600, fontSize: "14px" }}>
+                  {successMsg}
+                </span>
+              </div>
+              {countdown !== null && (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      color: "#15803d",
+                      background: darkMode ? "rgba(255,255,255,0.1)" : "#dcfce7",
+                      padding: "4px 10px",
+                      borderRadius: "20px",
+                      border: "1px solid #86efac",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    Closing in {countdown}s
+                  </span>
+                  <button
+                    type="button"
+                    onClick={closeImmediately}
+                    style={{
+                      background: "#16a34a",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "6px",
+                      padding: "4px 10px",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                    title="Close now"
+                  >
+                    Close Now ✕
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelAutoClose}
+                    style={{
+                      background: "transparent",
+                      color: darkMode ? "#cbd5e1" : "#64748b",
+                      border: `1px solid ${borderColor}`,
+                      borderRadius: "6px",
+                      padding: "4px 8px",
+                      fontSize: "11px",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                    title="Keep open"
+                  >
+                    Keep Open
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -1057,9 +1201,31 @@ const Attendance = () => {
                       {studentData.student.reg_no && <> | {studentData.student.reg_no}</>}
                     </p>
                   </div>
-                  <span className={studentData.student.account_status === "ACTIVE" ? "status-badge" : "danger-badge"}>
-                    {studentData.student.account_status}
-                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span className={studentData.student.account_status === "ACTIVE" ? "status-badge" : "danger-badge"}>
+                      {studentData.student.account_status}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={closeImmediately}
+                      style={{
+                        background: "transparent",
+                        border: `1px solid ${borderColor}`,
+                        color: textSecondary,
+                        padding: "5px 10px",
+                        borderRadius: "6px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px"
+                      }}
+                      title="Close student details"
+                    >
+                      <FaTimes /> Close
+                    </button>
+                  </div>
                 </div>
 
                 {(studentData.assignments || []).length > 0 ? (
@@ -1221,29 +1387,34 @@ const Attendance = () => {
               {/* Attendance History */}
               <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}` }}>
                 <h3 style={{ marginBottom: "16px", fontSize: "16px", color: textPrimary }}>
-                  Attendance History
+                  Attendance History ({studentData.student?.full_name})
                   <span style={{ fontSize: "13px", fontWeight: 400, color: textSecondary, marginLeft: "8px" }}>
-                    ({startDate} to {endDate})
+                    ({studentHistory.length} records in past 30 days)
                   </span>
                 </h3>
                 <table>
                   <thead>
                     <tr style={{ color: textSecondary }}>
-                      <th>Date</th><th>Shift</th><th>Status</th><th>Check In</th><th>Check Out</th>
+                      <th>Date</th><th>Shift</th><th>Seat</th><th>Check In</th><th>Check Out</th><th>Status</th>
                     </tr>
                   </thead>
                   <tbody style={{ color: textPrimary }}>
                     {studentHistory.map((a) => (
                       <tr key={a.id} style={{ borderBottom: `1px solid ${borderColor}` }}>
                         <td>{a.attendance_date}</td>
-                        <td>{a.shift_name}</td>
+                        <td style={{ fontWeight: 500 }}>{a.shift_name}</td>
+                        <td>{a.seat_number || "—"}</td>
+                        <td style={{ color: a.check_in_time ? "#16a34a" : textSecondary, fontWeight: a.check_in_time ? 600 : 400 }}>
+                          {formatTime(a.check_in_time, timeFormat) || "—"}
+                        </td>
+                        <td style={{ color: a.check_out_time ? "#ea580c" : textSecondary, fontWeight: a.check_out_time ? 600 : 400 }}>
+                          {formatTime(a.check_out_time, timeFormat) || "—"}
+                        </td>
                         <td><span className={a.status === "PRESENT" ? "status-badge" : "danger-badge"}>{a.status}</span></td>
-                        <td>{formatTime(a.check_in_time, timeFormat) || "—"}</td>
-                        <td>{formatTime(a.check_out_time, timeFormat) || "—"}</td>
                       </tr>
                     ))}
                     {studentHistory.length === 0 && (
-                      <tr><td colSpan={5} className="empty-text" style={{ color: textSecondary }}>No records in this period</td></tr>
+                      <tr><td colSpan={6} className="empty-text" style={{ color: textSecondary }}>No attendance records found for this student</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1263,22 +1434,30 @@ const Attendance = () => {
               <table>
                 <thead>
                   <tr style={{ color: textSecondary }}>
-                    <th>Date</th><th>Name</th><th>Shift</th><th>Status</th><th>In</th><th>Out</th>
+                    <th>Date</th><th>Student</th><th>Shift</th><th>Seat</th><th>Check In</th><th>Check Out</th><th>Status</th>
                   </tr>
                 </thead>
                 <tbody style={{ color: textPrimary }}>
-                  {filteredAttendanceList.slice(0, 50).map(a => (
+                  {filteredAttendanceList.slice(0, 150).map(a => (
                     <tr key={a.id} style={{ borderBottom: `1px solid ${borderColor}` }}>
                       <td>{a.attendance_date}</td>
-                      <td style={{ fontWeight: 500 }}>{a.full_name}</td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{a.full_name}</div>
+                        <div style={{ fontSize: "11px", color: textSecondary }}>{a.student_code}</div>
+                      </td>
                       <td>{a.shift_name}</td>
+                      <td>{a.seat_number || "—"}</td>
+                      <td style={{ color: a.check_in_time ? "#16a34a" : textSecondary, fontWeight: a.check_in_time ? 600 : 400 }}>
+                        {formatTime(a.check_in_time, timeFormat) || "—"}
+                      </td>
+                      <td style={{ color: a.check_out_time ? "#ea580c" : textSecondary, fontWeight: a.check_out_time ? 600 : 400 }}>
+                        {formatTime(a.check_out_time, timeFormat) || "—"}
+                      </td>
                       <td><span className={a.status === "PRESENT" ? "status-badge" : "danger-badge"}>{a.status}</span></td>
-                      <td>{formatTime(a.check_in_time, timeFormat) || "—"}</td>
-                      <td>{formatTime(a.check_out_time, timeFormat) || "—"}</td>
                     </tr>
                   ))}
                   {filteredAttendanceList.length === 0 && (
-                    <tr><td colSpan={6} className="empty-text" style={{ color: textSecondary }}>No attendance records in this period</td></tr>
+                    <tr><td colSpan={7} className="empty-text" style={{ color: textSecondary }}>No attendance records in this period</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1308,18 +1487,51 @@ const Attendance = () => {
                   {activeCheckIns.map((item, idx) => (
                     <div
                       key={idx}
-                      className="profile-info-group"
-                      style={{ cursor: "pointer", borderBottom: idx < activeCheckIns.length - 1 ? `1px solid ${borderColor}` : "none", paddingBottom: idx < activeCheckIns.length - 1 ? "10px" : 0 }}
-                      onClick={() => {
-                        setAttendanceMode("manual");
-                        setSearchQuery(item.student_code);
-                        setShowActivePanel(false);
-                        handleSearch(null, item.student_code);
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        borderBottom: idx < activeCheckIns.length - 1 ? `1px solid ${borderColor}` : "none",
+                        paddingBottom: idx < activeCheckIns.length - 1 ? "10px" : 0,
+                        gap: "8px",
                       }}
                     >
-                      <div className="profile-info-label" style={{ fontSize: "10px" }}>{item.student_code}</div>
-                      <div className="profile-info-value" style={{ fontSize: "14px", color: textPrimary }}>{item.full_name}</div>
-                      <div style={{ fontSize: "11px", color: "#15803d", marginTop: "2px" }}>In: {formatTime(item.check_in_time, timeFormat)} - {item.shift_name}</div>
+                      <div
+                        className="profile-info-group"
+                        style={{ cursor: "pointer", flex: 1 }}
+                        onClick={() => {
+                          cancelAutoClose();
+                          setAttendanceMode("manual");
+                          setSearchQuery(item.student_code);
+                          setShowActivePanel(false);
+                          handleSearch(null, item.student_code);
+                        }}
+                      >
+                        <div className="profile-info-label" style={{ fontSize: "10px" }}>{item.student_code}</div>
+                        <div className="profile-info-value" style={{ fontSize: "14px", color: textPrimary }}>{item.full_name}</div>
+                        <div style={{ fontSize: "11px", color: "#15803d", marginTop: "2px" }}>In: {formatTime(item.check_in_time, timeFormat)} - {item.shift_name}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDirectCheckoutByCode(item.student_code);
+                        }}
+                        style={{
+                          background: "linear-gradient(135deg,#f97316,#ea580c)",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: "6px",
+                          padding: "6px 10px",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          flexShrink: 0,
+                        }}
+                        title={`Check out ${item.full_name}`}
+                      >
+                        OUT
+                      </button>
                     </div>
                   ))}
                 </div>

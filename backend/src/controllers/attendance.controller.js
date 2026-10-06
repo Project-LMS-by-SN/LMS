@@ -245,17 +245,11 @@ const groupAttendanceRecords = (attendanceRecords) => {
           .sort();
         const earliestCheckIn = checkInTimes.length > 0 ? checkInTimes[0].substring(0, 5) : null;
 
-        const hasUncheckedOut = block.some((b) => b.checkInTime && !b.checkOutTime);
-        let latestCheckOut = null;
-        if (!hasUncheckedOut) {
-          const checkOutTimes = block
-            .map((b) => b.checkOutTime)
-            .filter(Boolean)
-            .sort();
-          if (checkOutTimes.length > 0) {
-            latestCheckOut = checkOutTimes[checkOutTimes.length - 1].substring(0, 5);
-          }
-        }
+        const checkOutTimes = block
+          .map((b) => b.checkOutTime)
+          .filter(Boolean)
+          .sort();
+        const latestCheckOut = checkOutTimes.length > 0 ? checkOutTimes[checkOutTimes.length - 1].substring(0, 5) : null;
 
         const seatNumber = block.find((b) => b.shiftAssignment?.seat?.seatNumber)?.shiftAssignment?.seat?.seatNumber || null;
 
@@ -472,12 +466,44 @@ const searchStudentAttendance = async (req, res) => {
       payment_date: formatDateTimeStr(p.paymentDate),
     }));
 
+    // Fetch last 30 days attendance history for this student
+    const studentHistoryRecords = await mongoClient.attendance.findMany({
+      where: {
+        shiftAssignment: {
+          validity: {
+            studentId: student.id,
+          },
+        },
+      },
+      include: {
+        shiftAssignment: {
+          include: {
+            shift: true,
+            seat: true,
+            validity: {
+              include: {
+                student: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [
+        { attendanceDate: "desc" },
+        { id: "desc" },
+      ],
+      take: 60,
+    });
+
+    const formattedHistory = groupAttendanceRecords(studentHistoryRecords);
+
     res.json({
       success: true,
       data: {
         student: formattedStudent,
         assignments: formattedAssignments,
         todayAttendance: formattedTodayAttendance,
+        attendanceHistory: formattedHistory,
         payments: formattedPayments,
       },
     });
@@ -744,8 +770,19 @@ const checkOut = async (req, res) => {
       attendanceWhere.shiftAssignment.shiftId = shId;
     }
 
-    const records = await mongoClient.attendance.findMany({
-      where: attendanceWhere,
+    let records = await mongoClient.attendance.findMany({
+      where: {
+        checkOutTime: null,
+        shiftAssignment: {
+          validity: {
+            studentId: sId,
+            student: {
+              branchId: req.user.branchId,
+            },
+          },
+          ...(shId ? { shiftId: shId } : {}),
+        },
+      },
       include: {
         shiftAssignment: {
           include: {
@@ -761,6 +798,26 @@ const checkOut = async (req, res) => {
       orderBy: { id: "desc" },
       take: 1,
     });
+
+    if (records.length === 0) {
+      records = await mongoClient.attendance.findMany({
+        where: attendanceWhere,
+        include: {
+          shiftAssignment: {
+            include: {
+              shift: true,
+              validity: {
+                include: {
+                  student: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { id: "desc" },
+        take: 1,
+      });
+    }
 
     if (records.length === 0) {
       return res.status(400).json({
@@ -809,7 +866,7 @@ const checkOut = async (req, res) => {
           const [ciH, ciM] = activeAttendance.checkInTime.slice(0, 5).split(":").map(Number);
           const checkoutMinutes = coH * 60 + coM;
           const checkinMinutes = ciH * 60 + ciM;
-          if (checkoutMinutes < checkinMinutes) {
+          if (checkoutMinutes < checkinMinutes && (checkoutMinutes + 1440 - checkinMinutes) > 720) {
             continue;
           }
         }
