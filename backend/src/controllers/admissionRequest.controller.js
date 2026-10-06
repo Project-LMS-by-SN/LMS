@@ -70,12 +70,12 @@ const resolveBranchFromInput = async ({ token, branchId, branchCode }) => {
 // Public GET /api/admission-requests/branch-info?token=...
 const getBranchInfoByToken = async (req, res) => {
   try {
-    const { token, branchId, code, branchCode } = req.query;
+    const { token, branchId, code, branchCode, branch: branchParam } = req.query;
 
     const branch = await resolveBranchFromInput({
       token,
-      branchId,
-      branchCode: code || branchCode,
+      branchId: branchId || (!isNaN(branchParam) && branchParam ? branchParam : undefined),
+      branchCode: code || branchCode || (isNaN(branchParam) && branchParam ? branchParam : undefined),
     });
 
     if (!branch) {

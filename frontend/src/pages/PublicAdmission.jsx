@@ -39,29 +39,29 @@ const PublicAdmission = () => {
   const [submitError, setSubmitError] = useState("");
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const urlToken = params.get("token") || params.get("admToken") || params.get("admissionToken");
-    const urlBranchId = params.get("branchId") || params.get("branch");
-    const urlCode = params.get("code") || params.get("branchCode");
+    const searchParams = new URLSearchParams(window.location.search);
+    const urlToken = searchParams.get("token") || searchParams.get("admToken") || searchParams.get("admissionToken");
+    const branchParam = searchParams.get("branch");
+    const urlBranchId = searchParams.get("branchId") || (!isNaN(branchParam) && branchParam ? branchParam : "");
+    const urlCode = searchParams.get("code") || searchParams.get("branchCode") || (isNaN(branchParam) && branchParam ? branchParam : "");
 
     // Check if user is logged in for dashboard preview
     const loggedInUser = (() => {
       try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); } catch { return {}; }
     })();
 
-    let query = "";
     if (urlToken && urlToken.trim()) {
-      query = `token=${encodeURIComponent(urlToken.trim())}`;
       setToken(urlToken.trim());
-    } else if (urlBranchId && urlBranchId.trim()) {
-      query = `branchId=${encodeURIComponent(urlBranchId.trim())}`;
-    } else if (urlCode && urlCode.trim()) {
-      query = `code=${encodeURIComponent(urlCode.trim())}`;
-    } else if (loggedInUser?.branchId) {
-      query = `branchId=${encodeURIComponent(loggedInUser.branchId)}`;
-    } else {
-      query = `token=default`;
     }
+
+    const queryParams = new URLSearchParams();
+    if (urlToken && urlToken.trim()) queryParams.append("token", urlToken.trim());
+    if (urlBranchId && String(urlBranchId).trim()) queryParams.append("branchId", String(urlBranchId).trim());
+    if (urlCode && urlCode.trim()) queryParams.append("code", urlCode.trim());
+    if (!urlToken && !urlBranchId && !urlCode && loggedInUser?.branchId) {
+      queryParams.append("branchId", loggedInUser.branchId);
+    }
+    const query = queryParams.toString() || "token=default";
 
     const fetchBranchInfo = async () => {
       try {

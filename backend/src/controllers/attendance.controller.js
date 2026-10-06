@@ -1038,11 +1038,11 @@ const resolveAttendanceBranch = async ({ token, branchId, branchCode }) => {
 // Public GET /api/attendance/branch-info?token=...
 const getPublicBranchInfo = async (req, res) => {
   try {
-    const { token, branchId, code, branchCode } = req.query;
+    const { token, branchId, code, branchCode, branch: branchParam } = req.query;
     const branch = await resolveAttendanceBranch({
       token,
-      branchId,
-      branchCode: code || branchCode,
+      branchId: branchId || (!isNaN(branchParam) && branchParam ? branchParam : undefined),
+      branchCode: code || branchCode || (isNaN(branchParam) && branchParam ? branchParam : undefined),
     });
 
     if (!branch) {
@@ -1181,6 +1181,18 @@ const publicCheckInOrOut = async (req, res) => {
 
     // Strip common barcode prefixes like "ID: STD00001"
     term = term.replace(/^(ID|CODE|STUDENT|MOBILE):\s*/i, "").trim();
+
+    if (
+      term.includes("public-attendance") ||
+      term.includes("public-admission") ||
+      term.startsWith("att_") ||
+      term.startsWith("adm_")
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "You scanned the Branch Entrance/Admission QR code. Please scan an individual Student ID Card QR code or enter Student Code / Mobile Number."
+      });
+    }
 
     const student = await mongoClient.student.findFirst({
       where: {

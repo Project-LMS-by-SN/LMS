@@ -132,8 +132,11 @@ const Settings = () => {
           const qData = qrRes.data.data;
           setQrInfo(qData);
           const baseUrl = window.location.origin;
+          const bParam = qData.branchCode || qData.branchId || "";
+          const branchQuery = bParam ? `&branch=${encodeURIComponent(bParam)}` : "";
+
           if (qData.admissionToken) {
-            const admUrl = `${baseUrl}/public-admission?token=${qData.admissionToken}`;
+            const admUrl = `${baseUrl}/public-admission?token=${encodeURIComponent(qData.admissionToken)}${branchQuery}`;
             QRCodeLib.toDataURL(admUrl, {
               width: 320,
               margin: 2,
@@ -142,7 +145,7 @@ const Settings = () => {
             }).then(url => setAdmissionQrData(url)).catch(() => {});
           }
           if (qData.attendanceToken) {
-            const attUrl = `${baseUrl}/public-attendance?token=${qData.attendanceToken}`;
+            const attUrl = `${baseUrl}/public-attendance?token=${encodeURIComponent(qData.attendanceToken)}${branchQuery}`;
             QRCodeLib.toDataURL(attUrl, {
               width: 320,
               margin: 2,
@@ -173,20 +176,24 @@ const Settings = () => {
   const handleDownloadAdmissionPoster = async () => {
     if (!qrInfo?.admissionToken) return;
     const baseUrl = window.location.origin;
+    const bParam = qrInfo.branchCode || qrInfo.branchId || "";
+    const branchQuery = bParam ? `&branch=${encodeURIComponent(bParam)}` : "";
     await downloadQrPoster({
       type: "ADMISSION",
       libraryName: qrInfo.branchName || profile?.library_name || "Library",
       libraryCode: qrInfo.branchCode || profile?.library_code || "",
       libraryAddress: qrInfo.address || profile?.address || "",
       libraryPhone: qrInfo.phone || profile?.contact || "",
-      qrUrl: `${baseUrl}/public-admission?token=${qrInfo.admissionToken}`,
+      qrUrl: `${baseUrl}/public-admission?token=${encodeURIComponent(qrInfo.admissionToken)}${branchQuery}`,
       fileName: `${(qrInfo.branchName || "library").toLowerCase().replace(/\s+/g, "-")}-admission-poster.png`,
     });
   };
 
   const handleCopyAdmissionLink = () => {
     if (!qrInfo?.admissionToken) return;
-    const url = `${window.location.origin}/public-admission?token=${qrInfo.admissionToken}`;
+    const bParam = qrInfo.branchCode || qrInfo.branchId || "";
+    const branchQuery = bParam ? `&branch=${encodeURIComponent(bParam)}` : "";
+    const url = `${window.location.origin}/public-admission?token=${encodeURIComponent(qrInfo.admissionToken)}${branchQuery}`;
     navigator.clipboard.writeText(url);
     setCopiedAdmission(true);
     setTimeout(() => setCopiedAdmission(false), 2000);
@@ -205,20 +212,24 @@ const Settings = () => {
   const handleDownloadAttendancePoster = async () => {
     if (!qrInfo?.attendanceToken) return;
     const baseUrl = window.location.origin;
+    const bParam = qrInfo.branchCode || qrInfo.branchId || "";
+    const branchQuery = bParam ? `&branch=${encodeURIComponent(bParam)}` : "";
     await downloadQrPoster({
       type: "ATTENDANCE",
       libraryName: qrInfo.branchName || profile?.library_name || "Library",
       libraryCode: qrInfo.branchCode || profile?.library_code || "",
       libraryAddress: qrInfo.address || profile?.address || "",
       libraryPhone: qrInfo.phone || profile?.contact || "",
-      qrUrl: `${baseUrl}/public-attendance?token=${qrInfo.attendanceToken}`,
+      qrUrl: `${baseUrl}/public-attendance?token=${encodeURIComponent(qrInfo.attendanceToken)}${branchQuery}`,
       fileName: `${(qrInfo.branchName || "library").toLowerCase().replace(/\s+/g, "-")}-attendance-poster.png`,
     });
   };
 
   const handleCopyAttendanceLink = () => {
     if (!qrInfo?.attendanceToken) return;
-    const url = `${window.location.origin}/public-attendance?token=${qrInfo.attendanceToken}`;
+    const bParam = qrInfo.branchCode || qrInfo.branchId || "";
+    const branchQuery = bParam ? `&branch=${encodeURIComponent(bParam)}` : "";
+    const url = `${window.location.origin}/public-attendance?token=${encodeURIComponent(qrInfo.attendanceToken)}${branchQuery}`;
     navigator.clipboard.writeText(url);
     setCopiedAttendance(true);
     setTimeout(() => setCopiedAttendance(false), 2000);
@@ -724,7 +735,7 @@ const Settings = () => {
                 </button>
                 {qrInfo?.admissionToken && (
                   <a
-                    href={`/public-admission?token=${qrInfo.admissionToken}`}
+                    href={`/public-admission?token=${encodeURIComponent(qrInfo.admissionToken)}${qrInfo.branchCode || qrInfo.branchId ? `&branch=${encodeURIComponent(qrInfo.branchCode || qrInfo.branchId)}` : ""}`}
                     target="_blank"
                     rel="noreferrer"
                     style={{
@@ -884,7 +895,7 @@ const Settings = () => {
                 </button>
                 {qrInfo?.attendanceToken && (
                   <a
-                    href={`/public-attendance?token=${qrInfo.attendanceToken}`}
+                    href={`/public-attendance?token=${encodeURIComponent(qrInfo.attendanceToken)}${qrInfo.branchCode || qrInfo.branchId ? `&branch=${encodeURIComponent(qrInfo.branchCode || qrInfo.branchId)}` : ""}`}
                     target="_blank"
                     rel="noreferrer"
                     style={{

@@ -775,6 +775,8 @@ exports.getProfile = async (req, res) => {
             name: true,
             address: true,
             phone: true,
+            admissionToken: true,
+            attendanceToken: true,
           }
         }
       },
@@ -784,11 +786,18 @@ exports.getProfile = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    let libraryCode = user.branch ? user.branch.code : null;
-    if (user.branch && !libraryCode) {
-      libraryCode = await generateUniqueLibraryCode(user.branch.name, user.branch.phone, mongoClient);
+    let branch = user.branch;
+    if (!branch && (user.branchId || user.role === "OWNER")) {
+      branch = await mongoClient.branch.findFirst({
+        where: { id: user.branchId || 1 }
+      });
+    }
+
+    let libraryCode = branch ? branch.code : null;
+    if (branch && !libraryCode) {
+      libraryCode = await generateUniqueLibraryCode(branch.name, branch.phone, mongoClient);
       await mongoClient.branch.update({
-        where: { id: user.branch.id },
+        where: { id: branch.id },
         data: { code: libraryCode }
       });
     }
@@ -840,24 +849,24 @@ exports.getProfile = async (req, res) => {
       }
     }
 
-    let admissionToken = user.branch ? user.branch.admissionToken : null;
-    let attendanceToken = user.branch ? user.branch.attendanceToken : null;
-    if (user.branch && (!admissionToken || !attendanceToken)) {
+    let admissionToken = branch ? branch.admissionToken : null;
+    let attendanceToken = branch ? branch.attendanceToken : null;
+    if (branch && (!admissionToken || !attendanceToken || !admissionToken.startsWith("adm_") || !attendanceToken.startsWith("att_"))) {
       let needsBUpdate = false;
       const bUpdate = {};
-      if (!admissionToken) {
+      if (!admissionToken || !admissionToken.startsWith("adm_")) {
         admissionToken = generateSecureToken("adm");
         bUpdate.admissionToken = admissionToken;
         needsBUpdate = true;
       }
-      if (!attendanceToken) {
+      if (!attendanceToken || !attendanceToken.startsWith("att_")) {
         attendanceToken = generateSecureToken("att");
         bUpdate.attendanceToken = attendanceToken;
         needsBUpdate = true;
       }
       if (needsBUpdate) {
         await mongoClient.branch.update({
-          where: { id: user.branch.id },
+          where: { id: branch.id },
           data: bUpdate
         });
       }

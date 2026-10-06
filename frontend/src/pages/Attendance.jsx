@@ -82,7 +82,8 @@ const Attendance = () => {
         if (res.data?.success) {
           const data = res.data.data;
           setBranchDetails(data);
-          const fullUrl = `${baseUrl}/public-attendance?token=${data.attendanceToken}`;
+          const bCode = data.branchCode || data.branchId || "";
+          const fullUrl = `${baseUrl}/public-attendance?token=${encodeURIComponent(data.attendanceToken)}${bCode ? `&branch=${encodeURIComponent(bCode)}` : ""}`;
           setQrFullUrl(fullUrl);
           QRCodeLib.toDataURL(fullUrl, {
             width: 280,
@@ -306,6 +307,17 @@ const Attendance = () => {
         } catch (e) {}
       }
       query = query.replace(/^(ID|CODE|STUDENT|MOBILE):\s*/i, "").trim();
+
+      if (
+        query.includes("public-attendance") ||
+        query.includes("public-admission") ||
+        query.startsWith("att_") ||
+        query.startsWith("adm_")
+      ) {
+        setError("You scanned the Branch Entrance/Admission QR code. This camera scanner is for scanning individual Student ID cards. Please scan a Student ID Card QR code or enter a student number.");
+        setLoading(false);
+        return;
+      }
 
       const currentUser = (() => { try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); } catch { return {}; } })();
       const currentBranchId = currentUser.branchId || branchDetails?.branchId || 1;

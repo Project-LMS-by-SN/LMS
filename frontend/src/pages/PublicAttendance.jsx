@@ -44,8 +44,9 @@ const PublicAttendance = () => {
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const token = searchParams.get("token") || searchParams.get("attendanceToken");
-    const branchId = searchParams.get("branchId") || searchParams.get("branch");
-    const code = searchParams.get("code") || searchParams.get("branchCode");
+    const branchParam = searchParams.get("branch");
+    const branchId = searchParams.get("branchId") || (!isNaN(branchParam) && branchParam ? branchParam : "");
+    const code = searchParams.get("code") || searchParams.get("branchCode") || (isNaN(branchParam) && branchParam ? branchParam : "");
 
     const loggedInUser = (() => {
       try {
@@ -55,18 +56,14 @@ const PublicAttendance = () => {
       }
     })();
 
-    let query = "";
-    if (token && token.trim()) {
-      query = `token=${encodeURIComponent(token.trim())}`;
-    } else if (branchId && branchId.trim()) {
-      query = `branchId=${encodeURIComponent(branchId.trim())}`;
-    } else if (code && code.trim()) {
-      query = `code=${encodeURIComponent(code.trim())}`;
-    } else if (loggedInUser?.branchId) {
-      query = `branchId=${encodeURIComponent(loggedInUser.branchId)}`;
-    } else {
-      query = `token=default`;
+    const params = new URLSearchParams();
+    if (token && token.trim()) params.append("token", token.trim());
+    if (branchId && String(branchId).trim()) params.append("branchId", String(branchId).trim());
+    if (code && code.trim()) params.append("code", code.trim());
+    if (!token && !branchId && !code && loggedInUser?.branchId) {
+      params.append("branchId", loggedInUser.branchId);
     }
+    const query = params.toString() || "token=default";
 
     const fetchInfo = async () => {
       try {
@@ -172,6 +169,16 @@ const PublicAttendance = () => {
     const term = (codeToMark || studentCodeOrMobile || "").trim();
     if (!term) {
       setErrorMsg("Please enter or scan your Student Code or Mobile Number.");
+      return;
+    }
+
+    if (
+      term.includes("public-attendance") ||
+      term.includes("public-admission") ||
+      term.startsWith("att_") ||
+      term.startsWith("adm_")
+    ) {
+      setErrorMsg("You scanned the Library Entrance QR code. Please scan your personal Student ID Card QR code or enter your Student Code / Mobile Number.");
       return;
     }
 
