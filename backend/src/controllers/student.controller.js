@@ -555,6 +555,24 @@ const createStudent = async (req, res) => {
       data: formatStudent(newStudent),
     });
   } catch (error) {
+    // Rollback / cleanup if partial records were created before failure
+    if (createdStudentId) {
+      try {
+        if (createdPaymentId) {
+          await mongoClient.payment.delete({ where: { id: createdPaymentId } }).catch(() => {});
+        }
+        await mongoClient.studentShiftAssignment.deleteMany({
+          where: { validityId: createdValidityId }
+        }).catch(() => {});
+        if (createdValidityId) {
+          await mongoClient.studentValidity.delete({ where: { id: createdValidityId } }).catch(() => {});
+        }
+        await mongoClient.student.delete({ where: { id: createdStudentId } }).catch(() => {});
+      } catch (cleanupErr) {
+        console.error("Rollback cleanup error after failed admission:", cleanupErr);
+      }
+    }
+
     if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -922,6 +940,7 @@ const getStudentProfile = async (req, res) => {
       amount_received: p.amountReceived ? Number(p.amountReceived) : 0, // Decimal to Number
       mode_name: p.paymentMode.modeName,
       remarks: p.remarks,
+      utr_number: p.utrNumber || null,
       payment_date: formatDateTimeStr(p.paymentDate),
     }));
 
@@ -1263,15 +1282,52 @@ const admitStudent = async (req, res) => {
       });
     }
 
+    const stId = seat_id ? parseInt(seat_id) : null;
+    const parsedShiftIds = (shift_ids || []).map(Number).filter(Boolean);
+
     // Verify seat is active (disabled seats must not be allocatable)
-    if (seat_id) {
+    if (stId) {
       const seat = await mongoClient.seat.findFirst({
-        where: { id: parseInt(seat_id), isActive: true, branchId: req.user.branchId },
+        where: { id: stId, isActive: true, branchId: req.user ? req.user.branchId : branchId },
       });
       if (!seat) {
         return res.status(400).json({
           success: false,
           message: "Selected seat is inactive or not available for allocation",
+        });
+      }
+
+      // Check upfront if seat is already booked in ANY of the selected shifts BEFORE creating student!
+      const conflict = await mongoClient.studentShiftAssignment.findFirst({
+        where: {
+          seatId: stId,
+          shiftId: { in: parsedShiftIds },
+          assignmentStatus: "ACTIVE",
+          validity: {
+            student: {
+              branchId: req.user ? req.user.branchId : branchId,
+              deletedAt: null,
+            },
+          },
+        },
+        include: {
+          shift: true,
+          seat: true,
+          validity: {
+            include: {
+              student: true,
+            },
+          },
+        },
+      });
+
+      if (conflict) {
+        const seatName = conflict.seat ? conflict.seat.seatNumber : ("Seat #" + stId);
+        const shiftName = conflict.shift ? conflict.shift.shiftName : "selected shift";
+        const studentName = conflict.validity?.student?.fullName || "another member";
+        return res.status(409).json({
+          success: false,
+          message: "Seat " + seatName + " is already occupied by " + studentName + " in " + shiftName + ". Please select an available seat.",
         });
       }
     }
@@ -1323,6 +1379,11 @@ const admitStudent = async (req, res) => {
 
     const finalAmount = custom_amount !== undefined && custom_amount !== null && custom_amount !== "" ? parseFloat(custom_amount) : feePlan.amount;
 
+    // Track created entity IDs for reliable rollback cleanup if any step fails
+    let createdStudentId = null;
+    let createdValidityId = null;
+    let createdPaymentId = null;
+
     // Run full admission in ONE transaction so student is NEVER created without validity & shift assignments!
     const result = await mongoClient.$transaction(async (tx) => {
       // 1. Create Student
@@ -1344,6 +1405,8 @@ const admitStudent = async (req, res) => {
           branchId: req.user ? req.user.branchId : 1,
         },
       });
+
+      createdStudentId = newStudent.id;
 
       // 2. Create Student Validity
       const validity = await tx.studentValidity.create({
@@ -1389,6 +1452,8 @@ const admitStudent = async (req, res) => {
         });
       }
 
+      createdValidityId = validity.id;
+
       // 4. Create Payment if payment details provided
       let paymentRecord = null;
       if (payment_mode_id) {
@@ -1403,6 +1468,7 @@ const admitStudent = async (req, res) => {
             remarks: remarks || "(Admission Fee)",
           },
         });
+        createdPaymentId = paymentRecord.id;
       }
 
       // 5. Update Admission Request if applicable

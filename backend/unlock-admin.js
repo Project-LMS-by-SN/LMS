@@ -13,7 +13,7 @@ async function main() {
       mustChangePassword: user.mustChangePassword
     });
     
-    const newHash = authUtil.hashPassword("123456");
+    const newHash = authUtil.hashPassword("password@123");
     await db.user.update({
       where: { id: user.id },
       data: {

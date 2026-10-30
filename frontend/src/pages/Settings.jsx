@@ -275,6 +275,14 @@ const Settings = () => {
   const handleChangePassword = async (e) => {
     e.preventDefault();
     setPwMsg(null);
+    if (!oldPassword || !oldPassword.trim()) {
+      setPwMsg({ type: "error", text: "Please enter your current/previous password." });
+      return;
+    }
+    if (!newPassword || !newPassword.trim()) {
+      setPwMsg({ type: "error", text: "Please enter a new password." });
+      return;
+    }
     if (newPassword !== confirmPassword) {
       setPwMsg({ type: "error", text: "Passwords do not match" });
       return;

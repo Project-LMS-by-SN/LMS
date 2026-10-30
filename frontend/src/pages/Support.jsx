@@ -555,9 +555,10 @@ const Support = () => {
 
       {/* Main Two-Column Section: Notifications on Left, Ticket / Form on Right */}
       <div
+        className="support-main-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
           gap: "24px",
           marginBottom: "28px",
         }}
@@ -1066,7 +1067,7 @@ const Support = () => {
           )}
 
           <form onSubmit={handleTicketSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div className="responsive-grid-1-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
               <div>
                 <label style={{ fontSize: "12px", fontWeight: 600, color: darkMode ? "#cbd5e1" : "#475569", display: "block", marginBottom: "6px" }}>
                   Your Name / Library
@@ -1114,7 +1115,7 @@ const Support = () => {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div className="responsive-grid-1-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
               <div>
                 <label style={{ fontSize: "12px", fontWeight: 600, color: darkMode ? "#cbd5e1" : "#475569", display: "block", marginBottom: "6px" }}>
                   Issue Category

@@ -26,7 +26,7 @@ const Reports = () => {
 
       <div
         className="stats-grid responsive-grid-1-1"
-        style={{ gridTemplateColumns: "repeat(2, 1fr)", gap: "20px" }}
+        style={{ display: "grid", gap: "16px" }}
       >
         <Link to={`${prefix}/attendance`} style={{ textDecoration: "none" }}>
           <div

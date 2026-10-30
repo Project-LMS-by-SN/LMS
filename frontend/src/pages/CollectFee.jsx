@@ -13,7 +13,10 @@ import {
   FaHistory,
   FaClock,
   FaHashtag,
+  FaDownload,
+  FaWhatsapp,
 } from "react-icons/fa";
+import { generateStudentInvoicePdf, sendInvoiceOnWhatsApp } from "../utils/studentInvoicePdf";
 
 const getTodayStr = () => {
   const d = new Date();
@@ -34,6 +37,10 @@ const generateInvoiceNo = () => {
 
 const CollectFee = () => {
   const { darkMode, timeFormat } = useTheme();
+  const currentUser = (() => {
+    try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); }
+    catch { return {}; }
+  })();
   const [students, setStudents] = useState([]);
   const [paymentModes, setPaymentModes] = useState([]);
   const [recentPayments, setRecentPayments] = useState([]);
@@ -363,7 +370,7 @@ const CollectFee = () => {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "20px", alignItems: "start" }}>
+      <div className="collect-fee-layout" style={{ display: "grid", gap: "20px", alignItems: "start" }}>
         {/* Left Section: Collect Payment Form */}
         <div style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "14px", padding: "24px" }}>
           <h3 style={{ fontSize: "16px", fontWeight: 700, color: textPrimary, marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
@@ -555,7 +562,7 @@ const CollectFee = () => {
             )}
 
             {/* Payment Input Fields */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
+            <div className="responsive-grid-1-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
               <div>
                 <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: textMuted, marginBottom: "4px" }}>
                   Amount Received (₹) <span style={{ color: "#ef4444" }}>*</span>
@@ -601,7 +608,7 @@ const CollectFee = () => {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
+            <div className="responsive-grid-1-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
                   <label style={{ fontSize: "12px", fontWeight: 600, color: textMuted }}>
@@ -651,7 +658,7 @@ const CollectFee = () => {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "20px" }}>
+            <div className="responsive-grid-1-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "20px" }}>
               <div>
                 <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: textMuted, marginBottom: "4px" }}>
                   UTR / Reference No (Optional)
@@ -746,13 +753,51 @@ const CollectFee = () => {
                     <div style={{ fontSize: "15px", fontWeight: 800, color: "#16a34a" }}>
                       +₹{p.amount_received}
                     </div>
-                    <span style={{
-                      fontSize: "10px", fontWeight: 700, textTransform: "uppercase",
-                      background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
-                      color: "#2563eb", padding: "2px 6px", borderRadius: "4px", display: "inline-block", marginTop: "2px",
-                    }}>
-                      {p.mode_name || "Cash"}
-                    </span>
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-end", marginTop: "4px" }}>
+                      <span style={{
+                        fontSize: "10px", fontWeight: 700, textTransform: "uppercase",
+                        background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
+                        color: "#2563eb", padding: "2px 6px", borderRadius: "4px", display: "inline-block",
+                      }}>
+                        {p.mode_name || "Cash"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => generateStudentInvoicePdf(p, currentUser)}
+                        title="Download PDF Invoice"
+                        style={{
+                          background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
+                          border: "1px solid #3b82f6",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          color: "#2563eb",
+                          padding: "2px 6px",
+                          fontSize: "11px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                        }}
+                      >
+                        <FaDownload />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => sendInvoiceOnWhatsApp(p, p.mobile, currentUser)}
+                        title="Send on WhatsApp"
+                        style={{
+                          background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
+                          border: "1px solid #16a34a",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          color: "#16a34a",
+                          padding: "2px 6px",
+                          fontSize: "12px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                        }}
+                      >
+                        <FaWhatsapp />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

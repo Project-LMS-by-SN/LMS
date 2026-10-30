@@ -464,14 +464,14 @@ const Seats = () => {
         </div>
       </div>
 
-      <div className="responsive-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "14px", marginBottom: "20px" }}>
+      <div className="seats-summary-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "14px", marginBottom: "20px" }}>
         {[
           { label: "Total Seats", value: totalCount, color: "#3b82f6", bg: darkMode ? "rgba(59,130,246,0.12)" : "#eff6ff", border: "rgba(59,130,246,0.25)", icon: <FaChair style={{ color: "#3b82f6" }} /> },
           { label: "Available", value: availableCount, color: "#22c55e", bg: darkMode ? "rgba(34,197,94,0.12)" : "#f0fdf4", border: "rgba(34,197,94,0.25)", icon: <FaCheckCircle style={{ color: "#22c55e" }} /> },
           { label: "Occupied", value: occupiedCount, color: "#ef4444", bg: darkMode ? "rgba(239,68,68,0.12)" : "#fef2f2", border: "rgba(239,68,68,0.25)", icon: <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: "#ef4444" }} /> },
           { label: "Inactive", value: inactiveCount, color: "#94a3b8", bg: darkMode ? "rgba(148,163,184,0.12)" : "#f8fafc", border: "rgba(148,163,184,0.25)", icon: <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: "#94a3b8" }} /> },
         ].map(item => (
-          <div key={item.label} style={{
+          <div key={item.label} className="seats-stat-card" style={{
             background: item.bg, borderRadius: "14px", padding: "18px 20px",
             border: `1px solid ${item.border}`, display: "flex", alignItems: "center", gap: "14px",
           }}>

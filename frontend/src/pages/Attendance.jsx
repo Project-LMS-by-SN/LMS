@@ -687,56 +687,61 @@ const Attendance = () => {
       </div>
 
       {/* 1. Date Selector Row */}
-      <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "16px", flexWrap: "wrap" }}>
-        <button
-          onClick={() => handleDateModeChange("today")}
-          style={{
-            padding: "8px 18px",
-            borderRadius: "8px",
-            fontWeight: 600,
-            fontSize: "13px",
-            cursor: "pointer",
-            border: `1px solid ${dateMode === "today" ? "#2563eb" : borderColor}`,
-            background: dateMode === "today" ? "#eff6ff" : cardBg,
-            color: dateMode === "today" ? "#2563eb" : textSecondary,
-            transition: "all 0.2s"
-          }}
-        >
-          Today
-        </button>
-        <button
-          onClick={() => handleDateModeChange("yesterday")}
-          style={{
-            padding: "8px 18px",
-            borderRadius: "8px",
-            fontWeight: 600,
-            fontSize: "13px",
-            cursor: "pointer",
-            border: `1px solid ${dateMode === "yesterday" ? "#2563eb" : borderColor}`,
-            background: dateMode === "yesterday" ? "#eff6ff" : cardBg,
-            color: dateMode === "yesterday" ? "#2563eb" : textSecondary,
-            transition: "all 0.2s"
-          }}
-        >
-          Yesterday
-        </button>
-        <button
-          onClick={() => handleDateModeChange("last30")}
-          style={{
-            padding: "8px 18px",
-            borderRadius: "8px",
-            fontWeight: 600,
-            fontSize: "13px",
-            cursor: "pointer",
-            border: `1px solid ${dateMode === "last30" ? "#2563eb" : borderColor}`,
-            background: dateMode === "last30" ? "#eff6ff" : cardBg,
-            color: dateMode === "last30" ? "#2563eb" : textSecondary,
-            transition: "all 0.2s"
-          }}
-        >
-          Last 30 Days
-        </button>
-        <div style={{ width: "200px" }}>
+      <div className="attendance-date-row" style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "16px", flexWrap: "wrap" }}>
+        <div className="attendance-date-pills" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <button
+            onClick={() => handleDateModeChange("today")}
+            style={{
+              padding: "8px 18px",
+              borderRadius: "8px",
+              fontWeight: 600,
+              fontSize: "13px",
+              cursor: "pointer",
+              border: `1px solid ${dateMode === "today" ? "#2563eb" : borderColor}`,
+              background: dateMode === "today" ? "#eff6ff" : cardBg,
+              color: dateMode === "today" ? "#2563eb" : textSecondary,
+              transition: "all 0.2s",
+              whiteSpace: "nowrap"
+            }}
+          >
+            Today
+          </button>
+          <button
+            onClick={() => handleDateModeChange("yesterday")}
+            style={{
+              padding: "8px 18px",
+              borderRadius: "8px",
+              fontWeight: 600,
+              fontSize: "13px",
+              cursor: "pointer",
+              border: `1px solid ${dateMode === "yesterday" ? "#2563eb" : borderColor}`,
+              background: dateMode === "yesterday" ? "#eff6ff" : cardBg,
+              color: dateMode === "yesterday" ? "#2563eb" : textSecondary,
+              transition: "all 0.2s",
+              whiteSpace: "nowrap"
+            }}
+          >
+            Yesterday
+          </button>
+          <button
+            onClick={() => handleDateModeChange("last30")}
+            style={{
+              padding: "8px 18px",
+              borderRadius: "8px",
+              fontWeight: 600,
+              fontSize: "13px",
+              cursor: "pointer",
+              border: `1px solid ${dateMode === "last30" ? "#2563eb" : borderColor}`,
+              background: dateMode === "last30" ? "#eff6ff" : cardBg,
+              color: dateMode === "last30" ? "#2563eb" : textSecondary,
+              transition: "all 0.2s",
+              whiteSpace: "nowrap"
+            }}
+          >
+            Last 30 Days
+          </button>
+        </div>
+        <div className="attendance-date-picker-wrap" style={{ width: "200px" }}>
           <CustomDatePicker
             id="custom-datepicker"
             value={dateMode === "custom" ? startDate : ""}
@@ -751,7 +756,7 @@ const Attendance = () => {
           />
         </div>
 
-        <span style={{ fontSize: "13px", color: textSecondary, marginLeft: "auto", fontWeight: 500 }}>
+        <span className="attendance-date-summary" style={{ fontSize: "13px", color: textSecondary, marginLeft: "auto", fontWeight: 500 }}>
           Showing logs for: <strong style={{ color: textPrimary }}>{startDate === endDate ? startDate : `${startDate} to ${endDate}`}</strong> ({filteredAttendanceList.length} logs found)
         </span>
       </div>

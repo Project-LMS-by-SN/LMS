@@ -18,17 +18,6 @@ const getSeatColorForAdmission = (seat, selectedShiftIds, selectedSeatId, darkMo
     };
   }
 
-  const isSelected = selectedSeatId === seat.id;
-  if (isSelected) {
-    return {
-      bg: "#3b82f6",
-      border: "#2563eb",
-      color: "white",
-      isSelectable: true,
-      tooltip: `Selected - Seat ${seat.seat_number}`
-    };
-  }
-
   const activeShifts = seat.occupied_shifts || [];
   
   // Check if occupied in any of the selected shifts
@@ -41,6 +30,17 @@ const getSeatColorForAdmission = (seat, selectedShiftIds, selectedSeatId, darkMo
       color: darkMode ? "#f87171" : "#757575",
       isSelectable: false,
       tooltip: "Occupied in selected shift"
+    };
+  }
+
+  const isSelected = selectedSeatId === seat.id;
+  if (isSelected) {
+    return {
+      bg: "#3b82f6",
+      border: "#2563eb",
+      color: "white",
+      isSelectable: true,
+      tooltip: `Selected - Seat ${seat.seat_number}`
     };
   }
 
@@ -339,6 +339,13 @@ const Admission = () => {
     })
     .map(s => s.id);
 
+  // Auto-clear selectedSeat if it becomes occupied when shift selection changes
+  useEffect(() => {
+    if (selectedSeat && occupiedSeatIds.includes(Number(selectedSeat))) {
+      setSelectedSeat(null);
+    }
+  }, [formData.shift_ids, occupiedSeatIds, selectedSeat]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -383,6 +390,13 @@ const Admission = () => {
     const needsSeat = formData.seatType === "Reserved";
     if (needsSeat && !selectedSeat) {
       alert("Please select a seat.");
+      return;
+    }
+
+    if (needsSeat && occupiedSeatIds.includes(Number(selectedSeat))) {
+      const sObj = seats.find(s => s.id === Number(selectedSeat));
+      const sName = sObj ? sObj.seat_number : ("#" + selectedSeat);
+      alert("Seat " + sName + " is already occupied in one of the selected shifts. Please select an available seat.");
       return;
     }
 
@@ -726,7 +740,7 @@ const Admission = () => {
           {formData.seatType === "Reserved" && (
             <div className="form-group full-width" style={{ marginTop: '18px' }}>
               <label>Select a Seat</label>
-              <div style={{ display: 'flex', gap: '20px', marginBottom: '16px', fontSize: '13px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', fontSize: '13px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '16px', height: '16px', background: darkMode ? 'rgba(34,197,94,0.2)' : '#e8f5e9', border: '2px solid #4caf50', borderRadius: '4px' }}></div> Available</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '16px', height: '16px', background: darkMode ? 'rgba(239,68,68,0.2)' : '#e0e0e0', border: darkMode ? '2px solid #ef4444' : '2px solid #9e9e9e', borderRadius: '4px' }}></div> Occupied</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '16px', height: '16px', background: '#3b82f6', border: '2px solid #2563eb', borderRadius: '4px' }}></div> Selected</div>

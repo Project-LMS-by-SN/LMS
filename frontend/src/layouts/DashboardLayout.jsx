@@ -347,16 +347,19 @@ const DashboardLayout = () => {
 
       <main className="main-content">
         <header className="topbar">
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <button className="mobile-toggle" onClick={() => setIsSidebarOpen(true)}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+            <button className="mobile-toggle" onClick={() => setIsSidebarOpen(true)} title="Open Menu" aria-label="Open Menu">
               <FaBars />
             </button>
-            <div>
+            <div className="topbar-title-wrap" style={{ minWidth: 0, overflow: "hidden" }}>
+              <span className="topbar-mobile-brand">
+                {user.library_name || "Library"}
+              </span>
               <p className="topbar-date">{today}</p>
             </div>
           </div>
 
-          <div className="topbar-actions" style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+          <div className="topbar-actions" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             {/* Subscription Status Chip in Topbar Header */}
             {user.subscriptionTier && user.subscriptionTier !== "FREE" ? (
               <div className="topbar-subscription-chip" style={{
@@ -373,8 +376,8 @@ const DashboardLayout = () => {
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
                   <strong>{getTierName(user.subscriptionTier)} Plan</strong>
                 </span>
-                <span style={{ color: darkMode ? "#64748b" : "#94a3b8" }}>•</span>
-                <span style={{ color: darkMode ? "#cbd5e1" : "#475569" }}>Expires: <strong>{formattedExpiry}</strong></span>
+                <span className="topbar-chip-dot" style={{ color: darkMode ? "#64748b" : "#94a3b8" }}>•</span>
+                <span className="topbar-chip-expiry" style={{ color: darkMode ? "#cbd5e1" : "#475569" }}>Expires: <strong>{formattedExpiry}</strong></span>
                 <span style={{
                   background: isExpired ? "#ef4444" : daysLeft <= 7 ? "#f59e0b" : "#10b981",
                   color: "#fff", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 700
@@ -491,6 +494,50 @@ const DashboardLayout = () => {
 
         <Outlet />
       </main>
+
+      {/* Modern Mobile Bottom Navigation Bar (Hidden on Desktop via CSS) */}
+      <nav className="mobile-bottom-nav" aria-label="Mobile Navigation">
+        <NavLink
+          to={`${prefix}/dashboard`}
+          className={({ isActive }) => `mobile-bottom-nav-item ${isActive ? "active" : ""}`}
+        >
+          <FaHome className="bottom-nav-icon" />
+          <span>Home</span>
+        </NavLink>
+        <NavLink
+          to={`${prefix}/students`}
+          onClick={() => {
+            window.dispatchEvent(new Event("reset-students-view"));
+          }}
+          className={({ isActive }) => `mobile-bottom-nav-item ${isActive ? "active" : ""}`}
+        >
+          <FaUsers className="bottom-nav-icon" />
+          <span>Students</span>
+        </NavLink>
+        <NavLink
+          to={`${prefix}/seats`}
+          className={({ isActive }) => `mobile-bottom-nav-item ${isActive ? "active" : ""}`}
+        >
+          <FaChair className="bottom-nav-icon" />
+          <span>Seats</span>
+        </NavLink>
+        <NavLink
+          to={`${prefix}/attendance`}
+          className={({ isActive }) => `mobile-bottom-nav-item ${isActive ? "active" : ""}`}
+        >
+          <FaClipboardCheck className="bottom-nav-icon" />
+          <span>Attendance</span>
+        </NavLink>
+        <button
+          type="button"
+          className="mobile-bottom-nav-item mobile-bottom-more-btn"
+          onClick={() => setIsSidebarOpen(true)}
+          aria-label="More Navigation Menu"
+        >
+          <FaBars className="bottom-nav-icon" />
+          <span>More</span>
+        </button>
+      </nav>
     </div>
   );
 };

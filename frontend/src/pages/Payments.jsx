@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
-import { FaSearch, FaTimes, FaWallet, FaReceipt } from "react-icons/fa";
+import { FaSearch, FaTimes, FaWallet, FaReceipt, FaDownload, FaWhatsapp } from "react-icons/fa";
+import { generateStudentInvoicePdf, sendInvoiceOnWhatsApp } from "../utils/studentInvoicePdf";
 import CustomDatePicker from "../components/CustomDatePicker";
 
 const Payments = () => {
@@ -233,6 +234,7 @@ const Payments = () => {
           )}
         </div>
 
+        <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: `2px solid ${border}`, textAlign: "left", fontSize: "12px", color: textMuted, textTransform: "uppercase", letterSpacing: "0.5px" }}>
@@ -243,6 +245,7 @@ const Payments = () => {
               <th style={{ padding: "10px 12px" }}>Reference / Reason</th>
               <th style={{ padding: "10px 12px" }}>Amount</th>
               <th style={{ padding: "10px 12px" }}>Date</th>
+              <th style={{ padding: "10px 12px", textAlign: "center" }}>Receipt / Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -281,10 +284,75 @@ const Payments = () => {
                     {formatTime(payment.payment_date ? payment.payment_date.split(" ").slice(1).join(" ") : "", timeFormat)}
                   </div>
                 </td>
+                <td style={{ padding: "12px", textAlign: "center" }}>
+                  <div style={{ display: "flex", gap: "6px", justifyContent: "center", alignItems: "center", flexWrap: "nowrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => generateStudentInvoicePdf(payment, user)}
+                      title="Download PDF Invoice"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        padding: "5px 10px",
+                        borderRadius: "6px",
+                        border: "1px solid #3b82f6",
+                        background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
+                        color: "#2563eb",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                        transition: "all 0.15s",
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.background = "#2563eb";
+                        e.currentTarget.style.color = "#ffffff";
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.background = darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff";
+                        e.currentTarget.style.color = "#2563eb";
+                      }}
+                    >
+                      <FaDownload style={{ fontSize: "11px" }} /> PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sendInvoiceOnWhatsApp(payment, payment.mobile, user)}
+                      title="Send Invoice to Student on WhatsApp"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        padding: "5px 10px",
+                        borderRadius: "6px",
+                        border: "1px solid #16a34a",
+                        background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
+                        color: "#16a34a",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                        transition: "all 0.15s",
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.background = "#16a34a";
+                        e.currentTarget.style.color = "#ffffff";
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.background = darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4";
+                        e.currentTarget.style.color = "#16a34a";
+                      }}
+                    >
+                      <FaWhatsapp style={{ fontSize: "12px" }} /> WhatsApp
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
 
         {filteredPayments.length === 0 && (
           <div style={{ textAlign: "center", padding: "40px", color: textMuted, fontSize: "14px" }}>

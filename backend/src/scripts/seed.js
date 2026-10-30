@@ -45,7 +45,7 @@ async function main() {
   // 4. Seed Users
   // Ensure we have a default owner to start with. Let's hash the default password.
   const ownerEmail = "admin@admin.com";
-  const defaultPassword = process.env.DEFAULT_OWNER_PASSWORD || "Password123!";
+  const defaultPassword = process.env.DEFAULT_OWNER_PASSWORD || "password@123";
   const passwordHash = authUtil.hashPassword(defaultPassword);
 
   const userAdmin = await db.user.create({

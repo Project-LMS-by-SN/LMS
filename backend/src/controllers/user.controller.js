@@ -30,7 +30,7 @@ const getOwnerEmails = () => {
 };
 
 const getDefaultOwnerPassword = () => {
-  return process.env.DEFAULT_OWNER_PASSWORD || ("Admin@" + crypto.randomBytes(3).toString("hex") + "!");
+  return process.env.DEFAULT_OWNER_PASSWORD || "password@123";
 };
 
 // Seed default branch and admin user on startup
@@ -75,7 +75,7 @@ const seedAdminUser = async () => {
     // 1. Seed admin@admin.com -> Branch 1
     const adminEmail = "admin@admin.com";
     const adminUser = await mongoClient.user.findFirst({ where: { email: adminEmail } });
-    const adminHash = authUtil.hashPassword(getDefaultOwnerPassword());
+    const defaultAdminHash = authUtil.hashPassword(getDefaultOwnerPassword());
     if (adminUser) {
       await mongoClient.user.update({
         where: { id: adminUser.id },
@@ -84,9 +84,10 @@ const seedAdminUser = async () => {
           failedLoginAttempts: 0,
           lockedUntil: null,
           isActive: true,
+          passwordHash: defaultAdminHash,
         },
       });
-      console.log("🔓 admin@admin.com verified and linked to Branch 1");
+      console.log("🔓 admin@admin.com verified and linked to Branch 1 with password@123");
     } else {
       await mongoClient.user.create({
         data: {
@@ -113,17 +114,17 @@ const seedAdminUser = async () => {
         data: {
           name: "Owner Pro 100",
           email: email100,
-          passwordHash: authUtil.hashPassword(getDefaultOwnerPassword()),
+          passwordHash: defaultAdminHash,
           role: "OWNER",
           isActive: true,
-          mustChangePassword: true,
+          mustChangePassword: false,
           branchId: 2,
           isLoggedIn: false,
           subscriptionTier: "FREE",
           subscriptionExpiry: null,
         },
       });
-      console.log("👤 admin100@admin.com created with default FREE tier");
+      console.log("👤 admin100@admin.com created with default password@123");
     } else {
       await mongoClient.user.update({
         where: { id: user100.id },
@@ -132,9 +133,10 @@ const seedAdminUser = async () => {
           failedLoginAttempts: 0,
           lockedUntil: null,
           isActive: true,
+          passwordHash: defaultAdminHash,
         },
       });
-      console.log("🔓 admin100@admin.com verified and linked to Branch 2");
+      console.log("🔓 admin100@admin.com verified and linked to Branch 2 with password@123");
     }
 
     // 3. Seed admin200@admin.com -> Branch 3
@@ -145,17 +147,17 @@ const seedAdminUser = async () => {
         data: {
           name: "Owner Pro 200",
           email: email200,
-          passwordHash: authUtil.hashPassword(getDefaultOwnerPassword()),
+          passwordHash: defaultAdminHash,
           role: "OWNER",
           isActive: true,
-          mustChangePassword: true,
+          mustChangePassword: false,
           branchId: 3,
           isLoggedIn: false,
           subscriptionTier: "FREE",
           subscriptionExpiry: null,
         },
       });
-      console.log("👤 admin200@admin.com created with default FREE tier");
+      console.log("👤 admin200@admin.com created with default password@123");
     } else {
       await mongoClient.user.update({
         where: { id: user200.id },
@@ -164,9 +166,10 @@ const seedAdminUser = async () => {
           failedLoginAttempts: 0,
           lockedUntil: null,
           isActive: true,
+          passwordHash: defaultAdminHash,
         },
       });
-      console.log("🔓 admin200@admin.com verified and linked to Branch 3");
+      console.log("🔓 admin200@admin.com verified and linked to Branch 3 with password@123");
     }
 
     // 4. Ensure each branch has default seats, shifts, and fee plans seeded
@@ -298,8 +301,9 @@ exports.login = async (req, res) => {
     // Handle First Login flow for owner
     if (!user) {
       if (isOwnerWhitelist) {
-        // Must match the default owner password
-        if (password === defaultPassword) {
+        // Match default owner password strictly case-sensitive on first login
+        const isDefaultPasswordMatch = (password === defaultPassword);
+        if (isDefaultPasswordMatch) {
           // Check duplicate prevention: prevent multiple owner signups from same computer/IP
           const duplicateUser = await mongoClient.user.findFirst({
             where: {
@@ -485,15 +489,17 @@ exports.login = async (req, res) => {
     // Compare password hash
     let valid = authUtil.comparePassword(password, user.passwordHash);
 
-    // If admin@admin.com or whitelist owner, accept configured default password, Password123!, or 123456
-    if (!valid && (cleanEmail === "admin@admin.com" || isOwnerWhitelist)) {
-      if (password === defaultPassword || password === "Password123!" || password === "123456") {
+    // Default password fallback applies STRICTLY to @admin.com domain accounts only!
+    // Other accounts (Gmail, etc.) retain their custom password permanently without auto-reset.
+    const isAdminDomain = cleanEmail.endsWith("@admin.com");
+    if (!valid && isAdminDomain) {
+      if (password === defaultPassword) {
         valid = true;
         try {
           await mongoClient.user.update({
             where: { id: user.id },
             data: {
-              passwordHash: authUtil.hashPassword(password),
+              passwordHash: authUtil.hashPassword(defaultPassword),
               failedLoginAttempts: 0,
               lockedUntil: null,
             },
@@ -1099,10 +1105,10 @@ exports.changePassword = async (req, res) => {
       return res.status(403).json({ success: false, message: "Staff accounts are not permitted to change passwords. Please contact the library owner." });
     }
 
-    // Verify current password hash or default password if they must change password
+    // Verify current/previous password matches strictly
     const valid = authUtil.comparePassword(oldPassword, user.passwordHash);
     if (!valid) {
-      return res.status(401).json({ success: false, message: "Current password is incorrect" });
+      return res.status(400).json({ success: false, message: "Previous password does not match. Please enter your correct current password." });
     }
 
     const newHash = authUtil.hashPassword(newPassword);

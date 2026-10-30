@@ -86,6 +86,12 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.response && error.response.status === 401) {
+      // Don't auto logout when changing password or logging in
+      const requestUrl = error.config?.url || "";
+      if (requestUrl.includes("/users/change-password") || requestUrl.includes("/users/login")) {
+        return Promise.reject(error);
+      }
+
       const isDeviceLoggedOut = error.response.data?.code === "DEVICE_LOGGED_OUT";
       clientCache.clear();
       localStorage.removeItem("lms_token");

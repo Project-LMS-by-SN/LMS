@@ -34,6 +34,7 @@ const getPayments = async (req, res) => {
         validity: {
           include: {
             student: true,
+            feePlan: true,
           },
         },
         paymentMode: true,
@@ -46,6 +47,11 @@ const getPayments = async (req, res) => {
       validity_id: p.validityId,
       full_name: p.validity && p.validity.student ? p.validity.student.fullName : null,
       student_code: p.validity && p.validity.student ? p.validity.student.studentCode : null,
+      mobile: p.validity && p.validity.student ? p.validity.student.mobile : null,
+      email: p.validity && p.validity.student ? p.validity.student.email : null,
+      plan_name: p.validity && p.validity.feePlan ? p.validity.feePlan.planName : null,
+      start_date: p.validity?.startDate ? formatDateStr(p.validity.startDate) : null,
+      end_date: p.validity?.endDate ? formatDateStr(p.validity.endDate) : null,
       payment_mode_id: p.paymentModeId,
       mode_name: p.paymentMode?.modeName || "Unknown",
       invoice_no: p.invoiceNo,

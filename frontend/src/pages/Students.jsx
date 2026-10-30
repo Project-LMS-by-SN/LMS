@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { FaSearch, FaUserCircle, FaTimes, FaTrash, FaCreditCard, FaChair, FaClock, FaCalendarAlt, FaArrowLeft, FaEdit, FaComments, FaPaperPlane, FaWhatsapp, FaCheckCircle, FaTimesCircle } from "react-icons/fa";
+import { FaSearch, FaUserCircle, FaTimes, FaTrash, FaCreditCard, FaChair, FaClock, FaCalendarAlt, FaArrowLeft, FaEdit, FaComments, FaPaperPlane, FaWhatsapp, FaCheckCircle, FaTimesCircle, FaDownload } from "react-icons/fa";
+import { generateStudentInvoicePdf, sendInvoiceOnWhatsApp } from "../utils/studentInvoicePdf";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
@@ -512,7 +513,7 @@ const Students = () => {
         if (acc === "SUSPENDED" || acc === "INACTIVE" || acc === "DISABLED") return false;
         const st = getStudentStatus(s);
         if (st === "suspended" || st === "inactive") return false;
-        return st === "active";
+        return st === "active" || st === "expiring_soon";
       }).length,
       expiring_soon: base.filter(s => getStudentStatus(s) === "expiring_soon").length,
       inactive: base.filter(s => {
@@ -547,13 +548,13 @@ const Students = () => {
     // All students tab includes active, inactive, and suspended members
     if (statusFilter === "all") return true;
 
-    // Active students tab strictly excludes suspended and inactive members
+    // Active students tab includes all active members (including those expiring soon)
     if (statusFilter === "active") {
       const acc = (student.account_status || "").toUpperCase();
       if (acc === "SUSPENDED" || acc === "INACTIVE" || acc === "DISABLED") return false;
       const st = getStudentStatus(student);
       if (st === "suspended" || st === "inactive") return false;
-      return st === "active";
+      return st === "active" || st === "expiring_soon";
     }
 
     if (statusFilter === "suspended") {
@@ -1162,6 +1163,7 @@ const Students = () => {
                               <th style={{ padding: "10px 12px", textAlign: "left" }}>Mode</th>
                               <th style={{ padding: "10px 12px", textAlign: "left" }}>Reference / Remark</th>
                               <th style={{ padding: "10px 12px", textAlign: "left" }}>Payment Date</th>
+                              <th style={{ padding: "10px 12px", textAlign: "center" }}>Receipt / Actions</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1187,6 +1189,88 @@ const Students = () => {
                                   </div>
                                   <div style={{ fontSize: "11px", color: textSecondary, marginTop: "2px" }}>
                                     {formatTime(p.payment_date ? p.payment_date.split(" ").slice(1).join(" ") : "", timeFormat)}
+                                  </div>
+                                </td>
+                                <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                                  <div style={{ display: "flex", gap: "6px", justifyContent: "center", alignItems: "center", flexWrap: "nowrap" }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => generateStudentInvoicePdf({
+                                        ...p,
+                                        full_name: profileData.full_name,
+                                        student_code: profileData.student_code,
+                                        mobile: profileData.mobile,
+                                        email: profileData.email,
+                                        plan_name: profileData.validity?.plan_name || null,
+                                        start_date: profileData.validity?.start_date || null,
+                                        end_date: profileData.validity?.end_date || null,
+                                      }, loggedInUser)}
+                                      title="Download PDF Invoice"
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        padding: "4px 8px",
+                                        borderRadius: "6px",
+                                        border: "1px solid #3b82f6",
+                                        background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
+                                        color: "#2563eb",
+                                        fontSize: "12px",
+                                        fontWeight: "600",
+                                        cursor: "pointer",
+                                        whiteSpace: "nowrap",
+                                        transition: "all 0.15s",
+                                      }}
+                                      onMouseOver={(e) => {
+                                        e.currentTarget.style.background = "#2563eb";
+                                        e.currentTarget.style.color = "#ffffff";
+                                      }}
+                                      onMouseOut={(e) => {
+                                        e.currentTarget.style.background = darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff";
+                                        e.currentTarget.style.color = "#2563eb";
+                                      }}
+                                    >
+                                      <FaDownload style={{ fontSize: "11px" }} /> PDF
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => sendInvoiceOnWhatsApp({
+                                        ...p,
+                                        full_name: profileData.full_name,
+                                        student_code: profileData.student_code,
+                                        mobile: profileData.mobile,
+                                        email: profileData.email,
+                                        plan_name: profileData.validity?.plan_name || null,
+                                        start_date: profileData.validity?.start_date || null,
+                                        end_date: profileData.validity?.end_date || null,
+                                      }, profileData.mobile, loggedInUser)}
+                                      title="Send Invoice on WhatsApp"
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        padding: "4px 8px",
+                                        borderRadius: "6px",
+                                        border: "1px solid #16a34a",
+                                        background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
+                                        color: "#16a34a",
+                                        fontSize: "12px",
+                                        fontWeight: "600",
+                                        cursor: "pointer",
+                                        whiteSpace: "nowrap",
+                                        transition: "all 0.15s",
+                                      }}
+                                      onMouseOver={(e) => {
+                                        e.currentTarget.style.background = "#16a34a";
+                                        e.currentTarget.style.color = "#ffffff";
+                                      }}
+                                      onMouseOut={(e) => {
+                                        e.currentTarget.style.background = darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4";
+                                        e.currentTarget.style.color = "#16a34a";
+                                      }}
+                                    >
+                                      <FaWhatsapp style={{ fontSize: "12px" }} /> WhatsApp
+                                    </button>
                                   </div>
                                 </td>
                               </tr>
@@ -1838,7 +1922,7 @@ const Students = () => {
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div className="status-filter-pills-bar" style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
         {[
           { key: "all", label: `All`, color: darkMode ? "#94a3b8" : "#64748b", bg: darkMode ? "#1e293b" : "#f1f5f9" },
           { key: "active", label: `Active`, color: "#16a34a", bg: "#f0fdf4" },

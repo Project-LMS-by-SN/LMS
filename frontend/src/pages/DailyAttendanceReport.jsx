@@ -68,7 +68,7 @@ const DailyAttendanceReport = () => {
             </div>
           </div>
         </div>
-        <div style={{ width: "200px" }}>
+        <div className="daily-report-datepicker" style={{ width: "200px" }}>
           <CustomDatePicker
             value={selectedDate}
             min={(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split("T")[0]; })()}

@@ -51,8 +51,12 @@ const Profile = () => {
   const handleChangePassword = async (e) => {
     e.preventDefault();
     setPwMsg(null);
-    if (!oldPassword || !newPassword || !confirmPassword) {
-      setPwMsg({ type: "error", text: "All password fields are required" });
+    if (!oldPassword || !oldPassword.trim()) {
+      setPwMsg({ type: "error", text: "Please enter your current/previous password." });
+      return;
+    }
+    if (!newPassword || !newPassword.trim() || !confirmPassword) {
+      setPwMsg({ type: "error", text: "New password and confirmation are required." });
       return;
     }
     if (newPassword !== confirmPassword) {

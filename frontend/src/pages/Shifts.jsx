@@ -146,7 +146,7 @@ const Shifts = () => {
               />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
+            <div className="responsive-grid-1-1" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: "16px" }}>
               <EasyTimeInput
                 id="start_time"
                 label="Start Time *"
