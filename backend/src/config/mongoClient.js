@@ -68,8 +68,11 @@ const NUMERIC_FIELDS = new Set([
   "pendingExpiryDays",
 ]);
 
-const coerceValue = (key, val) => {
+const coerceValue = (key, val, modelName) => {
   if (val === null || val === undefined) return val;
+  if ((modelName === "PortalOverride" || modelName === "SubscriptionPlan") && key === "id") {
+    return String(val);
+  }
   if (NUMERIC_FIELDS.has(key) && typeof val === "string" && !isNaN(Number(val)) && val.trim() !== "") {
     return Number(val);
   }
@@ -172,7 +175,7 @@ const resolveWhereFilters = async (modelName, where) => {
       const ops = {};
       for (const [op, opVal] of Object.entries(val)) {
         if (opVal === undefined) continue;
-        const coercedOpVal = coerceValue(key, opVal);
+        const coercedOpVal = coerceValue(key, opVal, modelName);
 
         switch (op) {
           case "equals":
@@ -182,10 +185,10 @@ const resolveWhereFilters = async (modelName, where) => {
             ops.$ne = coercedOpVal;
             break;
           case "in":
-            ops.$in = Array.isArray(opVal) ? opVal.map((v) => coerceValue(key, v)) : [coercedOpVal];
+            ops.$in = Array.isArray(opVal) ? opVal.map((v) => coerceValue(key, v, modelName)) : [coercedOpVal];
             break;
           case "notIn":
-            ops.$nin = Array.isArray(opVal) ? opVal.map((v) => coerceValue(key, v)) : [coercedOpVal];
+            ops.$nin = Array.isArray(opVal) ? opVal.map((v) => coerceValue(key, v, modelName)) : [coercedOpVal];
             break;
           case "lt":
             ops.$lt = coercedOpVal;
@@ -217,10 +220,10 @@ const resolveWhereFilters = async (modelName, where) => {
             ops[op] = coercedOpVal;
         }
       }
-      const finalOp = Object.keys(ops).length > 0 ? ops : coerceValue(key, val);
+      const finalOp = Object.keys(ops).length > 0 ? ops : coerceValue(key, val, modelName);
       cleaned[key] = mergeCondition(cleaned[key], finalOp);
     } else {
-      cleaned[key] = mergeCondition(cleaned[key], coerceValue(key, val));
+      cleaned[key] = mergeCondition(cleaned[key], coerceValue(key, val, modelName));
     }
   }
 
@@ -573,6 +576,9 @@ const createDelegate = (modelName, Model) => {
       }
       if (args.data) {
         Object.assign(doc, args.data);
+        for (const k of Object.keys(args.data)) {
+          if (typeof doc.markModified === "function") doc.markModified(k);
+        }
       }
       await doc.save();
       return applySelectAndInclude(modelName, doc, args.select, args.include);
@@ -605,7 +611,12 @@ const createDelegate = (modelName, Model) => {
       const filter = await resolveWhereFilters(modelName, args.where);
       let doc = await Model.findOne(filter);
       if (doc) {
-        if (args.update) Object.assign(doc, args.update);
+        if (args.update) {
+          Object.assign(doc, args.update);
+          for (const k of Object.keys(args.update)) {
+            if (typeof doc.markModified === "function") doc.markModified(k);
+          }
+        }
         await doc.save();
       } else {
         const data = { ...(args.create || {}) };
@@ -676,6 +687,18 @@ const mongoClient = {
   supportTicket: createDelegate("SupportTicket", models.SupportTicket),
   portalOverride: createDelegate("PortalOverride", models.PortalOverride),
   subscriptionPlan: createDelegate("SubscriptionPlan", models.SubscriptionPlan),
+
+  // Raw database helper (Prisma-compatible $queryRaw / raw execution)
+  async $queryRaw(target, operation, ...args) {
+    if (models[target] && typeof models[target][operation] === "function") {
+      return models[target][operation](...args);
+    }
+    const db = mongoose.connection.db;
+    if (db && typeof db.collection(target)[operation] === "function") {
+      return db.collection(target)[operation](...args);
+    }
+    throw new Error(`Raw operation ${operation} not supported on ${target}`);
+  },
 
   // Transaction support
   async $transaction(actions) {

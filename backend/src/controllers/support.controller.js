@@ -1,4 +1,4 @@
-const models = require("../models");
+const mongoClient = require("../config/mongoClient");
 
 /**
  * Create a new support ticket in MongoDB Atlas
@@ -36,19 +36,19 @@ const createSupportTicket = async (req, res) => {
       ? subject.trim()
       : message.trim().slice(0, 70) + (message.trim().length > 70 ? "..." : "");
 
-    const ticket = new models.SupportTicket({
-      userId,
-      branchId,
-      name: name.trim(),
-      phone: phone.trim(),
-      category: category || "General Inquiry",
-      subject: shortSubject,
-      message: message.trim(),
-      priority: priority === "Urgent" ? "Urgent" : "Normal",
-      status: "OPEN",
+    const ticket = await mongoClient.supportTicket.create({
+      data: {
+        userId,
+        branchId,
+        name: name.trim(),
+        phone: phone.trim(),
+        category: category || "General Inquiry",
+        subject: shortSubject,
+        message: message.trim(),
+        priority: priority === "Urgent" ? "Urgent" : "Normal",
+        status: "OPEN",
+      },
     });
-
-    await ticket.save();
 
     return res.status(201).json({
       success: true,
@@ -84,25 +84,26 @@ const createSupportTicket = async (req, res) => {
  */
 const getSupportTickets = async (req, res) => {
   try {
-    const filter = {};
+    const where = {};
 
     // If user is logged in and not a super admin, filter by branchId or userId
     if (req.user) {
       if (req.user.role !== "ADMIN") {
         if (req.user.branchId) {
-          filter.$or = [{ branchId: req.user.branchId }, { userId: req.user.id }];
+          where.OR = [{ branchId: req.user.branchId }, { userId: req.user.id }];
         } else {
-          filter.userId = req.user.id;
+          where.userId = req.user.id;
         }
       }
     } else if (req.query.phone) {
-      filter.phone = req.query.phone;
+      where.phone = req.query.phone;
     }
 
-    const tickets = await models.SupportTicket.find(filter)
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .lean();
+    const tickets = await mongoClient.supportTicket.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
 
     return res.json({
       success: true,

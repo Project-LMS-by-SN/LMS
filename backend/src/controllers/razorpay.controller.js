@@ -36,14 +36,13 @@ const updateSubscriptionPlansEndpoint = async (req, res) => {
     if (!Array.isArray(plans) || plans.length === 0) {
       return res.status(400).json({ success: false, message: "Plans array is required in request body" });
     }
-    const db = require("mongoose").connection.db;
     for (const p of plans) {
       if (p.id) {
-        await db.collection("portal_overrides").updateOne(
-          { entity: "feePlan", id: p.id },
-          { $set: { patch: p, updated_at: new Date() } },
-          { upsert: true }
-        );
+        await mongoClient.portalOverride.upsert({
+          where: { entity: "feePlan", id: String(p.id) },
+          update: { patch: p, updated_at: new Date() },
+          create: { entity: "feePlan", id: String(p.id), patch: p, updated_at: new Date() },
+        });
       }
     }
     return res.json({ success: true, message: "Subscription plans updated successfully in MongoDB Atlas" });
