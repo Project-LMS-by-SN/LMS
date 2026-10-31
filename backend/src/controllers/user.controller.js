@@ -1143,7 +1143,7 @@ exports.deleteAccount = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const { password } = req.body;
+    const password = req.body?.password || req.headers["x-account-password"] || req.query?.password;
     if (!password) {
       return res.status(400).json({ success: false, message: "Password is required to delete account" });
     }
