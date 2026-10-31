@@ -85,6 +85,28 @@ const Support = () => {
     priority: "Normal",
   });
   const [ticketStatus, setTicketStatus] = useState(null); // 'idle' | 'success'
+  const [submittingTicket, setSubmittingTicket] = useState(false);
+  const [ticketError, setTicketError] = useState("");
+  const [myTickets, setMyTickets] = useState([]);
+  const [loadingTickets, setLoadingTickets] = useState(false);
+
+  const fetchMyTickets = async () => {
+    setLoadingTickets(true);
+    try {
+      const res = await api.get("/support");
+      if (res.data?.success && Array.isArray(res.data?.tickets)) {
+        setMyTickets(res.data.tickets);
+      }
+    } catch (err) {
+      console.error("Failed to load tickets:", err);
+    } finally {
+      setLoadingTickets(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMyTickets();
+  }, []);
 
   // Prepopulate library & contact info library-wise
   useEffect(() => {
@@ -212,20 +234,36 @@ const Support = () => {
 
   const unreadCount = last7DaysNotifications.filter((n) => !readIds.includes(n.id)).length;
 
-  const handleTicketSubmit = (e) => {
+  const handleTicketSubmit = async (e) => {
     e.preventDefault();
     if (!ticketForm.message.trim()) return;
+    if (!ticketForm.phone.trim()) return;
 
-    setTicketStatus("success");
-    setTimeout(() => {
-      setTicketForm((prev) => ({
-        ...prev,
-        subject: "",
-        message: "",
-        category: "General Inquiry",
-      }));
-      setTicketStatus(null);
-    }, 4500);
+    setSubmittingTicket(true);
+    setTicketError("");
+    try {
+      const res = await api.post("/support", ticketForm);
+      if (res.data?.success) {
+        setTicketStatus("success");
+        if (res.data.ticket) {
+          setMyTickets((prev) => [res.data.ticket, ...prev]);
+        }
+        setTicketForm((prev) => ({
+          ...prev,
+          subject: "",
+          message: "",
+          category: "General Inquiry",
+        }));
+        setTimeout(() => {
+          setTicketStatus(null);
+        }, 6000);
+      }
+    } catch (err) {
+      console.error("Support ticket submit error:", err);
+      setTicketError(err.response?.data?.message || "Failed to record support request. Please try again.");
+    } finally {
+      setSubmittingTicket(false);
+    }
   };
 
   const handleSendViaWhatsApp = () => {
@@ -1192,9 +1230,20 @@ const Support = () => {
             </div>
 
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "4px" }}>
-              <button
-                type="submit"
-                style={{
+              {ticketError && (
+            <div style={{
+              background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b",
+              padding: "10px 14px", borderRadius: "8px", fontSize: "13px",
+              marginBottom: "12px", display: "flex", alignItems: "center", gap: "8px"
+            }}>
+              <FaExclamationTriangle style={{ color: "#dc2626", flexShrink: 0 }} />
+              <span>{ticketError}</span>
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={submittingTicket}
+            style={{
                   flex: 1,
                   minWidth: "140px",
                   padding: "12px 18px",
@@ -1212,7 +1261,7 @@ const Support = () => {
                   boxShadow: "0 4px 12px rgba(37, 99, 235, 0.25)",
                 }}
               >
-                <FaPaperPlane style={{ fontSize: "12px" }} /> Submit Request
+                {submittingTicket ? <><FaSyncAlt className="fa-spin" style={{ fontSize: "12px" }} /> Submitting...</> : <><FaPaperPlane style={{ fontSize: "12px" }} /> Submit Request</>}
               </button>
 
               <button

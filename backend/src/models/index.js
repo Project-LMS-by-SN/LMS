@@ -371,6 +371,56 @@ const subscriptionHistorySchema = new mongoose.Schema(
 );
 autoIncrement(subscriptionHistorySchema, "SubscriptionHistory");
 
+// 20. SupportTicket
+const supportTicketSchema = new mongoose.Schema(
+  {
+    id: { type: Number, unique: true, index: true },
+    userId: { type: Number, default: null, index: true },
+    branchId: { type: Number, default: null, index: true },
+    name: { type: String, required: true, trim: true },
+    phone: { type: String, required: true, trim: true },
+    category: { type: String, default: "General Inquiry" },
+    subject: { type: String, default: "" },
+    message: { type: String, required: true, trim: true },
+    priority: { type: String, enum: ["Normal", "Urgent"], default: "Normal" },
+    status: { type: String, enum: ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"], default: "OPEN" },
+    adminResponse: { type: String, default: null },
+  },
+  { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } }
+);
+autoIncrement(supportTicketSchema, "SupportTicket");
+
+// 21. PortalOverride (supports schema used by external admin interface)
+const portalOverrideSchema = new mongoose.Schema(
+  {
+    entity: { type: String, required: true, index: true },
+    id: { type: String, required: true, index: true },
+    patch: { type: mongoose.Schema.Types.Mixed, default: {} },
+    updated_at: { type: Date, default: Date.now },
+  },
+  { collection: "portal_overrides", timestamps: false }
+);
+
+// 22. SubscriptionPlan (dedicated collection representation)
+const subscriptionPlanSchema = new mongoose.Schema(
+  {
+    id: { type: String, unique: true, required: true, index: true },
+    tierKey: { type: String, required: true, unique: true, index: true },
+    name: { type: String, required: true },
+    monthlyPrice: { type: Number, required: true },
+    quarterlyPrice: { type: Number, required: true },
+    halfYearPrice: { type: Number, required: true },
+    annualPrice: { type: Number, default: 0 },
+    studentLimit: { type: String, default: "Unlimited active students" },
+    description: { type: String, default: "" },
+    features: [{ type: String }],
+    popular: { type: Boolean, default: false },
+    badge: { type: String, default: "" },
+    isActive: { type: Boolean, default: true },
+  },
+  { collection: "subscription_plans", timestamps: true }
+);
+
 // Models map
 const models = {
   Branch: mongoose.models.Branch || mongoose.model("Branch", branchSchema),
@@ -392,6 +442,9 @@ const models = {
   Expense: mongoose.models.Expense || mongoose.model("Expense", expenseSchema),
   CouponUsage: mongoose.models.CouponUsage || mongoose.model("CouponUsage", couponUsageSchema),
   SubscriptionHistory: mongoose.models.SubscriptionHistory || mongoose.model("SubscriptionHistory", subscriptionHistorySchema),
+  SupportTicket: mongoose.models.SupportTicket || mongoose.model("SupportTicket", supportTicketSchema),
+  PortalOverride: mongoose.models.PortalOverride || mongoose.model("PortalOverride", portalOverrideSchema),
+  SubscriptionPlan: mongoose.models.SubscriptionPlan || mongoose.model("SubscriptionPlan", subscriptionPlanSchema),
   Counter,
   getNextSequence,
   ensureCounterAtLeast,

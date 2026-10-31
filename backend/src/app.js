@@ -1,4 +1,16 @@
-require("dotenv").config();
+const path = require("path");
+const fs = require("fs");
+const dotenv = require("dotenv");
+
+const backendEnvPath = path.resolve(__dirname, "../.env");
+if (fs.existsSync(backendEnvPath)) {
+  dotenv.config({ path: backendEnvPath });
+}
+const rootEnvPath = path.resolve(__dirname, "../../.env");
+if (fs.existsSync(rootEnvPath)) {
+  dotenv.config({ path: rootEnvPath });
+}
+dotenv.config();
 const express = require("express");
 const cors = require("cors");
 const { connectDB } = require("./config/db");
@@ -16,6 +28,7 @@ const studentRoutes = require("./routes/student.routes");
 const userRoutes = require("./routes/user.routes");
 const admissionRequestRoutes = require("./routes/admissionRequest.routes");
 const expenseRoutes = require("./routes/expense.routes");
+const supportRoutes = require("./routes/support.routes");
 
 const authMiddleware = require("./middleware/auth");
 
@@ -50,6 +63,12 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Incoming request logger
+app.use((req, res, next) => {
+  console.log(`📡 [${req.method}] ${req.originalUrl}`);
+  next();
+});
+
 // Serverless-ready database connection middleware
 app.use(async (req, res, next) => {
   if (req.path === "/" || req.path === "/favicon.ico") return next();
@@ -58,12 +77,15 @@ app.use(async (req, res, next) => {
     if (!mongoose.connection || mongoose.connection.readyState !== 1) {
       await connectDB();
     }
+    if (mongoose.connection.readyState !== 1) {
+      throw new Error("MongoDB Atlas connection is not active");
+    }
     next();
   } catch (err) {
     return res.status(503).json({
       success: false,
       code: "DB_NOT_CONNECTED",
-      message: "Database connection failed. Please ensure MONGODB_URI is properly set in Vercel environment variables.",
+      message: "MongoDB Atlas database connection failed. Please ensure MONGODB_URI is properly set in environment variables.",
       error: err?.message
     });
   }
@@ -89,4 +111,11 @@ app.use("/api/payment-modes", paymentModeRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/admission-requests", admissionRequestRoutes);
 app.use("/api/expenses", expenseRoutes);
+app.use("/api/support", supportRoutes);
+
+// Catch-all 404 handler
+app.use((req, res) => {
+  console.log(`❌ [404 NOT MATCHED] ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ success: false, message: `Route not found: ${req.method} ${req.originalUrl}` });
+});
 module.exports = app;

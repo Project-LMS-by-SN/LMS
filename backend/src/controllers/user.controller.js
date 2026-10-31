@@ -1,3 +1,4 @@
+const subscriptionPlanService = require("../services/subscriptionPlan.service");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -38,8 +39,10 @@ const getDefaultOwnerPassword = () => {
 let seedAdminUserRan = false;
 const seedAdminUser = async () => {
   if (seedAdminUserRan) return;
+  seedAdminUserRan = true;
   if (mongoClient.mongoose && mongoClient.mongoose.connection && mongoClient.mongoose.connection.readyState !== 1) {
     console.log("ℹ️ MongoDB connection pending, seedAdminUser will execute once connected.");
+    seedAdminUserRan = false;
     return;
   }
   try {
@@ -284,13 +287,7 @@ exports.login = async (req, res) => {
     const reqDeviceId = deviceId || req.headers["x-device-id"] || "unknown_device";
 
     // Helper to get device limit for user subscription tier
-    const getDeviceLimit = (tier) => {
-      if (tier === "STARTER") return 2;
-      if (tier === "PRO_100") return 3;
-      if (tier === "PRO_200") return 5;
-      if (tier === "ENTERPRISE") return 9999;
-      return 1; // FREE
-    };
+    // Device limit dynamically queried from MongoDB Atlas via subscriptionPlanService
 
     // Look up user in the DB
     let user = await mongoClient.user.findFirst({ where: { email: cleanEmail, deletedAt: null } });
@@ -549,7 +546,7 @@ exports.login = async (req, res) => {
 
     const isCurrentDeviceActive = activeSessions.some(s => s.deviceId === dbDeviceId);
     // Staff are always limited to 1 active device; owners use their tier-based limit
-    const limit = user.role === "STAFF" ? 1 : getDeviceLimit(owner.subscriptionTier);
+    const limit = user.role === "STAFF" ? 1 : await subscriptionPlanService.getDeviceLimitForTier(owner.subscriptionTier);
 
     if (cleanEmail !== "admin@admin.com" && !isCurrentDeviceActive && activeSessions.length >= limit) {
       if (!forceLogin) {
@@ -1331,15 +1328,7 @@ exports.createStaff = async (req, res) => {
       return res.status(404).json({ success: false, message: "Owner not found" });
     }
     
-    const getStaffLimit = (tier) => {
-      if (tier === "STARTER") return 2;
-      if (tier === "PRO_100") return 3;
-      if (tier === "PRO_200") return 5;
-      if (tier === "ENTERPRISE") return 999999;
-      return 0; // FREE: no staff allowed
-    };
-
-    const limit = getStaffLimit(owner.subscriptionTier);
+    const limit = await subscriptionPlanService.getStaffLimitForTier(owner.subscriptionTier);
 
     const staffCount = await mongoClient.user.count({
       where: { role: "STAFF", branchId: owner.branchId || 1, deletedAt: null }

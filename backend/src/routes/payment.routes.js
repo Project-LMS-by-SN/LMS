@@ -13,6 +13,8 @@ const {
   validateCouponEndpoint,
   getCouponStatusEndpoint,
   getSubscriptionHistory,
+  getSubscriptionPlansEndpoint,
+  updateSubscriptionPlansEndpoint,
 } = require("../controllers/razorpay.controller");
 
 router.get("/", getPayments);
@@ -26,5 +28,7 @@ router.post("/razorpay/verify-signature", verifySignature);
 router.post("/razorpay/validate-coupon", validateCouponEndpoint);
 router.get("/razorpay/coupon-status", getCouponStatusEndpoint);
 router.get("/razorpay/subscription-history", getSubscriptionHistory);
+router.get("/razorpay/plans", getSubscriptionPlansEndpoint);
+router.put("/razorpay/plans", updateSubscriptionPlansEndpoint);
 
 module.exports = router;

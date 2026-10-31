@@ -1,0 +1,2781 @@
+openapi: 3.1.0
+info:
+  title: Modern Library Management System (LMS) API
+  version: 1.0.0
+  description: |
+    Production-ready RESTful API for the Library Management System (LMS), connected to **MongoDB Atlas**.
+    Provides multi-tenant branch isolation, student lifecycle management, attendance kiosk & staff portals,
+    seat & shift allocations, cashier desk fee payments, SaaS subscriptions via Razorpay, and Role-Based Access Control (RBAC).
+servers:
+  - url: http://localhost:3000
+    description: Local Development Server
+  - url: https://lms-4kly.vercel.app
+    description: Production / Cloud Staging Server
+
+tags:
+  - name: System
+    description: Health check and root platform endpoints
+  - name: Authentication & Users
+    description: User authentication, JWT issuance, profile, device security, and subscriptions
+  - name: Staff Management
+    description: Owner-only staff account creation, credential resets, and deletions
+  - name: Admission Requests
+    description: Public online admission applications and staff review queue
+  - name: Students
+    description: Comprehensive student bio, admission flow, profile, and updates
+  - name: Attendance
+    description: Staff check-in/out, active monitors, and self-service public attendance kiosks
+  - name: Dashboard
+    description: Operational KPI metrics, revenue charts, seat occupancy, and urgent notifications
+  - name: Seats
+    description: Library physical seat management, layout grids, and bulk generator
+  - name: Shifts
+    description: Study time slot definitions and capacity scheduling
+  - name: Fee Plans
+    description: Membership pricing packages, reserved/unreserved durations, and fees
+  - name: Student Validities
+    description: Active student subscription validities, date ranges, and dues tracking
+  - name: Student Shift Assignments
+    description: Relational bindings between student validity, shifts, and reserved seats
+  - name: Payments & Cashier
+    description: Offline and cashier fee ledger, UTR recording, and renewal transactions
+  - name: Razorpay Subscriptions
+    description: SaaS library owner subscription upgrades, coupon validations, and invoices
+  - name: Payment Modes
+    description: Active payment options (Cash, UPI, Card, Net Banking)
+  - name: Expenses
+    description: Library branch operational expense management (Rent, Electricity, Maintenance)
+  - name: Reports
+    description: Daily attendance logs and annual revenue business intelligence reports
+
+paths:
+  /:
+    get:
+      tags:
+        - System
+      summary: Health check & service banner
+      description: Returns service banner confirming backend server is operational.
+      responses:
+        '200':
+          description: Service running
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Library Management Backend is running
+
+  # ---------------------------------------------------------------------------
+  # Authentication & Users
+  # ---------------------------------------------------------------------------
+  /api/users/login:
+    post:
+      tags:
+        - Authentication & Users
+      summary: User login (Owner or Staff)
+      description: |
+        Authenticates user credentials against MongoDB Atlas. Enforces single-device concurrent session rules.
+        Rate-limited to prevent brute-force attacks.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@admin.com
+                password:
+                  type: string
+                  format: password
+                  example: Password123!
+                deviceId:
+                  type: string
+                  example: device_98af2b0c1
+                forceLogin:
+                  type: boolean
+                  default: false
+                  description: Force logout of previous device session if active
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Missing email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Account already logged in on another device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many login attempts
+
+  /api/users/logout:
+    post:
+      tags:
+        - Authentication & Users
+      summary: User logout
+      description: Terminates active device session and invalidates session token.
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/users/forgot-password:
+    post:
+      tags:
+        - Authentication & Users
+      summary: Request password reset email / token
+      description: Generates a secure time-limited password reset token sent to owner email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@admin.com
+      responses:
+        '200':
+          description: Reset instructions generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/users/reset-password:
+    get:
+      tags:
+        - Authentication & Users
+      summary: Validate reset password token
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Token is valid
+        '400':
+          description: Invalid or expired token
+    post:
+      tags:
+        - Authentication & Users
+      summary: Reset account password with token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+                - password
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/users/profile:
+    get:
+      tags:
+        - Authentication & Users
+      summary: Get current user profile and subscription metadata
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: User profile details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+    put:
+      tags:
+        - Authentication & Users
+      summary: Update user profile and library contact details
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: Admin User
+                phone:
+                  type: string
+                  example: "+91 9876543210"
+                libraryName:
+                  type: string
+                  example: Knowledge Haven Library
+                address:
+                  type: string
+                  example: 123 Learning Street, Sector 62, Noida, UP
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/users/change-password:
+    put:
+      tags:
+        - Authentication & Users
+      summary: Change account password
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - oldPassword
+                - newPassword
+              properties:
+                oldPassword:
+                  type: string
+                  format: password
+                newPassword:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Password updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/users/qr-info:
+    get:
+      tags:
+        - Authentication & Users
+      summary: Get branch QR tokens for public portals
+      description: Returns admission and attendance QR codes and public kiosk URLs for current branch.
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Branch QR tokens
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      admissionToken:
+                        type: string
+                      attendanceToken:
+                        type: string
+                      admissionUrl:
+                        type: string
+                      attendanceUrl:
+                        type: string
+                      branchCode:
+                        type: string
+                      branchName:
+                        type: string
+
+  /api/users/subscription:
+    put:
+      tags:
+        - Authentication & Users
+      summary: Update subscription tier (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tier
+              properties:
+                tier:
+                  type: string
+                  enum: [FREE, STARTER, PRO_100, PRO_200, ENTERPRISE]
+                expiryDays:
+                  type: integer
+                  default: 30
+      responses:
+        '200':
+          description: Subscription updated
+
+  /api/users/activate-pending-plan:
+    post:
+      tags:
+        - Authentication & Users
+      summary: Activate queued advance renewal plan immediately
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Plan activated
+
+  /api/users/account:
+    delete:
+      tags:
+        - Authentication & Users
+      summary: Permanently delete owner account and branch data
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - password
+              properties:
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Account deleted
+
+  # ---------------------------------------------------------------------------
+  # Staff Management
+  # ---------------------------------------------------------------------------
+  /api/users/staff:
+    get:
+      tags:
+        - Staff Management
+      summary: List staff accounts for branch (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: List of staff accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StaffUser'
+    post:
+      tags:
+        - Staff Management
+      summary: Create new staff account (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+              properties:
+                name:
+                  type: string
+                  example: Librarian Staff
+                email:
+                  type: string
+                  format: email
+                  example: staff1@library.com
+                password:
+                  type: string
+                  format: password
+                  example: StaffPass123!
+      responses:
+        '201':
+          description: Staff created successfully
+
+  /api/users/staff/{id}/password:
+    put:
+      tags:
+        - Staff Management
+      summary: Reset staff account password (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newPassword
+              properties:
+                newPassword:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Staff password reset
+
+  /api/users/staff/{id}:
+    delete:
+      tags:
+        - Staff Management
+      summary: Delete staff account (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Staff account removed
+
+  # ---------------------------------------------------------------------------
+  # Admission Requests
+  # ---------------------------------------------------------------------------
+  /api/admission-requests/branch-info:
+    get:
+      tags:
+        - Admission Requests
+      summary: Public library branch info for admission QR code
+      description: Returns library name, address, active study shifts, and fee plans for student registration form.
+      parameters:
+        - name: token
+          in: query
+          description: Branch admission token from QR poster
+          schema:
+            type: string
+        - name: branchCode
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Branch admission metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BranchInfoResponse'
+        '404':
+          description: Invalid admission QR token
+
+  /api/admission-requests:
+    get:
+      tags:
+        - Admission Requests
+      summary: List pending admission applications
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: List of pending requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdmissionRequest'
+    post:
+      tags:
+        - Admission Requests
+      summary: Submit online admission application (Public)
+      description: Student self-service application form submitted via public QR link.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fullName
+                - mobile
+              properties:
+                token:
+                  type: string
+                fullName:
+                  type: string
+                  example: Rohit Kumar
+                email:
+                  type: string
+                  format: email
+                  example: rohit@example.com
+                mobile:
+                  type: string
+                  example: "9876543210"
+                gender:
+                  type: string
+                  enum: [MALE, FEMALE, OTHER]
+                  default: OTHER
+                dob:
+                  type: string
+                  format: date
+                  example: "2002-05-15"
+                address:
+                  type: string
+                  example: "Sector 62, Noida"
+                aadharNumber:
+                  type: string
+                  example: "123456789012"
+                profilePhotoUrl:
+                  type: string
+                preferredShiftId:
+                  type: integer
+                preferredFeePlanId:
+                  type: integer
+                remarks:
+                  type: string
+      responses:
+        '201':
+          description: Admission application received
+        '400':
+          description: Duplicate pending application or missing required fields
+
+  /api/admission-requests/{id}:
+    get:
+      tags:
+        - Admission Requests
+      summary: Get admission request by ID
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Request details
+    delete:
+      tags:
+        - Admission Requests
+      summary: Reject or delete admission application
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Request removed
+
+  # ---------------------------------------------------------------------------
+  # Students
+  # ---------------------------------------------------------------------------
+  /api/students/next-code:
+    get:
+      tags:
+        - Students
+      summary: Generate next student code & registration number
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Next sequential identifiers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      student_code:
+                        type: string
+                        example: STD00024
+                      reg_no:
+                        type: string
+                        example: REG20261000024
+
+  /api/students/search:
+    get:
+      tags:
+        - Students
+      summary: Search students by query
+      description: Searches by student full name, mobile number, student code, or registration number.
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StudentSummary'
+
+  /api/students/shifts:
+    get:
+      tags:
+        - Students
+      summary: Get active shifts for student assignment
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: List of active shifts
+
+  /api/students/fee-plans:
+    get:
+      tags:
+        - Students
+      summary: Get active fee plans for student admission
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: List of active fee plans
+
+  /api/students/seats/{shiftId}:
+    get:
+      tags:
+        - Students
+      summary: Get available seats for a specific study shift
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: shiftId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Seats availability map for the given shift
+
+  /api/students:
+    get:
+      tags:
+        - Students
+      summary: List all branch students
+      description: Paginated and filterable student directory.
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, SUSPENDED, DISABLED, ALL]
+        - name: planId
+          in: query
+          schema:
+            type: integer
+        - name: shiftId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Student list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Student'
+    post:
+      tags:
+        - Students
+      summary: Create student profile record
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStudentPayload'
+      responses:
+        '201':
+          description: Student profile created
+
+  /api/students/admit:
+    post:
+      tags:
+        - Students
+      summary: Atomic student admission transaction
+      description: |
+        Executes a single-shot atomic transaction in MongoDB:
+        1. Creates student bio profile.
+        2. Assigns membership validity period based on fee plan.
+        3. Allocates reserved seats or unreserved study shifts.
+        4. Logs cashier fee payment with invoice receipt.
+        5. Updates admission request status if submitted via online application queue.
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdmitStudentPayload'
+      responses:
+        '201':
+          description: Student admitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdmitStudentResponse'
+        '400':
+          description: Validation error or duplicate mobile/aadhar
+
+  /api/students/{id}/profile:
+    get:
+      tags:
+        - Students
+      summary: Full student profile with validities, shifts, and payment history
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Full profile document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentProfile'
+
+  /api/students/{id}:
+    get:
+      tags:
+        - Students
+      summary: Get student by ID
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Student details
+    put:
+      tags:
+        - Students
+      summary: Update student bio profile
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStudentPayload'
+      responses:
+        '200':
+          description: Student profile updated
+    delete:
+      tags:
+        - Students
+      summary: Soft-delete student record (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Student soft-deleted
+
+  /api/students/{id}/details:
+    put:
+      tags:
+        - Students
+      summary: Reconfigure student seat, shifts, or fee plan
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fee_plan_id:
+                  type: integer
+                shift_ids:
+                  type: array
+                  items:
+                    type: integer
+                seat_id:
+                  type: integer
+                access_type:
+                  type: string
+                  enum: [RESERVED, UNRESERVED]
+      responses:
+        '200':
+          description: Student assignment details updated
+
+  # ---------------------------------------------------------------------------
+  # Attendance
+  # ---------------------------------------------------------------------------
+  /api/attendance/branch-info:
+    get:
+      tags:
+        - Attendance
+      summary: Public branch info for Attendance Kiosk
+      description: Returns branch details to verify kiosk setup.
+      parameters:
+        - name: token
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Branch details
+
+  /api/attendance/public-search:
+    get:
+      tags:
+        - Attendance
+      summary: Self-service attendance kiosk student lookup (Public)
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Student match with today's attendance state
+
+  /api/attendance/public-checkin:
+    post:
+      tags:
+        - Attendance
+      summary: Kiosk quick check-in / check-out (Public)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - studentId
+                - action
+              properties:
+                token:
+                  type: string
+                studentId:
+                  type: integer
+                action:
+                  type: string
+                  enum: [checkin, checkout]
+      responses:
+        '200':
+          description: Action recorded
+
+  /api/attendance:
+    get:
+      tags:
+        - Attendance
+      summary: List attendance records
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+            example: "2026-10-26"
+        - name: studentId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PRESENT, ABSENT]
+      responses:
+        '200':
+          description: Attendance records
+
+  /api/attendance/search:
+    get:
+      tags:
+        - Attendance
+      summary: Staff attendance student lookup
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Student attendance search match
+
+  /api/attendance/active:
+    get:
+      tags:
+        - Attendance
+      summary: List students currently present in library
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Active check-in list
+
+  /api/attendance/check-in:
+    post:
+      tags:
+        - Attendance
+      summary: Staff student check-in
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - studentId
+              properties:
+                studentId:
+                  type: integer
+                shiftAssignmentId:
+                  type: integer
+                remarks:
+                  type: string
+      responses:
+        '200':
+          description: Checked in successfully
+
+  /api/attendance/check-out:
+    post:
+      tags:
+        - Attendance
+      summary: Staff student check-out
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                attendanceId:
+                  type: integer
+                studentId:
+                  type: integer
+                remarks:
+                  type: string
+      responses:
+        '200':
+          description: Checked out successfully
+
+  /api/attendance/checkout-all:
+    post:
+      tags:
+        - Attendance
+      summary: Check out all currently present students (End of day)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                remarks:
+                  type: string
+      responses:
+        '200':
+          description: All students checked out
+
+  # ---------------------------------------------------------------------------
+  # Dashboard
+  # ---------------------------------------------------------------------------
+  /api/dashboard/stats:
+    get:
+      tags:
+        - Dashboard
+      summary: Branch KPI summary metrics
+      description: Returns active student count, present students, seat occupancy, fee dues, and monthly revenue.
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: KPI statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardStatsResponse'
+
+  /api/dashboard/revenue:
+    get:
+      tags:
+        - Dashboard
+      summary: Monthly revenue analysis for selected year
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+            example: 2026
+      responses:
+        '200':
+          description: Monthly revenue array
+
+  /api/dashboard/recent-payments:
+    get:
+      tags:
+        - Dashboard
+      summary: Recent payment transactions
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Recent payments list
+
+  /api/dashboard/seat-availability:
+    get:
+      tags:
+        - Dashboard
+      summary: Live seat grid with shift occupancy
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Real-time seat occupancy matrix
+
+  /api/dashboard/notifications:
+    get:
+      tags:
+        - Dashboard
+      summary: Actionable alerts and notifications
+      description: Lists expiring memberships, overdue payments, and pending admissions.
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Urgent alerts
+
+  /api/dashboard/stats-students:
+    get:
+      tags:
+        - Dashboard
+      summary: Drilldown student list by metric
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: metric
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [total, active, suspended, inactive, expiringSoon, dueFees]
+      responses:
+        '200':
+          description: Filtered student list
+
+  # ---------------------------------------------------------------------------
+  # Seats
+  # ---------------------------------------------------------------------------
+  /api/seats:
+    get:
+      tags:
+        - Seats
+      summary: List all seats with floor and section attributes
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Seats list
+    post:
+      tags:
+        - Seats
+      summary: Create individual seat (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - seatNumber
+              properties:
+                seatNumber:
+                  type: string
+                  example: A1
+                floor:
+                  type: string
+                  example: Ground Floor
+                room:
+                  type: string
+                  example: Hall 1
+                section:
+                  type: string
+                  example: Silent Zone
+                isActive:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Seat created
+
+  /api/seats/bulk:
+    post:
+      tags:
+        - Seats
+      summary: Bulk generate seat range (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - prefix
+                - startNumber
+                - endNumber
+              properties:
+                prefix:
+                  type: string
+                  example: A
+                startNumber:
+                  type: integer
+                  example: 1
+                endNumber:
+                  type: integer
+                  example: 50
+                floor:
+                  type: string
+                room:
+                  type: string
+                section:
+                  type: string
+      responses:
+        '201':
+          description: Bulk seats generated
+
+  /api/seats/renumber:
+    post:
+      tags:
+        - Seats
+      summary: Renumber seat range (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - prefix
+                - startFrom
+              properties:
+                prefix:
+                  type: string
+                startFrom:
+                  type: integer
+      responses:
+        '200':
+          description: Seats renumbered
+
+  /api/seats/delete-bulk:
+    post:
+      tags:
+        - Seats
+      summary: Delete seat range in bulk (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seatIds:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Seats removed
+
+  /api/seats/{id}:
+    put:
+      tags:
+        - Seats
+      summary: Update seat details (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seatNumber:
+                  type: string
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Seat updated
+    delete:
+      tags:
+        - Seats
+      summary: Delete individual seat (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Seat deleted
+
+  /api/seats/{id}/toggle-active:
+    patch:
+      tags:
+        - Seats
+      summary: Toggle seat active/inactive maintenance state (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Seat state toggled
+
+  # ---------------------------------------------------------------------------
+  # Shifts
+  # ---------------------------------------------------------------------------
+  /api/shifts:
+    get:
+      tags:
+        - Shifts
+      summary: List branch study shifts
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: List of shifts
+    post:
+      tags:
+        - Shifts
+      summary: Create new study shift (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - shiftName
+                - startTime
+                - endTime
+              properties:
+                shiftName:
+                  type: string
+                  example: Morning Shift
+                startTime:
+                  type: string
+                  example: "08:00:00"
+                endTime:
+                  type: string
+                  example: "14:00:00"
+                isActive:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Shift created
+
+  /api/shifts/{id}:
+    put:
+      tags:
+        - Shifts
+      summary: Update shift timings and details (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                shiftName:
+                  type: string
+                startTime:
+                  type: string
+                endTime:
+                  type: string
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Shift updated
+    delete:
+      tags:
+        - Shifts
+      summary: Delete shift (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Shift deleted
+
+  # ---------------------------------------------------------------------------
+  # Fee Plans
+  # ---------------------------------------------------------------------------
+  /api/fee-plans:
+    get:
+      tags:
+        - Fee Plans
+      summary: List membership fee plans
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Fee plans list
+    post:
+      tags:
+        - Fee Plans
+      summary: Create new fee plan (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - planName
+                - durationDays
+                - amount
+              properties:
+                planName:
+                  type: string
+                  example: Monthly Plan (Reserved)
+                durationDays:
+                  type: integer
+                  example: 30
+                amount:
+                  type: number
+                  example: 1000
+                planType:
+                  type: string
+                  enum: [RESERVED, UNRESERVED, REGISTRATION]
+                  default: RESERVED
+                isActive:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Fee plan created
+
+  /api/fee-plans/{id}:
+    put:
+      tags:
+        - Fee Plans
+      summary: Update fee plan (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                planName:
+                  type: string
+                durationDays:
+                  type: integer
+                amount:
+                  type: number
+                planType:
+                  type: string
+                  enum: [RESERVED, UNRESERVED]
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Fee plan updated
+    delete:
+      tags:
+        - Fee Plans
+      summary: Delete fee plan (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Fee plan deleted
+
+  /api/fee-plans/{id}/deactivate:
+    patch:
+      tags:
+        - Fee Plans
+      summary: Deactivate fee plan from public selection (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Fee plan deactivated
+
+  # ---------------------------------------------------------------------------
+  # Student Validities
+  # ---------------------------------------------------------------------------
+  /api/student-validities:
+    get:
+      tags:
+        - Student Validities
+      summary: List student membership validities
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: studentId
+          in: query
+          schema:
+            type: integer
+        - name: activeOnly
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Validities list
+    post:
+      tags:
+        - Student Validities
+      summary: Create or renew validity period
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - studentId
+                - feePlanId
+                - startDate
+                - endDate
+              properties:
+                studentId:
+                  type: integer
+                feePlanId:
+                  type: integer
+                startDate:
+                  type: string
+                  format: date
+                endDate:
+                  type: string
+                  format: date
+                totalAmount:
+                  type: number
+                discountAmount:
+                  type: number
+                remarks:
+                  type: string
+      responses:
+        '201':
+          description: Validity period created
+
+  # ---------------------------------------------------------------------------
+  # Student Shift Assignments
+  # ---------------------------------------------------------------------------
+  /api/student-shift-assignments:
+    get:
+      tags:
+        - Student Shift Assignments
+      summary: List shift and seat assignments
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: validityId
+          in: query
+          schema:
+            type: integer
+        - name: studentId
+          in: query
+          schema:
+            type: integer
+        - name: shiftId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Shift assignments list
+    post:
+      tags:
+        - Student Shift Assignments
+      summary: Assign student to shift and seat
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - validityId
+                - shiftId
+              properties:
+                validityId:
+                  type: integer
+                shiftId:
+                  type: integer
+                seatId:
+                  type: integer
+      responses:
+        '201':
+          description: Assignment created
+
+  /api/student-shift-assignments/bulk:
+    post:
+      tags:
+        - Student Shift Assignments
+      summary: Bulk assign multiple shifts to a student
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - validityId
+                - assignments
+              properties:
+                validityId:
+                  type: integer
+                assignments:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - shiftId
+                    properties:
+                      shiftId:
+                        type: integer
+                      seatId:
+                        type: integer
+      responses:
+        '201':
+          description: Bulk assignments created
+
+  # ---------------------------------------------------------------------------
+  # Payments & Cashier
+  # ---------------------------------------------------------------------------
+  /api/payments:
+    get:
+      tags:
+        - Payments & Cashier
+      summary: Fee transactions ledger
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Payment records list
+    post:
+      tags:
+        - Payments & Cashier
+      summary: Record fee payment
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - validity_id
+                - payment_mode_id
+                - invoice_no
+                - amount_received
+              properties:
+                validity_id:
+                  type: integer
+                payment_mode_id:
+                  type: integer
+                invoice_no:
+                  type: string
+                amount_received:
+                  type: number
+                payment_date:
+                  type: string
+                  format: date
+                remarks:
+                  type: string
+                utr_number:
+                  type: string
+                payment_type:
+                  type: string
+                  enum: [fee, registration]
+                  default: fee
+      responses:
+        '201':
+          description: Payment logged
+
+  /api/payments/create:
+    post:
+      tags:
+        - Payments & Cashier
+      summary: Alias to record payment
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        $ref: '#/paths/~1api~1payments/post/requestBody'
+      responses:
+        '201':
+          description: Payment created
+
+  /api/payments/record:
+    post:
+      tags:
+        - Payments & Cashier
+      summary: One-shot validity renewal + fee collection transaction
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - student_id
+                - fee_plan_id
+                - start_date
+                - payment_mode_id
+                - invoice_no
+                - amount_received
+              properties:
+                student_id:
+                  type: integer
+                fee_plan_id:
+                  type: integer
+                start_date:
+                  type: string
+                  format: date
+                access_type:
+                  type: string
+                  enum: [RESERVED, UNRESERVED]
+                  default: UNRESERVED
+                payment_mode_id:
+                  type: integer
+                payment_date:
+                  type: string
+                  format: date
+                invoice_no:
+                  type: string
+                amount_received:
+                  type: number
+                utr_number:
+                  type: string
+                remarks:
+                  type: string
+      responses:
+        '201':
+          description: Validity renewed and payment collected
+
+  # ---------------------------------------------------------------------------
+  # Razorpay Subscriptions
+  # ---------------------------------------------------------------------------
+  /api/payments/razorpay/create-order:
+    post:
+      tags:
+        - Razorpay Subscriptions
+      summary: Create Razorpay checkout order for library SaaS subscription
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tier
+              properties:
+                tier:
+                  type: string
+                  enum: [STARTER, PRO_100, PRO_200, ENTERPRISE]
+                billing:
+                  type: string
+                  enum: [monthly, quarterly, halfyearly]
+                  default: monthly
+                couponCode:
+                  type: string
+                  example: PRO1
+      responses:
+        '200':
+          description: Razorpay order generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  order:
+                    type: object
+                  keyId:
+                    type: string
+                  finalAmount:
+                    type: number
+
+  /api/payments/razorpay/verify-signature:
+    post:
+      tags:
+        - Razorpay Subscriptions
+      summary: Verify Razorpay webhook signature and activate SaaS plan
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - razorpay_order_id
+                - razorpay_payment_id
+                - razorpay_signature
+                - tier
+              properties:
+                razorpay_order_id:
+                  type: string
+                razorpay_payment_id:
+                  type: string
+                razorpay_signature:
+                  type: string
+                tier:
+                  type: string
+                billing:
+                  type: string
+                couponCode:
+                  type: string
+      responses:
+        '200':
+          description: Payment verified and subscription updated
+
+  /api/payments/razorpay/validate-coupon:
+    post:
+      tags:
+        - Razorpay Subscriptions
+      summary: Validate promo discount coupon
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - couponCode
+                - tier
+              properties:
+                couponCode:
+                  type: string
+                  example: PRO1
+                tier:
+                  type: string
+                  example: PRO_200
+      responses:
+        '200':
+          description: Coupon validation result
+
+  /api/payments/razorpay/coupon-status:
+    get:
+      tags:
+        - Razorpay Subscriptions
+      summary: Check if current user has consumed the promotional coupon
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Coupon usage status
+
+  /api/payments/razorpay/subscription-history:
+    get:
+      tags:
+        - Razorpay Subscriptions
+      summary: Past SaaS subscription payment invoices
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Subscription history invoices
+
+  /api/payments/razorpay/plans:
+    get:
+      tags:
+        - Razorpay Subscriptions
+      summary: Fetch dynamic SaaS subscription plans from database
+      description: Returns subscription plans stored in MongoDB Atlas (synced with admin portal_overrides).
+      responses:
+        '200':
+          description: List of active subscription tiers with current pricing and features
+
+    put:
+      tags:
+        - Razorpay Subscriptions
+      summary: Update subscription plans in MongoDB Atlas
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plans:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Confirmation of updated plans in MongoDB Atlas
+
+  # ---------------------------------------------------------------------------
+  # Payment Modes
+  # ---------------------------------------------------------------------------
+  /api/payment-modes:
+    get:
+      tags:
+        - Payment Modes
+      summary: List supported payment modes (Cash, UPI, Card)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Active payment modes list
+
+  # ---------------------------------------------------------------------------
+  # Expenses
+  # ---------------------------------------------------------------------------
+  /api/expenses:
+    get:
+      tags:
+        - Expenses
+      summary: List branch expenses and monthly breakdown
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Expenses list and monthly summary
+    post:
+      tags:
+        - Expenses
+      summary: Create expense entry (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - category
+                - date
+                - amount
+              properties:
+                category:
+                  type: string
+                  example: Electricity
+                description:
+                  type: string
+                  example: Monthly electricity bill
+                date:
+                  type: string
+                  format: date
+                  example: "2026-10-15"
+                amount:
+                  type: number
+                  example: 3500
+      responses:
+        '201':
+          description: Expense recorded
+
+  /api/expenses/{id}:
+    delete:
+      tags:
+        - Expenses
+      summary: Delete expense record (Owner only)
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Expense deleted
+
+  # ---------------------------------------------------------------------------
+  # Reports
+  # ---------------------------------------------------------------------------
+  /api/reports/daily-attendance:
+    get:
+      tags:
+        - Reports
+      summary: Daily attendance report for specified calendar date
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            example: "2026-10-26"
+        - name: shiftId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Daily attendance logs and check-in times
+
+  /api/reports/revenue:
+    get:
+      tags:
+        - Reports
+      summary: Annual revenue report categorized by payment modes
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+            example: 2026
+      responses:
+        '200':
+          description: Revenue report by month and payment mode
+
+  # ---------------------------------------------------------------------------
+  # Support Tickets
+  # ---------------------------------------------------------------------------
+  /api/support:
+    post:
+      tags:
+        - Support Tickets
+      summary: Raise a new support request or inquiry
+      description: Persists library owner / staff issue tickets in MongoDB Atlas database.
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - phone
+                - message
+              properties:
+                name:
+                  type: string
+                  example: Apex Study Library
+                phone:
+                  type: string
+                  example: '+91 98765 43210'
+                category:
+                  type: string
+                  example: Subscription & Billing
+                priority:
+                  type: string
+                  enum: [Normal, Urgent]
+                  example: Normal
+                subject:
+                  type: string
+                  example: Issue regarding subscription renewal
+                message:
+                  type: string
+                  example: We are unable to activate the plan after completing the payment.
+      responses:
+        '201':
+          description: Support ticket logged successfully and saved in MongoDB Atlas
+        '400':
+          description: Validation error for missing required fields
+    get:
+      tags:
+        - Support Tickets
+      summary: List support tickets logged by current user/library
+      security:
+        - BearerAuth: []
+        - DeviceIdHeader: []
+      responses:
+        '200':
+          description: Array of support tickets saved in database
+
+# -----------------------------------------------------------------------------
+# Components & Schemas
+# -----------------------------------------------------------------------------
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Enter JWT bearer token received from `/api/users/login`.
+    DeviceIdHeader:
+      type: apiKey
+      in: header
+      name: X-Device-Id
+      description: Client device unique fingerprint for concurrent session validation.
+
+  schemas:
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Operation completed successfully
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Invalid credentials or operation failed
+        code:
+          type: string
+          example: AUTH_FAILED
+
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        mustChangePassword:
+          type: boolean
+          example: false
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Admin User
+        email:
+          type: string
+          format: email
+          example: admin@admin.com
+        role:
+          type: string
+          enum: [OWNER, STAFF]
+          example: OWNER
+        subscriptionTier:
+          type: string
+          example: PRO_200
+        subscriptionExpiry:
+          type: string
+          format: date-time
+          nullable: true
+        branch_name:
+          type: string
+          example: Main Branch
+        branch_code:
+          type: string
+          example: MB543210
+        library_name:
+          type: string
+          example: Main Branch
+        library_code:
+          type: string
+          example: MB543210
+
+    UserProfileResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/User'
+
+    StaffUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          example: STAFF
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    BranchInfoResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            branch:
+              type: object
+              properties:
+                id:
+                  type: integer
+                name:
+                  type: string
+                address:
+                  type: string
+                phone:
+                  type: string
+                code:
+                  type: string
+                admissionToken:
+                  type: string
+            shifts:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                  start_time:
+                    type: string
+                  end_time:
+                    type: string
+            feePlans:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                  amount:
+                    type: number
+                  duration_days:
+                    type: integer
+                  seat_type:
+                    type: string
+
+    AdmissionRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+        full_name:
+          type: string
+        email:
+          type: string
+        mobile:
+          type: string
+        gender:
+          type: string
+        dob:
+          type: string
+        address:
+          type: string
+        aadhar_number:
+          type: string
+        preferred_shift_id:
+          type: integer
+          nullable: true
+        preferred_fee_plan_id:
+          type: integer
+          nullable: true
+        remarks:
+          type: string
+          nullable: true
+        branch_id:
+          type: integer
+        status:
+          type: string
+          example: PENDING
+        created_at:
+          type: string
+          format: date-time
+
+    Student:
+      type: object
+      properties:
+        id:
+          type: integer
+        studentCode:
+          type: string
+          example: STD00001
+        regNo:
+          type: string
+          example: REG20261000001
+        fullName:
+          type: string
+          example: Rohit Sharma
+        email:
+          type: string
+          format: email
+        mobile:
+          type: string
+        gender:
+          type: string
+          enum: [MALE, FEMALE, OTHER]
+        dob:
+          type: string
+          format: date
+        address:
+          type: string
+        aadharNumber:
+          type: string
+        accountStatus:
+          type: string
+          enum: [ACTIVE, SUSPENDED, DISABLED]
+        admissionDate:
+          type: string
+          format: date
+        branchId:
+          type: integer
+
+    StudentSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        fullName:
+          type: string
+        studentCode:
+          type: string
+        mobile:
+          type: string
+        regNo:
+          type: string
+        accountStatus:
+          type: string
+
+    CreateStudentPayload:
+      type: object
+      required:
+        - student_code
+        - reg_no
+        - full_name
+        - email
+        - mobile
+        - gender
+      properties:
+        student_code:
+          type: string
+          example: STD00025
+        reg_no:
+          type: string
+          example: REG20261000025
+        full_name:
+          type: string
+          example: Amit Verma
+        email:
+          type: string
+          format: email
+          example: amit@example.com
+        mobile:
+          type: string
+          example: "9123456789"
+        gender:
+          type: string
+          enum: [MALE, FEMALE, OTHER]
+        dob:
+          type: string
+          format: date
+        address:
+          type: string
+        aadhar_number:
+          type: string
+        remarks:
+          type: string
+
+    UpdateStudentPayload:
+      type: object
+      properties:
+        student_code:
+          type: string
+        reg_no:
+          type: string
+        full_name:
+          type: string
+        email:
+          type: string
+        mobile:
+          type: string
+        gender:
+          type: string
+        dob:
+          type: string
+        address:
+          type: string
+        aadhar_number:
+          type: string
+        account_status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, DISABLED]
+        profile_photo_url:
+          type: string
+
+    AdmitStudentPayload:
+      type: object
+      required:
+        - student_code
+        - reg_no
+        - full_name
+        - email
+        - mobile
+        - gender
+        - fee_plan_id
+        - seat_type
+        - shift_ids
+        - payment_mode_id
+        - amount_received
+        - invoice_no
+      properties:
+        student_code:
+          type: string
+          example: STD00025
+        reg_no:
+          type: string
+          example: REG20261000025
+        full_name:
+          type: string
+          example: Vikas Kumar
+        email:
+          type: string
+          format: email
+          example: vikas@example.com
+        mobile:
+          type: string
+          example: "9876543210"
+        gender:
+          type: string
+          enum: [MALE, FEMALE, OTHER]
+        dob:
+          type: string
+          format: date
+        address:
+          type: string
+        aadhar_number:
+          type: string
+        requestId:
+          type: integer
+          description: Optional ID of pending admission request
+        fee_plan_id:
+          type: integer
+        seat_type:
+          type: string
+          enum: [RESERVED, UNRESERVED]
+        shift_ids:
+          type: array
+          items:
+            type: integer
+        seat_id:
+          type: integer
+          nullable: true
+        payment_mode_id:
+          type: integer
+        payment_date:
+          type: string
+          format: date
+        amount_received:
+          type: number
+        invoice_no:
+          type: string
+        utr_number:
+          type: string
+        remarks:
+          type: string
+        custom_amount:
+          type: number
+
+    AdmitStudentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            student:
+              $ref: '#/components/schemas/Student'
+            validity:
+              type: object
+            payment:
+              type: object
+
+    StudentProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        student_code:
+          type: string
+        reg_no:
+          type: string
+        full_name:
+          type: string
+        email:
+          type: string
+        mobile:
+          type: string
+        gender:
+          type: string
+        account_status:
+          type: string
+        admission_date:
+          type: string
+        active_validity:
+          type: object
+        assignments:
+          type: array
+          items:
+            type: object
+        payments:
+          type: array
+          items:
+            type: object
+
+    DashboardStatsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            totalStudents:
+              type: integer
+            activeStudents:
+              type: integer
+            suspendedStudents:
+              type: integer
+            inactiveMembers:
+              type: integer
+            expiringSoon:
+              type: integer
+            totalRevenue:
+              type: number
+            todayPresent:
+              type: integer
+            todayAbsent:
+              type: integer
+            totalSeats:
+              type: integer
+            occupiedSeats:
+              type: integer
+            totalExpensesThisMonth:
+              type: number

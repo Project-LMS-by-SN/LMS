@@ -1,3 +1,4 @@
+const subscriptionPlanService = require("../services/subscriptionPlan.service");
 const mongoClient = require("../config/mongoClient");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -403,14 +404,7 @@ const createStudent = async (req, res) => {
         const activeCount = await mongoClient.student.count({
           where: { accountStatus: "ACTIVE", deletedAt: null, branchId: req.user.branchId }
         });
-        const getStudentLimit = (tier) => {
-          if (tier === "STARTER") return 150;
-          if (tier === "PRO_100") return 250;
-          if (tier === "PRO_200" || tier === "PRO") return 500;
-          if (tier === "ENTERPRISE") return 999999;
-          return 50; // Default/Free trial tier allows at least 50 students
-        };
-        const limit = getStudentLimit(creator.subscriptionTier);
+        const limit = await subscriptionPlanService.getStudentLimitForTier(creator.subscriptionTier);
         if (activeCount >= limit) {
           return res.status(403).json({
             success: false,
@@ -1297,14 +1291,7 @@ const admitStudent = async (req, res) => {
         const activeCount = await mongoClient.student.count({
           where: { accountStatus: "ACTIVE", deletedAt: null, branchId: req.user.branchId }
         });
-        const getStudentLimit = (tier) => {
-          if (tier === "STARTER") return 150;
-          if (tier === "PRO_100") return 250;
-          if (tier === "PRO_200" || tier === "PRO") return 500;
-          if (tier === "ENTERPRISE") return 999999;
-          return 50; // Default/Free trial tier allows at least 50 students
-        };
-        const limit = getStudentLimit(creator.subscriptionTier);
+        const limit = await subscriptionPlanService.getStudentLimitForTier(creator.subscriptionTier);
         if (activeCount >= limit) {
           return res.status(403).json({
             success: false,

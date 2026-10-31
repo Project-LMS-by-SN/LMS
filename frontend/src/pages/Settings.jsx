@@ -39,6 +39,7 @@ const Settings = () => {
   const [deleteMsg, setDeleteMsg] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [activeStudents, setActiveStudents] = useState(0);
+  const [dbPlans, setDbPlans] = useState([]);
 
   // Staff management states
   const [staff, setStaff] = useState([]);
@@ -97,7 +98,15 @@ const Settings = () => {
   useEffect(() => {
     const fetchStatsAndProfile = async () => {
       try {
-        const statsRes = await api.get("/dashboard/stats");
+        try {
+        const plansRes = await api.get("/payments/razorpay/plans");
+        if (plansRes.data?.success && Array.isArray(plansRes.data?.plans)) {
+          setDbPlans(plansRes.data.plans);
+        }
+      } catch (err) {
+        console.error("Failed to fetch plans in settings:", err);
+      }
+      const statsRes = await api.get("/dashboard/stats");
         setActiveStudents(statsRes.data.data.active_students);
       } catch (err) {
         console.error("Failed to load stats in settings:", err);
@@ -239,19 +248,28 @@ const Settings = () => {
   const subscriptionExpiry = profile.subscriptionExpiry;
 
   const getTierDetails = (tier) => {
-    if (tier === "STARTER") {
-      return { name: "Starter", studentLimit: 150, staffLimit: 1, monthlyPrice: 150 };
+    const matched = dbPlans.find(
+      (p) => (p.dbTier && p.dbTier.toUpperCase() === String(tier).toUpperCase()) ||
+             (p.tierKey && p.tierKey.toUpperCase() === String(tier).toUpperCase())
+    );
+    if (matched) {
+      const limitStr = String(matched.limit || matched.seatLimit || matched.studentLimit || "").toLowerCase();
+      let sLimit = 0;
+      if (limitStr.includes("unlimited")) {
+        sLimit = 999999;
+      } else {
+        const m = limitStr.match(/\d+/);
+        sLimit = m ? parseInt(m[0], 10) : 150;
+      }
+      const stLimit = sLimit >= 999999 ? 999999 : sLimit >= 500 ? 5 : sLimit >= 250 ? 2 : 1;
+      return {
+        name: matched.name || tier,
+        studentLimit: sLimit,
+        staffLimit: stLimit,
+        monthlyPrice: matched.monthlyPrice || 0,
+      };
     }
-    if (tier === "PRO_100") {
-      return { name: "Basic", studentLimit: 250, staffLimit: 2, monthlyPrice: 200 };
-    }
-    if (tier === "PRO_200") {
-      return { name: "Pro", studentLimit: 500, staffLimit: 5, monthlyPrice: 300 };
-    }
-    if (tier === "ENTERPRISE") {
-      return { name: "Enterprise", studentLimit: 999999, staffLimit: 999999, monthlyPrice: 400 };
-    }
-    return { name: "Free", studentLimit: 0, staffLimit: 0, monthlyPrice: 0 };
+    return { name: tier || "Free", studentLimit: 0, staffLimit: 0, monthlyPrice: 0 };
   };
 
   const { name: tierName, studentLimit, staffLimit, monthlyPrice } = getTierDetails(currentTier);

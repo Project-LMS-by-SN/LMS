@@ -4,6 +4,14 @@ const authUtil = require("../utils/auth");
 async function main() {
   console.log("Starting seeding...");
 
+  // Safety protection for MongoDB Atlas live collections
+  const branchCount = await db.branch.count();
+  if (branchCount > 0 && process.env.ALLOW_SEED_CLEAN !== "true") {
+    console.log("⚠️ MongoDB Atlas already contains data. Destructive wipe is aborted to protect cloud collections.");
+    console.log("👉 To force a complete reseed, run with ALLOW_SEED_CLEAN=true");
+    return;
+  }
+
   // 1. Clean existing database
   await db.expense.deleteMany();
   await db.attendance.deleteMany();

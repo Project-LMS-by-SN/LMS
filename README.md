@@ -33,7 +33,7 @@ A production-grade, SaaS-ready **Library Management System** built with **React 
 │                                     │ Axios Client                          │
 │                                     │ Bearer Token + Device-ID              │
 └─────────────────────────────────────┼───────────────────────────────────────┘
-                                      │ HTTP / REST API (Port 5000)
+                                      │ HTTP / REST API (Port 3000)
 ┌─────────────────────────────────────┼───────────────────────────────────────┐
 │                       BACKEND (Node.js + Express 5)                         │
 │                                                                             │
@@ -356,7 +356,7 @@ npm run seed
 Start the backend server:
 ```bash
 npm run dev
-# Server runs on http://localhost:5000
+# Server runs on http://localhost:3000
 ```
 
 ### 3. Frontend Setup

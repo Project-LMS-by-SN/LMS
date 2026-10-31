@@ -23,6 +23,7 @@ module.exports = async (req, res, next) => {
     path.startsWith("/attendance/branch-info") ||
     originalUrl.includes("/attendance/branch-info") ||
     path.startsWith("/attendance/public") ||
+    originalUrl.includes("/payments/razorpay/plans") ||
     originalUrl.includes("/attendance/public") ||
     ((path === "/admission-requests" || originalUrl.includes("/api/admission-requests")) && req.method === "POST") ||
     originalUrl.startsWith("/api/users/login") ||

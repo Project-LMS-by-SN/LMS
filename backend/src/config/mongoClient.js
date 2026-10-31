@@ -673,6 +673,9 @@ const mongoClient = {
   securityEvent: createDelegate("SecurityEvent", models.SecurityEvent),
   admissionRequest: createDelegate("AdmissionRequest", models.AdmissionRequest),
   expense: createDelegate("Expense", models.Expense),
+  supportTicket: createDelegate("SupportTicket", models.SupportTicket),
+  portalOverride: createDelegate("PortalOverride", models.PortalOverride),
+  subscriptionPlan: createDelegate("SubscriptionPlan", models.SubscriptionPlan),
 
   // Transaction support
   async $transaction(actions) {

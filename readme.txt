@@ -7,7 +7,8 @@ Follow these detailed steps to set up and run the project locally.
 ------------------------------------------------------------------------
 PREREQUISITES
 ------------------------------------------------------------------------
-Make sure you have Node.js installed (v18 or higher is recommended).
+- Node.js installed (v18 or higher is recommended).
+- MongoDB Atlas cluster account (or existing MongoDB Atlas connection URI).
 
 ------------------------------------------------------------------------
 STEP 1: BACKEND SETUP
@@ -19,14 +20,11 @@ STEP 1: BACKEND SETUP
    npm install
 
 3. Configure your Environment Variables:
-   - Copy the ".env.sample" file and rename it to ".env":
-     cp .env.sample .env
-   - (Optional) Open ".env" and modify the settings (e.g. PORT, JWT_SECRET, RAZORPAY_KEY, etc.) if needed.
+   - Your backend/.env file must have your MongoDB Atlas URI:
+     MONGODB_URI="mongodb+srv://<username>:<password>@cluster0.xxxx.mongodb.net/library_management_db?retryWrites=true&w=majority"
+   - Refer to .env.sample for other optional settings (PORT, JWT_SECRET, RAZORPAY_KEY, etc.).
 
-4. Initialize the database schema & seeds (if needed):
-   npm run seed
-
-5. Start the backend development server:
+4. Start the backend development server:
    npm run dev
 
 The backend server will run at: http://localhost:3000
@@ -40,35 +38,31 @@ STEP 2: FRONTEND SETUP
 2. Install all dependencies:
    npm install
 
-3. Start the frontend development server:
+3. Configure your Environment Variables:
+   - frontend/.env:
+     VITE_API_URL=http://localhost:3000/api
+
+4. Start the frontend development server:
    npm run dev
 
 The frontend application will run at: http://localhost:5173
 
 ------------------------------------------------------------------------
-DEFAULT LOGIN CREDENTIALS
+DEFAULT / SEEDED ACCOUNTS
 ------------------------------------------------------------------------
-Once both servers are running, you can log in using these default owner accounts:
-
-- Main Admin / Owner:
-  Email: admin@admin.com
-  Password: 123456
-
-- Whitelisted Pro Owners (Starter / Pro tiers):
-  Email: admin100@admin.com  (PRO_100 tier - max 100 students)
-  Email: admin200@admin.com  (PRO_200 tier - max 200 students)
-  Password: Password123!
+User accounts are stored online in your MongoDB Atlas database.
+Refer to your database or seeded accounts (e.g. admin@admin.com).
 
 ------------------------------------------------------------------------
-FEATURES & SYSTEM BEHAVIOR
+SYSTEM ARCHITECTURE
 ------------------------------------------------------------------------
-1. Role-Based Access Control (RBAC):
-   - Only accounts with role 'OWNER' can modify Shifts, configure Fee Plans, change default passwords, manage active subscriptions, delete admissions, or manually suspend members.
-   - Staff accounts cannot access settings password modification, shifts, fee plan controls, manual student suspension, or student deletion.
+1. Database:
+   - 100% cloud-hosted on MongoDB Atlas via MONGODB_URI in backend/.env.
+   - All operations (students, admissions, attendance, payments, shifts, seats) 
+     execute directly against MongoDB Atlas.
+   - No local offline database or SQLite/SQL files are used.
 
-2. Auto-Suspension System:
-   - Any student who has not paid/renewed their plan for more than 15 days is automatically marked as suspended (status: DISABLED).
-   - Suspended students are blocked from checking in for attendance.
-
-3. Favicon & Title:
-   - Browser tab favicon is styled as the emoji "📚" and title is "LIBRARY".
+2. Library Admin:
+   - The standalone library-admin section has been decoupled into its own repo.
+   - This repository contains the full Backend API (Node.js + Express + Mongoose)
+     and the Client Frontend (React 19 + Vite).

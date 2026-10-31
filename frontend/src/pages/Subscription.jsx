@@ -165,13 +165,6 @@ const Subscription = () => {
     });
   };
 
-  const tierMap = {
-    "starter": "STARTER",
-    "basic": "PRO_100",
-    "pro": "PRO_200",
-    "enterprise": "ENTERPRISE"
-  };
-
   const loadRazorpayScript = () => {
     return new Promise((resolve) => {
       const script = document.createElement("script");
@@ -184,7 +177,7 @@ const Subscription = () => {
 
   const executeUpgrade = async (tierKey, amount, tierName) => {
     try {
-      const dbTier = tierMap[tierKey] || tierKey.toUpperCase();
+      const dbTier = String(tierKey).toUpperCase();
       const isPro = dbTier === "PRO_100" || dbTier === "PRO_200";
 
       // If coupon applied on non-pro plan
@@ -288,76 +281,27 @@ const Subscription = () => {
 
   const getTierKey = (name) => name.toLowerCase();
 
-  const tiers = [
-    {
-      name: "Starter",
-      dbTier: "STARTER",
-      monthlyPrice: 150,
-      quarterlyPrice: 450,
-      halfYearPrice: 900,
-      description: "For small libraries starting out",
-      limit: "Up to 150 active students",
-      features: [
-        "Seat Layout Management",
-        "Student Check-in/out",
-        "Basic Daily Reports",
-        "Manual Admission Portal",
-        "Single Branch support",
-      ],
-      popular: false,
-    },
-    {
-      name: "Basic",
-      dbTier: "PRO_100",
-      monthlyPrice: 200,
-      quarterlyPrice: 600,
-      halfYearPrice: 1100,
-      description: "For growing libraries with more members",
-      limit: "Up to 250 active students",
-      features: [
-        "Everything in Starter",
-        "Higher student limit (250)",
-        "Advanced Revenue Analytics",
-        "Priority Customer Support",
-        "Automated QR code registrations",
-      ],
-      popular: true,
-    },
-    {
-      name: "Pro",
-      dbTier: "PRO_200",
-      monthlyPrice: 300,
-      quarterlyPrice: 900,
-      halfYearPrice: 1600,
-      description: "For established professional libraries",
-      limit: "Up to 500 active students",
-      features: [
-        "Everything in Basic",
-        "Higher student limit (500)",
-        "Multi-shift optimization reports",
-        "Enhanced security settings",
-        "24/7 Server Uptime SLA",
-      ],
-      popular: false,
-    },
-    {
-      name: "Enterprise",
-      dbTier: "ENTERPRISE",
-      monthlyPrice: 400,
-      quarterlyPrice: 1000,
-      halfYearPrice: 2000,
-      description: "Complete solution for library chains",
-      limit: "Unlimited active students",
-      features: [
-        "Everything in Pro",
-        "Unlimited students & seats",
-        "Multi-branch administrative console",
-        "Custom database integrations",
-        "Dedicated account manager",
-      ],
-      popular: false,
-    },
-  ];
+  
+
+  const [tiers, setTiers] = useState([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDbPlans = async () => {
+      setPlansLoading(true);
+      try {
+        const res = await api.get("/payments/razorpay/plans");
+        if (res.data?.success && Array.isArray(res.data?.plans) && res.data.plans.length > 0) {
+          setTiers(res.data.plans);
+        }
+      } catch (err) {
+        console.error("Failed to load plans from DB:", err);
+      } finally {
+        setPlansLoading(false);
+      }
+    };
+    fetchDbPlans();
+  }, []);
 
   const isCurrentPlan = (tier) => currentTier === tier.dbTier;
 
@@ -685,6 +629,16 @@ const Subscription = () => {
       </div>
 
       {/* Plans Grid */}
+      {plansLoading ? (
+        <div style={{ textAlign: "center", padding: "60px 0", color: textMuted }}>
+          <div style={{ fontSize: "28px", marginBottom: "12px" }}>⏳</div>
+          <p style={{ fontSize: "14px", fontWeight: 600 }}>Loading subscription plans from database...</p>
+        </div>
+      ) : tiers.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "60px 0", color: textMuted }}>
+          <p style={{ fontSize: "14px" }}>No active subscription plans found in database.</p>
+        </div>
+      ) : (
       <div style={{
         display: "grid",
         gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
@@ -828,7 +782,7 @@ const Subscription = () => {
 
               <button
                 disabled={disabled}
-                onClick={() => !disabled && handleUpgrade(getTierKey(tier.name), regularPrice, tier.name)}
+                onClick={() => !disabled && handleUpgrade(tier.dbTier || tier.tierKey, regularPrice, tier.name)}
                 style={{
                   width: "100%", marginTop: "24px", padding: "12px", borderRadius: "12px", fontWeight: 700,
                   cursor: disabled ? "default" : "pointer", fontSize: "14px", display: "flex",
@@ -872,6 +826,7 @@ const Subscription = () => {
           );
         })}
       </div>
+      )}
 
       {/* Contact Modal */}
       {showContactModal && (
