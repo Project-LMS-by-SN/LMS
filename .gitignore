@@ -46,3 +46,9 @@ Thumbs.db
 .gemini/
 .vercel
 .env*
+
+# Test artifacts
+test-results/
+playwright-report/
+.nyc_output/
+coverage/
