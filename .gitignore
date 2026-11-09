@@ -46,6 +46,3 @@ Thumbs.db
 .gemini/
 .vercel
 .env*
-
-# PDF documents
-*.pdf

@@ -1,15 +1,37 @@
 {
   "name": "library-management-system",
   "version": "1.0.0",
-  "description": "",
+  "description": "Modern Library Management System (Backend & Frontend) with MongoDB Atlas",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "admin:dev": "npm --prefix \"frontend admin\" run dev",
-    "admin:build": "npm --prefix \"frontend admin\" run build",
-    "client:dev": "npm --prefix frontend run dev"
+    "start": "npm --prefix backend start",
+    "backend:dev": "npm --prefix backend run dev",
+    "backend:start": "npm --prefix backend start",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build",
+    "client:dev": "npm --prefix frontend run dev",
+    "test": "node tests/run_all_tests.js",
+    "test:all": "node tests/run_all_tests.js",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:api": "vitest run tests/api",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:slow": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:debug": "playwright test --debug"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^30.1.3",
+    "react-router-dom": "^7.18.5",
+    "supertest": "^7.3.1",
+    "vitest": "^5.0.5"
+  }
 }

@@ -14,13 +14,43 @@ const getRazorpayClient = () => {
   });
 };
 
-const tierPricing = {
-  STARTER:   { monthly: 150, quarterly: 450, halfYearly: 900 },
-  PRO_100:   { monthly: 200, quarterly: 600, halfYearly: 1100 },
-  PRO_200:   { monthly: 300, quarterly: 900, halfYearly: 1600 },
-  ENTERPRISE:{ monthly: 400, quarterly: 1000, halfYearly: 2000 },
+const subscriptionPlanService = require("../services/subscriptionPlan.service");
+
+const getEffectivePricing = async () => {
+  return await subscriptionPlanService.getDynamicTierPricing();
 };
 
+const getSubscriptionPlansEndpoint = async (req, res) => {
+  try {
+    const plans = await subscriptionPlanService.getSubscriptionPlans();
+    return res.json({ success: true, plans });
+  } catch (error) {
+    console.error("Fetch subscription plans error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch subscription plans" });
+  }
+};
+
+const updateSubscriptionPlansEndpoint = async (req, res) => {
+  try {
+    const { plans } = req.body;
+    if (!Array.isArray(plans) || plans.length === 0) {
+      return res.status(400).json({ success: false, message: "Plans array is required in request body" });
+    }
+    for (const p of plans) {
+      if (p.id) {
+        await mongoClient.portalOverride.upsert({
+          where: { entity: "feePlan", id: String(p.id) },
+          update: { patch: p, updated_at: new Date() },
+          create: { entity: "feePlan", id: String(p.id), patch: p, updated_at: new Date() },
+        });
+      }
+    }
+    return res.json({ success: true, message: "Subscription plans updated successfully in MongoDB Atlas" });
+  } catch (error) {
+    console.error("Update subscription plans error:", error);
+    return res.status(500).json({ success: false, message: "Failed to update subscription plans", error: error.message });
+  }
+};
 const validateCouponEndpoint = async (req, res) => {
   try {
     const { couponCode, tier } = req.body;
@@ -51,6 +81,7 @@ const getCouponStatusEndpoint = async (req, res) => {
 const createOrder = async (req, res) => {
   try {
     const { tier, billing, couponCode } = req.body;
+    const tierPricing = await getEffectivePricing();
     if (!tier || !tierPricing[tier]) {
       return res.status(400).json({ success: false, message: "Invalid subscription tier selected" });
     }
@@ -165,6 +196,7 @@ const verifySignature = async (req, res) => {
     }
 
     const existingUser = await mongoClient.user.findUnique({ where: { id: req.user.id } });
+    const tierPricing = await getEffectivePricing();
     const isSameTier = existingUser && existingUser.subscriptionTier === effectiveTier;
     const isExpired = !existingUser?.subscriptionExpiry || new Date(existingUser.subscriptionExpiry) <= new Date();
 
@@ -271,6 +303,8 @@ module.exports = {
   verifySignature,
   validateCouponEndpoint,
   getCouponStatusEndpoint,
-  getSubscriptionHistory
+  getSubscriptionHistory,
+  getSubscriptionPlansEndpoint,
+  updateSubscriptionPlansEndpoint,
 };
 

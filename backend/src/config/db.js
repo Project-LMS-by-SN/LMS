@@ -1,6 +1,20 @@
-const mongoose = require("mongoose");
+const path = require("path");
+const fs = require("fs");
 const dns = require("dns");
-require("dotenv").config();
+const dotenv = require("dotenv");
+
+// Ensure .env is loaded whether running from project root or backend directory
+const backendEnvPath = path.resolve(__dirname, "../../.env");
+if (fs.existsSync(backendEnvPath)) {
+  dotenv.config({ path: backendEnvPath });
+}
+const rootEnvPath = path.resolve(__dirname, "../../../.env");
+if (fs.existsSync(rootEnvPath)) {
+  dotenv.config({ path: rootEnvPath });
+}
+dotenv.config();
+
+const mongoose = require("mongoose");
 
 // Ensure Atlas mongodb+srv SRV records resolve reliably on Windows
 try {
@@ -12,14 +26,16 @@ try {
 let isConnected = false;
 
 const getMongoUri = () => {
-  if (process.env.MONGODB_URI) {
-    return process.env.MONGODB_URI;
+  const uri = process.env.MONGODB_URI || process.env.DATABASE_URL;
+  if (!uri) {
+    throw new Error(
+      "CRITICAL: MONGODB_URI is not set in environment variables. Please configure MONGODB_URI in backend/.env with your MongoDB Atlas connection string."
+    );
   }
-  if (process.env.DATABASE_URL && (process.env.DATABASE_URL.startsWith("mongodb://") || process.env.DATABASE_URL.startsWith("mongodb+srv://"))) {
-    return process.env.DATABASE_URL;
+  if (uri.includes("localhost") || uri.includes("127.0.0.1")) {
+    console.warn("⚠️ Warning: MONGODB_URI points to a local address. Online MongoDB Atlas should be used.");
   }
-  // Default fallback local MongoDB URI
-  return "mongodb://localhost:27017/library_management_db";
+  return uri;
 };
 
 let connectingPromise = null;
@@ -27,7 +43,7 @@ let connectingPromise = null;
 const connectDB = async () => {
   if (isConnected || mongoose.connection.readyState === 1) {
     isConnected = true;
-    return;
+    return mongoose.connection;
   }
   if (connectingPromise) {
     return connectingPromise;
@@ -38,17 +54,19 @@ const connectDB = async () => {
   connectingPromise = (async () => {
     try {
       await mongoose.connect(uri, {
-        serverSelectionTimeoutMS: 5000,
+        serverSelectionTimeoutMS: 8000,
         maxPoolSize: 10,
         minPoolSize: 1,
         socketTimeoutMS: 45000,
       });
       isConnected = true;
-      console.log(`🍃 MongoDB connected successfully: ${mongoose.connection.host || "localhost"}/${mongoose.connection.name || "db"}`);
+      console.log(`🍃 MongoDB Atlas connected successfully: ${mongoose.connection.host}/${mongoose.connection.name}`);
+      return mongoose.connection;
     } catch (error) {
       isConnected = false;
-      console.error(`⚠️ MongoDB connection warning: ${error.message}`);
-      console.error(`👉 Please ensure MONGODB_URI in backend/.env points to your MongoDB Atlas cluster or running MongoDB instance.`);
+      console.error(`❌ MongoDB Atlas connection error: ${error.message}`);
+      console.error(`👉 Please verify MONGODB_URI in backend/.env points to your active MongoDB Atlas cluster.`);
+      throw error;
     } finally {
       connectingPromise = null;
     }
@@ -59,11 +77,11 @@ const connectDB = async () => {
 
 mongoose.connection.on("disconnected", () => {
   isConnected = false;
-  console.log("⚠️ MongoDB disconnected");
+  console.log("⚠️ MongoDB Atlas disconnected");
 });
 
 mongoose.connection.on("error", (err) => {
-  console.error("⚠️ MongoDB runtime error:", err.message);
+  console.error("⚠️ MongoDB Atlas runtime error:", err.message);
 });
 
 module.exports = { connectDB, getMongoUri };
