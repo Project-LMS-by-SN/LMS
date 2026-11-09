@@ -6,7 +6,7 @@ const reviews = [
     role: "Owner, Apex Study Point",
     location: "Gopalpura Bypass, Jaipur",
     seats: "180 Seats (4 Shifts)",
-    text: "Before LMS, managing Morning and Evening shift seat overlap was a daily headache. With their 10-column live matrix, no two students can book the same slot. Our collection increased by 20% in the very first month!",
+    text: "Before LMS, managing Morning and Evening shift seat overlap was a daily headache. With their interactive live seat matrix, no two students can book the same slot. Our collection increased by 20% in the very first month!",
     rating: 5,
     borderTop: "#2563eb"
   },

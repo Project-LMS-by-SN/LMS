@@ -7,10 +7,10 @@ const features = [
     color: "#2563eb",
     bg: "#eff6ff",
     borderTop: "#2563eb",
-    title: "10-Column Multi-Shift Seat Engine",
+    title: " Multi-Shift Seat Engine",
     desc: "Interactive visual matrix separating Morning, Afternoon, Evening, Night, and 24-Hour shifts. Completely eliminates double-booking and seating conflicts.",
-    highlights: ["10-column interactive floor plan", "Shift timing validation", "1-click seat reassignments"],
-    pageLink: "/shifts-seats"
+    highlights: ["Interactive floor plan", "Shift timing validation", "1-click seat reassignments"],
+    pageLink: "/features"
   },
   {
     icon: <FaQrcode />,

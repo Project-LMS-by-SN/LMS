@@ -6,11 +6,10 @@ import FloatingWhatsApp from "./components/FloatingWhatsApp";
 import DemoModal from "./components/DemoModal";
 import Home from "./pages/Home";
 import FeaturesPage from "./pages/FeaturesPage";
-import SeatMapPage from "./pages/SeatMapPage";
 import PricingPage from "./pages/PricingPage";
 import AboutUs from "./pages/AboutUs";
 import ContactUs from "./pages/ContactUs";
-import DemoPage from "./pages/DemoPage";
+import RegisterPage from "./pages/RegisterPage";
 
 // Scroll to top helper on route change
 function ScrollToTop() {
@@ -37,11 +36,11 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Home onOpenDemo={handleOpenDemo} />} />
             <Route path="/features" element={<FeaturesPage />} />
-            <Route path="/shifts-seats" element={<SeatMapPage onOpenDemo={handleOpenDemo} />} />
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/about-us" element={<AboutUs />} />
             <Route path="/contact-us" element={<ContactUs />} />
-            <Route path="/demo" element={<DemoPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/demo" element={<RegisterPage />} />
             <Route path="*" element={<Home onOpenDemo={handleOpenDemo} />} />
           </Routes>
         </div>

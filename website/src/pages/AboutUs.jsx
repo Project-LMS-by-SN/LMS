@@ -19,7 +19,7 @@ export default function AboutUs() {
             Making Study Libraries <span className="gradient-blue">100% Digital Across India</span>
           </h1>
           <p style={{ color: "#475569", fontSize: "1.15rem", lineHeight: 1.6, marginBottom: "36px" }}>
-            LMS by Software Native empowers 100+ private study spaces, self-study libraries, and reading halls 
+            LMS by Study Guru empowers 100+ private study spaces, self-study libraries, and reading halls 
             to replace paper chaos with seamless multi-shift automation, instant QR attendance, and automated fee collections.
           </p>
 
@@ -99,7 +99,7 @@ export default function AboutUs() {
                 However, library owners were forced to manage complex operations with crude notebooks: overlapping morning and evening shift bookings, manual fee tracking, lost attendance records, and uncomfortable confrontations over unpaid fees.
               </p>
               <p style={{ color: "#475569", fontSize: "0.98rem", lineHeight: 1.7 }}>
-                <strong>Software Native Technologies</strong> engineered LMS from the ground up to solve these exact pains: an automated 10-column interactive seat engine, lightning-fast QR attendance, and automated WhatsApp payment reminders that protect your revenue.
+                <strong>LMS by Study Guru</strong> was engineered from the ground up to solve these exact pains: an automated interactive seat engine, lightning-fast QR attendance, and automated WhatsApp payment reminders that protect your revenue.
               </p>
             </div>
 
@@ -166,7 +166,7 @@ export default function AboutUs() {
         <div className="container" style={{ maxWidth: "1000px" }}>
           <div style={{ textAlign: "center", marginBottom: "40px" }}>
             <h2 style={{ fontSize: "clamp(1.8rem, 3vw, 2.5rem)", marginBottom: "12px", color: "#0f172a" }}>
-              Traditional Physical Register vs. LMS by Software Native
+              Traditional Physical Register vs. LMS by Study Guru
             </h2>
             <p style={{ color: "#475569", fontSize: "1rem" }}>
               See why hundreds of libraries make the switch every month
@@ -185,14 +185,14 @@ export default function AboutUs() {
             }}>
               <div style={{ color: "#0f172a" }}>Operational Challenge</div>
               <div style={{ color: "#dc2626" }}>Manual Registers</div>
-              <div style={{ color: "#059669" }}>LMS Cloud System</div>
+              <div style={{ color: "#059669" }}>LMS by Study Guru</div>
             </div>
 
             {[
               {
                 feature: "Multi-Shift Seat Allocation",
                 manual: "High risk of double booking across shifts",
-                lms: "Automated 10-column conflict-free matrix"
+                lms: "Automated conflict-free seat matrix"
               },
               {
                 feature: "Fee Expiry & Due Followups",
@@ -260,8 +260,8 @@ export default function AboutUs() {
               Join 100+ study libraries across India. Get started with a personalized demo and setup walkthrough.
             </p>
             <div style={{ display: "flex", justifyContent: "center", gap: "14px", flexWrap: "wrap" }}>
-              <Link to="/demo" className="btn-primary" style={{ padding: "14px 28px" }}>
-                Book Free Live Demo
+              <Link to="/register" className="btn-primary" style={{ padding: "14px 28px" }}>
+                Register Your Library
               </Link>
               <a
                 href="https://wa.me/919142025447?text=Hi%20Software%20Native,%20I%20am%20ready%20to%20set%20up%20LMS%20in%20my%20library."

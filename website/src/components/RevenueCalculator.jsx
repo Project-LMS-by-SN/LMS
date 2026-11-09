@@ -204,11 +204,11 @@ export default function RevenueCalculator() {
               </div>
 
               <Link
-                to="/demo"
+                to="/register"
                 className="btn-primary"
                 style={{ width: "100%", padding: "14px", marginTop: "4px", justifyContent: "center" }}
               >
-                <span>Automate My Library Now</span>
+                <span>Register & Automate My Library</span>
                 <FaArrowRight />
               </Link>
             </div>

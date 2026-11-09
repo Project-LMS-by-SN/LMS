@@ -16,7 +16,7 @@ const plans = [
     bg: "#eff6ff",
     border: "#bfdbfe",
     features: [
-      "10-Column Seat Layout Management",
+      "Interactive Seat Layout Management",
       "Student In-System Check-in/out",
       "Basic Daily Revenue & Due Reports",
       "Manual Admission Desk",
@@ -110,8 +110,8 @@ export default function PricingSection() {
       <div className="container">
         {/* Section Header */}
         <div style={{ textAlign: "center", maxWidth: "800px", margin: "0 auto 48px" }}>
-          <div className="badge-blue" style={{ marginBottom: "14px" }}>
-            <FaTag /> 100% Transparent Pricing — Zero Setup Fees
+          <div className="badge-green" style={{ marginBottom: "14px" }}>
+            <FaTag /> Limited Offer: First Three Months Pro Subscription Free *
           </div>
           <h2 style={{ fontSize: "clamp(2rem, 3.5vw, 3rem)", marginBottom: "16px", color: "#0f172a" }}>
             Invest Less Than 1 Cup of Chai a Day
@@ -313,11 +313,11 @@ export default function PricingSection() {
                 </div>
 
                 <Link
-                  to="/demo"
+                  to="/register"
                   className={p.popular ? "btn-green" : "btn-primary"}
                   style={{ width: "100%", padding: "12px", fontSize: "0.92rem", justifyContent: "center" }}
                 >
-                  Start 7-Day Free Trial
+                  Register & Get First 3 Months Pro Free *
                 </Link>
               </div>
             );
@@ -341,7 +341,7 @@ export default function PricingSection() {
         }}>
           <FaShieldAlt style={{ color: "#10b981", fontSize: "22px" }} />
           <span style={{ fontSize: "0.92rem", color: "#065f46" }}>
-            <strong>Risk-Free Guarantee:</strong> Try with your actual students and seats for 7 days free. Free 1-on-1 WhatsApp onboarding and Excel data setup assistance included.
+            <strong>Special Launch Guarantee:</strong> First Three Months Pro Subscription Free * on your real library. Free 1-on-1 WhatsApp onboarding and Excel data setup assistance included.
           </span>
         </div>
       </div>

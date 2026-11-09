@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { FaBars, FaTimes, FaSignInAlt, FaCalendarCheck, FaPhoneAlt, FaWhatsapp } from "react-icons/fa";
+import { FaBars, FaTimes, FaSignInAlt, FaCalendarCheck, FaPhoneAlt, FaWhatsapp, FaUserPlus } from "react-icons/fa";
 
 export default function Navbar({ onOpenDemo }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -22,7 +22,6 @@ export default function Navbar({ onOpenDemo }) {
   const navLinks = [
     { label: "Home", path: "/" },
     { label: "Features", path: "/features" },
-    { label: "Shifts & Seats", path: "/shifts-seats" },
     { label: "Pricing", path: "/pricing" },
     { label: "About Us", path: "/about-us" },
     { label: "Contact Us", path: "/contact-us" },
@@ -75,7 +74,7 @@ export default function Navbar({ onOpenDemo }) {
       {/* Main Navigation Bar */}
       <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: "72px" }}>
         {/* Brand Logo */}
-        <Link to="/" style={{ display: "flex", alignItems: "center", gap: "10px", textDecoration: "none" }}>
+        <Link to="/" style={{ display: "flex", alignItems: "center", gap: "10px", textDecoration: "none", flexShrink: 0 }}>
           <div style={{
             width: "42px",
             height: "42px",
@@ -92,22 +91,29 @@ export default function Navbar({ onOpenDemo }) {
           </div>
           <div>
             <div style={{
-              fontSize: "1.25rem",
+              fontSize: "1.2rem",
               fontWeight: "900",
-              letterSpacing: "-0.03em",
+              letterSpacing: "-0.02em",
               lineHeight: 1.1,
               color: "#0f172a"
             }}>
-              LMS <span style={{ color: "#2563eb" }}>Cloud</span>
-            </div>
-            <div style={{ fontSize: "0.7rem", color: "#64748b", fontWeight: "700", letterSpacing: "0.02em" }}>
-              by Software Native
+              LMS <span style={{ color: "#2563eb" }}>by Study Guru</span>
             </div>
           </div>
         </Link>
 
-        {/* Desktop Links */}
-        <nav style={{ display: "flex", alignItems: "center", gap: "24px" }} className="desktop-nav">
+        {/* Desktop Links (Centered between Logo & Register Library) */}
+        <nav
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "28px",
+            flex: 1,
+            margin: "0 24px"
+          }}
+          className="desktop-nav"
+        >
           {navLinks.map((item) => {
             const isActive = location.pathname === item.path;
             return (
@@ -141,23 +147,23 @@ export default function Navbar({ onOpenDemo }) {
         </nav>
 
         {/* Action Buttons */}
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
           <Link
-            to="/demo"
+            to="/register"
             className="btn-green"
             style={{ padding: "9px 18px", fontSize: "0.88rem" }}
           >
-            <FaCalendarCheck /> Book Free Demo
+            <FaUserPlus /> Register Library
           </Link>
 
           <a
-            href="http://localhost:5173/login"
+            href="https://lms-mu-lac-29.vercel.app/"
             target="_blank"
             rel="noopener noreferrer"
             className="btn-primary desktop-login-btn"
             style={{ padding: "9px 18px", fontSize: "0.88rem" }}
           >
-            <FaSignInAlt /> Owner Login
+            <FaSignInAlt /> Admin Login
           </a>
 
           {/* Mobile Hamburger */}
@@ -215,20 +221,20 @@ export default function Navbar({ onOpenDemo }) {
 
           <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "10px" }}>
             <Link
-              to="/demo"
+              to="/register"
               className="btn-green"
               style={{ width: "100%", justifyContent: "center" }}
             >
-              <FaCalendarCheck /> Book Free Demo
+              <FaUserPlus /> Register Library
             </Link>
             <a
-              href="http://localhost:5173/login"
+              href="https://lms-mu-lac-29.vercel.app/"
               target="_blank"
               rel="noopener noreferrer"
               className="btn-primary"
               style={{ width: "100%", justifyContent: "center" }}
             >
-              <FaSignInAlt /> Owner Login
+              <FaSignInAlt /> Admin Login
             </a>
           </div>
         </div>

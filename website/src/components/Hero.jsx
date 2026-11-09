@@ -72,22 +72,22 @@ export default function Hero({ onOpenDemo }) {
           justifyContent: "center",
           gap: "14px",
           flexWrap: "wrap",
-          marginBottom: "48px"
+          marginBottom: "20px"
         }}>
           <Link
-            to="/demo"
+            to="/register"
             className="btn-primary"
             style={{ fontSize: "1.02rem", padding: "15px 30px" }}
           >
-            <FaCalendarCheck /> Book 1-on-1 Free Demo
+            <FaUserPlus /> Register Your Library - Free
           </Link>
 
           <Link
-            to="/shifts-seats"
+            to="/features"
             className="btn-green"
             style={{ fontSize: "1.02rem", padding: "15px 28px" }}
           >
-            <FaPlay style={{ fontSize: "11px" }} /> Test Live Seat Simulator
+            <FaPlay style={{ fontSize: "11px" }} /> Explore Features
           </Link>
 
           <a
@@ -99,6 +99,25 @@ export default function Hero({ onOpenDemo }) {
           >
             <FaWhatsapp style={{ fontSize: "18px" }} /> WhatsApp Support
           </a>
+        </div>
+
+        {/* Special Launch Offer Pill */}
+        <div style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "8px",
+          background: "linear-gradient(135deg, #eff6ff 0%, #ecfdf5 100%)",
+          border: "1.5px solid #86efac",
+          padding: "8px 20px",
+          borderRadius: "9999px",
+          fontSize: "0.88rem",
+          fontWeight: "800",
+          color: "#065f46",
+          marginBottom: "46px",
+          boxShadow: "0 4px 14px rgba(16, 185, 129, 0.15)"
+        }}>
+          <span>🎉 Special Launch Offer:</span>
+          <span style={{ color: "#2563eb", fontWeight: "900" }}>First Three Months Pro Subscription Free *</span>
         </div>
 
         {/* Key Trust Stats Bar in White & Colored Badges */}
@@ -181,7 +200,7 @@ export default function Hero({ onOpenDemo }) {
                   fontWeight: "600"
                 }}>
                   <FaLock style={{ color: "#10b981", fontSize: "10px" }} />
-                  <span>lms.softwarenative.in/dashboard</span>
+                  <span>lms.studyguru.in/dashboard</span>
                   <span style={{ color: "#94a3b8", fontSize: "0.68rem" }}>• SSL Secure</span>
                 </div>
 

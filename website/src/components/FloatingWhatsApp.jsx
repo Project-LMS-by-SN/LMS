@@ -3,14 +3,14 @@ import { FaWhatsapp } from "react-icons/fa";
 export default function FloatingWhatsApp() {
   const phone = "919142025447";
   const message = encodeURIComponent(
-    "Hello Software Native Team! I am interested in LMS for my study library. Please provide a free live demo and pricing details."
+    "Hello LMS by Study Guru Team! I am interested in LMS for my study library. Please provide a free live demo and pricing details."
   );
   const waUrl = `https://wa.me/${phone}?text=${message}`;
 
   return (
     <div className="whatsapp-floating">
       <div className="whatsapp-bubble">
-        💬 Need a Free Demo? Chat with us!
+        Chat with us 
       </div>
       <a
         href={waUrl}
