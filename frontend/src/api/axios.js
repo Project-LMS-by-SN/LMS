@@ -25,12 +25,26 @@ const api = axios.create({
 const clientCache = new Map();
 const CACHE_TTL_MS = 25000; // 25 seconds client-side cache
 
+// In-flight mutation deduplication map (prevents double-clicks from sending duplicate POST/PUT/PATCH/DELETE)
+const inFlightMutations = new Map();
+
+const serializeMutationBody = (data) => {
+  if (data === undefined || data === null) return "";
+  if (typeof FormData !== "undefined" && data instanceof FormData) return null;
+  if (typeof data === "string") return data;
+  try {
+    return JSON.stringify(data);
+  } catch {
+    return null;
+  }
+};
+
 // Expose cache clearing for explicit refresh
 api.clearCache = () => {
   clientCache.clear();
 };
 
-// Request interceptor: attach token & deviceId + serve from cache for fast re-opens
+// Request interceptor: attach token & deviceId + deduplicate identical in-flight mutations + cache GETs
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("lms_token");
@@ -41,9 +55,38 @@ api.interceptors.request.use(
 
     const method = (config.method || "get").toLowerCase();
 
-    // Any mutation (POST, PUT, DELETE, PATCH) immediately invalidates the entire cache
+    // Any mutation (POST, PUT, DELETE, PATCH) immediately invalidates GET cache
+    // and deduplicates identical concurrent in-flight requests
     if (method !== "get") {
       clientCache.clear();
+
+      if (!config.allowDuplicate && ["post", "put", "patch", "delete"].includes(method)) {
+        const bodyKey = serializeMutationBody(config.data);
+        if (bodyKey !== null) {
+          const mutationKey = `${method}:${config.baseURL || ""}${config.url || ""}?${JSON.stringify(config.params || {})}#${bodyKey}`;
+          const existing = inFlightMutations.get(mutationKey);
+          if (existing) {
+            config.adapter = (resolvedConfig) =>
+              existing.then((res) => ({ ...res, config: resolvedConfig }));
+          } else {
+            const baseAdapter = axios.getAdapter(config.adapter || axios.defaults.adapter, config);
+            config.adapter = (resolvedConfig) => {
+              const current = inFlightMutations.get(mutationKey);
+              if (current) {
+                return current.then((res) => ({ ...res, config: resolvedConfig }));
+              }
+              const reqPromise = Promise.resolve()
+                .then(() => baseAdapter(resolvedConfig))
+                .finally(() => {
+                  inFlightMutations.delete(mutationKey);
+                });
+              inFlightMutations.set(mutationKey, reqPromise);
+              return reqPromise;
+            };
+          }
+        }
+      }
+
       return config;
     }
 

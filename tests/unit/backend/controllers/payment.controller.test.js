@@ -557,4 +557,91 @@ describe('payment & reactivation regression tests', () => {
       })
     );
   });
+
+  it('does NOT multiply Unreserved fee plan amount by shift count on multi-shift renewal', async () => {
+    const validityDoc = {
+      id: 15,
+      studentId: 106,
+      feePlanId: 6,
+      startDate: new Date(`${oldStartYmd}T00:00:00+05:30`),
+      endDate: new Date(`${futureEndYmd}T00:00:00+05:30`),
+      lastRenewedAt: null,
+      totalAmount: 800,
+      accessType: 'UNRESERVED',
+      student: {
+        id: 106,
+        branchId: 1,
+        accountStatus: 'ACTIVE',
+      },
+    };
+
+    vi.spyOn(mongoClient.studentValidity, 'findFirst').mockResolvedValue(validityDoc);
+    vi.spyOn(mongoClient.paymentMode, 'findFirst').mockResolvedValue({ id: 1, modeName: 'Cash', isActive: true });
+
+    const validityUpdateSpy = vi.fn().mockResolvedValue({ id: 15 });
+
+    vi.spyOn(mongoClient, '$transaction').mockImplementation(async (fn) => {
+      const tx = {
+        payment: {
+          create: vi.fn().mockResolvedValue({
+            id: 506,
+            validityId: 15,
+            paymentModeId: 1,
+            invoiceNo: 'INV-UNRES-MULTI',
+            amountReceived: 800,
+            paymentDate: new Date(),
+          }),
+          findMany: vi.fn().mockResolvedValue([
+            { id: 500, amountReceived: 800 },
+            { id: 506, amountReceived: 800 },
+          ]),
+        },
+        feePlan: {
+          findFirst: vi.fn().mockResolvedValue({ id: 6, amount: 800, durationDays: 30, branchId: 1 }),
+        },
+        studentShiftAssignment: {
+          findMany: vi.fn().mockResolvedValue([
+            { id: 1, shiftId: 1, assignmentStatus: 'ACTIVE' },
+            { id: 2, shiftId: 2, assignmentStatus: 'ACTIVE' },
+          ]),
+        },
+        studentValidity: { update: validityUpdateSpy },
+        student: { update: vi.fn() },
+      };
+      return fn(tx);
+    });
+
+    const req = {
+      user: { id: 1, branchId: 1 },
+      body: {
+        validity_id: 15,
+        payment_mode_id: 1,
+        invoice_no: 'INV-UNRES-MULTI',
+        amount_received: 800,
+        renew_plan: true,
+      },
+    };
+    const res = makeRes();
+
+    await createPayment(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(validityUpdateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 15 },
+        data: expect.objectContaining({
+          totalAmount: 1600,
+        }),
+      })
+    );
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: true,
+        data: expect.objectContaining({
+          is_renewal: true,
+          due_remaining: 0,
+        }),
+      })
+    );
+  });
 });

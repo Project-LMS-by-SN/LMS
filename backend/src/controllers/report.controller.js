@@ -37,18 +37,27 @@ const groupAttendanceRecords = (attendanceRecords) => {
   const result = [];
 
   Object.values(groups).forEach((studentDateRecords) => {
+    const getRecStartTime = (r) => r.shiftStartTime || r.shiftAssignment?.shift?.startTime || "00:00";
+    const getRecEndTime = (r) => r.shiftEndTime || r.shiftAssignment?.shift?.endTime || null;
+
     const sorted = [...studentDateRecords].sort((r1, r2) => {
-      const t1 = r1.shiftAssignment?.shift?.startTime || "00:00";
-      const t2 = r2.shiftAssignment?.shift?.startTime || "00:00";
+      const t1 = getRecStartTime(r1);
+      const t2 = getRecStartTime(r2);
       return t1.localeCompare(t2);
     });
 
-    const areConsecutive = (r1, r2) => {
-      const s1 = r1.shiftAssignment?.shift;
-      const s2 = r2.shiftAssignment?.shift;
-      if (!s1 || !s2) return false;
-      const [h1, m1] = s1.endTime.split(":").map(Number);
-      const [h2, m2] = s2.startTime.split(":").map(Number);
+    const areConsecutiveOrSameSession = (r1, r2) => {
+      const ci1 = r1.checkInTime || null;
+      const ci2 = r2.checkInTime || null;
+      const co1 = r1.checkOutTime || null;
+      const co2 = r2.checkOutTime || null;
+      if (ci1 && ci2 && ci1 === ci2 && co1 === co2) return true;
+
+      const endTime1 = getRecEndTime(r1);
+      const startTime2 = r2.shiftStartTime || r2.shiftAssignment?.shift?.startTime;
+      if (!endTime1 || !startTime2) return false;
+      const [h1, m1] = endTime1.split(":").map(Number);
+      const [h2, m2] = startTime2.split(":").map(Number);
       const end1 = h1 * 60 + m1;
       const start2 = h2 * 60 + m2;
       const gap = start2 - end1;
@@ -63,7 +72,7 @@ const groupAttendanceRecords = (attendanceRecords) => {
         currentBlock.push(rec);
       } else {
         const lastRec = currentBlock[currentBlock.length - 1];
-        if (areConsecutive(lastRec, rec)) {
+        if (areConsecutiveOrSameSession(lastRec, rec)) {
           currentBlock.push(rec);
         } else {
           blocks.push(currentBlock);
@@ -298,4 +307,4 @@ const getRevenueReport = async (req, res) => {
   }
 };
 
-module.exports = { getDailyAttendanceReport, getRevenueReport };
+module.exports = { getDailyAttendanceReport, getRevenueReport, groupAttendanceRecords };

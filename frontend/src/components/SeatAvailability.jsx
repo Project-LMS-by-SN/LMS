@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "../api/axios";
 import { formatTime } from "../utils/timeUtils";
-import { useTheme } from "../context/ThemeContext";
 
 const DonutChart = ({ available, total }) => {
   const pct = total > 0 ? (available / total) * 100 : 0;
@@ -38,7 +37,6 @@ const DonutChart = ({ available, total }) => {
 };
 
 const SeatAvailability = ({ onShiftClick }) => {
-  const { timeFormat } = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -90,7 +88,7 @@ const SeatAvailability = ({ onShiftClick }) => {
               <div className="shift-info">
                 <div className="shift-name">{shift.shift_name}</div>
                 <div className="shift-time">
-                  {formatTime(shift.start_time, timeFormat)} - {formatTime(shift.end_time, timeFormat)}
+                  {formatTime(shift.start_time, "12hr")} - {formatTime(shift.end_time, "12hr")}
                 </div>
                 <div className="shift-count">
                   {available} of {shift.total_seats} available

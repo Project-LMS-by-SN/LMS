@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "../api/axios";
 import CustomDatePicker from "../components/CustomDatePicker";
+import { useSubmitLock } from "../hooks/useSubmitLock";
 
 const emptyForm = {
   student_id: "",
@@ -18,6 +19,7 @@ const StudentValidities = () => {
   const [formData, setFormData] = useState(emptyForm);
   const [accessFilter, setAccessFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("all");
+  const { isSubmitting, runWithLock } = useSubmitLock();
 
   const fetchData = async () => {
     try {
@@ -129,16 +131,17 @@ const StudentValidities = () => {
       payload.custom_amount = Number(formData.custom_amount);
     }
 
-    try {
-      await api.post("/student-validities", payload);
+    await runWithLock(async () => {
+      try {
+        await api.post("/student-validities", payload);
 
-      alert("Student validity saved successfully");
-
-      closeForm();
-      fetchData();
-    } catch (error) {
-      alert(error.response?.data?.message || "Failed to save validity");
-    }
+        closeForm();
+        fetchData();
+        alert("Student validity saved successfully");
+      } catch (error) {
+        alert(error.response?.data?.message || "Failed to save validity");
+      }
+    });
   };
 
   const statusLabels = {
@@ -242,11 +245,11 @@ const StudentValidities = () => {
             </div>
 
             <div className="form-actions">
-              <button type="submit" className="primary-btn">
-                Save Validity
+              <button type="submit" className="primary-btn" disabled={isSubmitting}>
+                {isSubmitting ? "Saving..." : "Save Validity"}
               </button>
 
-              <button type="button" className="secondary-btn" onClick={closeForm}>
+              <button type="button" className="secondary-btn" onClick={closeForm} disabled={isSubmitting}>
                 Cancel
               </button>
             </div>

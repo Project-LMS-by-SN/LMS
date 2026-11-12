@@ -1,13 +1,15 @@
 const mongoClient = require("../config/mongoClient");
 const cache = require("../utils/cache");
 
-const formatFeePlan = (fp) => ({
+const formatFeePlan = (fp, allocatedCount = 0) => ({
   id: fp.id,
   plan_name: fp.planName,
   duration_days: fp.durationDays,
   amount: fp.amount ? Number(fp.amount) : 0,
   is_active: fp.isActive,
   plan_type: fp.planType || "RESERVED",
+  allocated_count: allocatedCount,
+  is_allocated: allocatedCount > 0,
 });
 
 const getFeePlans = async (req, res) => {
@@ -41,15 +43,36 @@ const getFeePlans = async (req, res) => {
       });
     }
 
-    const plans = await mongoClient.feePlan.findMany({
-      where: { branchId: req.user.branchId },
-      orderBy: [
-        { isActive: "desc" },
-        { id: "desc" },
-      ],
-    });
+    const [plans, validities] = await Promise.all([
+      mongoClient.feePlan.findMany({
+        where: { branchId: req.user.branchId },
+        orderBy: [
+          { isActive: "desc" },
+          { id: "desc" },
+        ],
+      }),
+      mongoClient.studentValidity.findMany({
+        where: {
+          feePlanId: { not: null },
+          student: {
+            deletedAt: null,
+            branchId: req.user.branchId,
+          },
+        },
+      }),
+    ]);
 
-    const formatted = plans.map(formatFeePlan);
+    const allocatedCountByPlanId = new Map();
+    for (const v of validities || []) {
+      if (v.feePlanId) {
+        allocatedCountByPlanId.set(
+          v.feePlanId,
+          (allocatedCountByPlanId.get(v.feePlanId) || 0) + 1
+        );
+      }
+    }
+
+    const formatted = plans.map((p) => formatFeePlan(p, allocatedCountByPlanId.get(p.id) || 0));
     cache.set(cacheKey, formatted, 30000);
 
     res.json({
@@ -177,6 +200,8 @@ const updateFeePlan = async (req, res) => {
       },
     });
 
+    cache.invalidateBranch(req.user.branchId);
+
     res.json({
       success: true,
       message: "Fee plan updated and activated successfully",
@@ -235,6 +260,8 @@ const deactivateFeePlan = async (req, res) => {
       },
     });
 
+    cache.invalidateBranch(req.user.branchId);
+
     res.json({
       success: true,
       message: `Fee plan ${newStatus ? "activated" : "deactivated"} successfully`,
@@ -264,6 +291,38 @@ const deleteFeePlan = async (req, res) => {
 
     if (!existing) {
       return res.status(404).json({ success: false, message: "Fee plan not found" });
+    }
+
+    if (existing.planType === "REGISTRATION") {
+      return res.status(400).json({
+        success: false,
+        message: "Registration fee plan cannot be deleted. You can edit or deactivate it instead.",
+      });
+    }
+
+    const allocatedValidities = await mongoClient.studentValidity.findMany({
+      where: {
+        feePlanId: fpId,
+        student: {
+          deletedAt: null,
+          branchId: req.user.branchId,
+        },
+      },
+      include: {
+        student: true,
+      },
+    });
+
+    if (allocatedValidities.length > 0) {
+      const studentNames = allocatedValidities
+        .map((v) => `${v.student?.fullName || "Student"}${v.student?.studentCode ? ` (${v.student.studentCode})` : ""}`)
+        .slice(0, 5)
+        .join(", ");
+      const extra = allocatedValidities.length > 5 ? ` and ${allocatedValidities.length - 5} more` : "";
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete allocated fee plan. It is assigned to student(s): ${studentNames}${extra}. Deactivate it instead.`,
+      });
     }
 
     const deleted = await mongoClient.feePlan.delete({

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FaUserCircle, FaCamera, FaCheckCircle, FaTimes, FaInbox, FaTrash } from "react-icons/fa";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
@@ -55,6 +55,7 @@ const getSeatColorForAdmission = (seat, selectedShiftIds, selectedSeatId, darkMo
 
 const Admission = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     student_code: "",
     reg_no: "",
@@ -74,6 +75,8 @@ const Admission = () => {
   const [photoPreview, setPhotoPreview] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
+  const submitLockRef = useRef(false);
+  const rejectLockRef = useRef(false);
   const [selectedSeat, setSelectedSeat] = useState(null);
   const [selectedFloor, setSelectedFloor] = useState("");
   const [selectedRoom, setSelectedRoom] = useState("");
@@ -142,12 +145,16 @@ const Admission = () => {
 
   const handleRejectRequest = async (id, e) => {
     e.stopPropagation();
-    if (!window.confirm("Are you sure you want to reject this admission request?")) return;
+    if (rejectLockRef.current) return;
+    rejectLockRef.current = true;
     try {
+      if (!window.confirm("Are you sure you want to reject this admission request?")) return;
       await api.delete(`/admission-requests/${id}`);
       refetchRequests();
     } catch (err) {
       alert("Failed to reject request");
+    } finally {
+      rejectLockRef.current = false;
     }
   };
 
@@ -305,15 +312,22 @@ const Admission = () => {
     });
   };
 
+  const activeShifts = useMemo(
+    () => shifts.filter(s => s.is_active !== false),
+    [shifts]
+  );
+  const activeShiftIds = useMemo(() => activeShifts.map(s => s.id), [activeShifts]);
+  const isFullDay = activeShiftIds.length > 0 && activeShiftIds.every(id => formData.shift_ids.includes(id));
+  const hasCustomSelection = formData.shift_ids.length > 0 && !isFullDay;
+
   const selectFullDay = () => {
     if (formData.seatType === "Unreserved") {
       alert("Full Day selection is not allowed for Unreserved seats. Please select max 2 shifts manually.");
       return;
     }
-    const allShiftIds = shifts.filter(s => s.is_active !== false).map(s => s.id);
     setFormData(prev => ({
       ...prev,
-      shift_ids: prev.shift_ids.length === allShiftIds.length ? [] : allShiftIds,
+      shift_ids: isFullDay ? [] : activeShiftIds,
     }));
   };
 
@@ -322,14 +336,8 @@ const Admission = () => {
     const baseAmount = plan ? Number(plan.amount) : 0;
     const addedRegFee = includeRegistrationFee ? (Number(customRegistrationFee) || 0) : 0;
 
-    if (formData.seatType === "Unreserved" && formData.shift_ids.length > 0) {
-      return (baseAmount * formData.shift_ids.length) + addedRegFee;
-    }
     return baseAmount + addedRegFee;
   };
-
-  const isFullDay = formData.shift_ids.length === shifts.filter(s => s.is_active !== false).length;
-  const hasCustomSelection = formData.shift_ids.length > 0 && !isFullDay;
 
   const occupiedSeatIds = seats
     .filter(s => {
@@ -348,6 +356,7 @@ const Admission = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitLockRef.current) return;
 
     if (!formData.student_code || !formData.full_name || !formData.email || !formData.mobile || !formData.gender) {
       alert("Student code, name, email, mobile, and gender are required");
@@ -428,6 +437,7 @@ const Admission = () => {
       : `(Admission Fee)`;
     const finalRemark = admissionRemark.trim() ? admissionRemark.trim() : defaultRemark;
 
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       const fullAdmissionPayload = {
@@ -459,6 +469,14 @@ const Admission = () => {
       const admittedStudent = res.data?.data;
       const admittedCode = admittedStudent?.student_code || formData.student_code;
 
+      queryClient.invalidateQueries({ queryKey: ["studentsList"] });
+      queryClient.invalidateQueries({ queryKey: ["seats"] });
+      queryClient.invalidateQueries({ queryKey: ["feePlansAll"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+      queryClient.invalidateQueries({ queryKey: ["recentPayments"] });
+      queryClient.invalidateQueries({ queryKey: ["paymentsList"] });
+      queryClient.invalidateQueries({ queryKey: ["admissionRequests"] });
+
       alert("Student admitted with shifts & seat allocated successfully!");
       setAdmissionRemark("");
       setFormData({
@@ -489,11 +507,12 @@ const Admission = () => {
     } catch (error) {
       alert(error.response?.data?.message || "Failed to admit student");
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
 
-  const { darkMode, timeFormat } = useTheme();
+  const { darkMode } = useTheme();
   const card = darkMode ? "#1e293b" : "#FCFBF9";
   const border = darkMode ? "#334155" : "#e2e8f0";
   const textPrimary = darkMode ? "#f1f5f9" : "#1e293b";
@@ -688,7 +707,7 @@ const Admission = () => {
                     fontWeight: 600, fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
                   }}
                 >
-                  Full Day {isFullDay && <FaCheckCircle style={{ marginLeft: '4px' }} />}
+                  Full Day{activeShiftIds.length > 0 ? ` (${activeShiftIds.length} Shifts)` : ""} {isFullDay && <FaCheckCircle style={{ marginLeft: '4px' }} />}
                 </button>
                 {hasCustomSelection && (
                   <span style={{
@@ -722,7 +741,7 @@ const Admission = () => {
                       <div>
                         <div style={{ fontWeight: 600, fontSize: '14px', color: textPrimary }}>{shift.shift_name}</div>
                         <div style={{ fontSize: '12px', color: textMuted }}>
-                          {formatTime(shift.start_time, timeFormat)} - {formatTime(shift.end_time, timeFormat)}
+                          {formatTime(shift.start_time, "12hr")} - {formatTime(shift.end_time, "12hr")}
                         </div>
                       </div>
                     </label>
@@ -991,7 +1010,7 @@ const Admission = () => {
                   />
                   {addedRegFee > 0 && (
                     <div style={{ fontSize: "12px", color: textMuted, marginTop: "4px" }}>
-                      Plan: ₹{Number(plan ? plan.amount : 0).toLocaleString()}{formData.seatType === "Unreserved" && formData.shift_ids.length > 1 ? ` × ${formData.shift_ids.length} shifts` : ""} + Registration: ₹{addedRegFee.toLocaleString()}
+                      Plan: ₹{Number(plan ? plan.amount : 0).toLocaleString()} + Registration: ₹{addedRegFee.toLocaleString()}
                     </div>
                   )}
                 </div>

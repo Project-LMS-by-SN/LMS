@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "../api/axios";
 import { formatTime } from "../utils/timeUtils";
-import { useTheme } from "../context/ThemeContext";
+import { useSubmitLock } from "../hooks/useSubmitLock";
 
 const emptyForm = {
   validity_id: "",
@@ -10,13 +10,13 @@ const emptyForm = {
 };
 
 const StudentShiftAssignments = () => {
-  const { timeFormat } = useTheme();
   const [assignments, setAssignments] = useState([]);
   const [validities, setValidities] = useState([]);
   const [shifts, setShifts] = useState([]);
   const [seats, setSeats] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
+  const { isSubmitting, runWithLock } = useSubmitLock();
 
   const fetchData = async () => {
     try {
@@ -94,16 +94,17 @@ const StudentShiftAssignments = () => {
       seat_id: isReserved ? Number(formData.seat_id) : null,
     };
 
-    try {
-      await api.post("/student-shift-assignments", payload);
+    await runWithLock(async () => {
+      try {
+        await api.post("/student-shift-assignments", payload);
 
-      alert("Shift assigned successfully");
-
-      closeForm();
-      fetchData();
-    } catch (error) {
-      alert(error.response?.data?.message || "Failed to assign shift");
-    }
+        closeForm();
+        fetchData();
+        alert("Shift assigned successfully");
+      } catch (error) {
+        alert(error.response?.data?.message || "Failed to assign shift");
+      }
+    });
   };
 
   return (
@@ -155,7 +156,7 @@ const StudentShiftAssignments = () => {
                   .filter((shift) => shift.is_active)
                   .map((shift) => (
                     <option key={shift.id} value={shift.id}>
-                      {shift.shift_name} ({formatTime(shift.start_time, timeFormat)} - {formatTime(shift.end_time, timeFormat)})
+                      {shift.shift_name} ({formatTime(shift.start_time, "12hr")} - {formatTime(shift.end_time, "12hr")})
                     </option>
                   ))}
               </select>
@@ -191,11 +192,11 @@ const StudentShiftAssignments = () => {
             )}
 
             <div className="form-actions">
-              <button type="submit" className="primary-btn">
-                Save Assignment
+              <button type="submit" className="primary-btn" disabled={isSubmitting}>
+                {isSubmitting ? "Saving..." : "Save Assignment"}
               </button>
 
-              <button type="button" className="secondary-btn" onClick={closeForm}>
+              <button type="button" className="secondary-btn" onClick={closeForm} disabled={isSubmitting}>
                 Cancel
               </button>
             </div>
@@ -228,7 +229,7 @@ const StudentShiftAssignments = () => {
                   <strong>{assignment.shift_name}</strong>
                   {assignment.start_time && (
                     <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
-                      {formatTime(assignment.start_time, timeFormat)} - {formatTime(assignment.end_time, timeFormat)}
+                      {formatTime(assignment.start_time, "12hr")} - {formatTime(assignment.end_time, "12hr")}
                     </div>
                   )}
                 </td>

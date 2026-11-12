@@ -8,7 +8,7 @@ import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
 
 const Dashboard = () => {
-  const { darkMode, timeFormat } = useTheme();
+  const { darkMode } = useTheme();
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); }
     catch { return {}; }
@@ -503,7 +503,7 @@ const Dashboard = () => {
                         {p.payment_date ? p.payment_date.split(" ")[0] : ""}
                       </div>
                       <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                        {formatTime(p.payment_date ? p.payment_date.split(" ").slice(1).join(" ") : "", timeFormat)}
+                        {formatTime(p.payment_date ? p.payment_date.split(" ").slice(1).join(" ") : "", "12hr")}
                       </div>
                     </td>
                     <td style={{ padding: '12px 0' }}>
@@ -527,7 +527,7 @@ const Dashboard = () => {
             <div className="modal-header">
               <div>
                 <h3>{selectedShift.shift_name}</h3>
-                <p>{formatTime(selectedShift.start_time, timeFormat)} - {formatTime(selectedShift.end_time, timeFormat)}</p>
+                <p>{formatTime(selectedShift.start_time, "12hr")} - {formatTime(selectedShift.end_time, "12hr")}</p>
               </div>
               <FaTimes className="modal-close" onClick={() => setSelectedShift(null)} />
             </div>

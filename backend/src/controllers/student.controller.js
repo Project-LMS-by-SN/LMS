@@ -210,10 +210,13 @@ const getStudents = async (req, res) => {
 
     await autoSuspendExpiredStudents(req.user.branchId);
 
-    // Fetch total active shifts count
-    const activeShiftsCount = await mongoClient.shift.count({
-      where: { isActive: true, deletedAt: null, branchId: req.user.branchId }
+    // Fetch active shifts so "Full Day" reflects ALL active shifts in this branch (e.g. 3 of 3, or 4 of 4)
+    const activeShifts = await mongoClient.shift.findMany({
+      where: { isActive: true, deletedAt: null, branchId: req.user.branchId },
+      select: { id: true },
     });
+    const activeShiftIds = activeShifts.map((s) => s.id);
+    const activeShiftsCount = activeShiftIds.length;
 
     const students = await mongoClient.student.findMany({
       where: { deletedAt: null, branchId: req.user.branchId },
@@ -261,17 +264,18 @@ const getStudents = async (req, res) => {
           const assignmentWithSeat = activeAssignments.find(a => a.seat) || activeAssignments[0];
           seatNumber = assignmentWithSeat.seat ? assignmentWithSeat.seat.seatNumber : null;
 
-          const assignedCount = activeAssignments.length;
+          const uniqueAssignedShiftIds = new Set(activeAssignments.map((a) => a.shiftId));
+          const assignedCount = uniqueAssignedShiftIds.size;
+          const isFullDay =
+            activeShiftsCount > 1 &&
+            activeShiftIds.every((sid) => uniqueAssignedShiftIds.has(sid));
+
           if (assignedCount === 1) {
             shiftName = activeAssignments[0].shift ? activeAssignments[0].shift.shiftName : null;
-          } else if (assignedCount === 2) {
-            if (activeShiftsCount === 2) {
-              shiftName = "Full Day";
-            } else {
-              shiftName = "2 Shift";
-            }
-          } else if (assignedCount >= 3 || assignedCount === activeShiftsCount) {
+          } else if (isFullDay) {
             shiftName = "Full Day";
+          } else if (assignedCount > 1) {
+            shiftName = `${assignedCount} Shift`;
           } else {
             shiftName = null;
           }

@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
@@ -35,7 +35,7 @@ const generateInvoiceNo = () => {
 };
 
 const CollectFee = () => {
-  const { darkMode, timeFormat } = useTheme();
+  const { darkMode } = useTheme();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const studentIdParam = searchParams.get("student_id") || searchParams.get("id");
@@ -45,10 +45,52 @@ const CollectFee = () => {
     try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); }
     catch { return {}; }
   })();
-  const [students, setStudents] = useState([]);
-  const [paymentModes, setPaymentModes] = useState([]);
-  const [recentPayments, setRecentPayments] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data: students = [] } = useQuery({
+    queryKey: ["studentsList"],
+    queryFn: async () => {
+      const res = await api.get("/students");
+      return res.data?.data || [];
+    },
+  });
+
+  const { data: rawPaymentModes = [] } = useQuery({
+    queryKey: ["paymentModes"],
+    queryFn: async () => {
+      const res = await api.get("/payment-modes");
+      return res.data?.data || [];
+    },
+  });
+
+  const paymentModes = useMemo(
+    () =>
+      rawPaymentModes.length > 0
+        ? rawPaymentModes
+        : [
+            { id: 1, mode_name: "Cash" },
+            { id: 2, mode_name: "UPI" },
+            { id: 3, mode_name: "Card" },
+          ],
+    [rawPaymentModes]
+  );
+
+  const { data: allPayments = [], isLoading: paymentsLoading } = useQuery({
+    queryKey: ["paymentsList"],
+    queryFn: async () => {
+      const res = await api.get("/payments");
+      return res.data?.data || [];
+    },
+  });
+
+  const recentPayments = useMemo(() => allPayments.slice(0, 5), [allPayments]);
+  const loading = paymentsLoading && allPayments.length === 0;
+
+  const { data: feePlans = [] } = useQuery({
+    queryKey: ["feePlansAll"],
+    queryFn: async () => {
+      const res = await api.get("/fee-plans");
+      return res.data?.data || [];
+    },
+  });
 
   // Search & Student Selection
   const [searchQuery, setSearchQuery] = useState("");
@@ -60,10 +102,8 @@ const CollectFee = () => {
   const searchRef = useRef(null);
 
   // Form Fields
-  const [feePlans, setFeePlans] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [collectType, setCollectType] = useState("fee"); // "fee" | "registration"
-  const [registrationAmount, setRegistrationAmount] = useState(0);
   const [renewalPlanFee, setRenewalPlanFee] = useState(0);
   const [renewPlan, setRenewPlan] = useState(false);
   const [paymentModeId, setPaymentModeId] = useState("");
@@ -73,8 +113,22 @@ const CollectFee = () => {
   const [paymentDate] = useState(getTodayStr());
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
   const [toast, setToast] = useState(null);
   const [seatAlert, setSeatAlert] = useState(null);
+
+  const registrationAmount = useMemo(() => {
+    const regPlan = feePlans.find((p) => p.plan_type === "REGISTRATION" && p.is_active !== false);
+    return regPlan ? Number(regPlan.amount) : 0;
+  }, [feePlans]);
+
+  const defaultFirstPlanId = useMemo(() => {
+    const firstPlan = feePlans.find((p) => p.is_active !== false && p.plan_type !== "REGISTRATION");
+    return firstPlan ? String(firstPlan.id) : "";
+  }, [feePlans]);
+
+  const effectiveSelectedPlanId = selectedPlanId || defaultFirstPlanId;
+  const effectivePaymentModeId = paymentModeId || (paymentModes[0]?.id ? String(paymentModes[0].id) : "");
 
   const prefix = (() => {
     if (!currentUser || !currentUser.role) return "";
@@ -99,7 +153,6 @@ const CollectFee = () => {
       const res = await api.get(`/students/${student.id}/profile`);
       if (res.data.success && res.data.data) {
         const val = res.data.data.validity;
-        const shifts = res.data.data.shift_assignments || [];
         setStudentValidity(val);
         setCollectType("fee");
 
@@ -108,18 +161,14 @@ const CollectFee = () => {
           setSelectedPlanId(String(val.fee_plan_id));
         }
 
-        // Fee Plan Renewal Amount (strictly fee plan amount, WITHOUT one-time admission registration fee)
+        // Fee Plan Renewal Amount (strictly flat fee plan amount, WITHOUT one-time admission registration fee or shift multiplier)
         let planRate = 0;
         if (val) {
           const basePlanAmount = val.plan_amount !== undefined && val.plan_amount !== null
             ? Number(val.plan_amount)
             : Number(val.total_amount || 0);
 
-          const shiftMultiplier = (val.access_type === "UNRESERVED" && shifts.length > 1)
-            ? shifts.length
-            : 1;
-
-          planRate = basePlanAmount * shiftMultiplier;
+          planRate = basePlanAmount;
         } else {
           // No validity yet — use the selected (first active) fee plan rate
           const plan = activePlans.find((p) => String(p.id) === String(effectiveDefaultPlanId));
@@ -159,67 +208,30 @@ const CollectFee = () => {
     }
   }, [showToast]);
 
-  const handleSelectStudent = (student) => loadStudentDetails(student, feePlans, selectedPlanId);
-
-  const fetchData = useCallback(async () => {
-    try {
-      const [studentRes, modeRes, paymentRes, planRes] = await Promise.all([
-        api.get("/students"),
-        api.get("/payment-modes"),
-        api.get("/payments"),
-        api.get("/fee-plans"),
-      ]);
-      const studentList = studentRes.data.data || [];
-      setStudents(studentList);
-      const rawModes = modeRes.data.data || [];
-      const modes = rawModes.length > 0
-        ? rawModes
-        : [
-            { id: 1, mode_name: "Cash" },
-            { id: 2, mode_name: "UPI" },
-            { id: 3, mode_name: "Card" },
-          ];
-      setPaymentModes(modes);
-      if (modes.length > 0) setPaymentModeId(modes[0].id.toString());
-
-      const plans = planRes.data.data || [];
-      setFeePlans(plans);
-      const regPlan = plans.find((p) => p.plan_type === "REGISTRATION" && p.is_active !== false);
-      setRegistrationAmount(regPlan ? Number(regPlan.amount) : 0);
-      const firstPlan = plans.find((p) => p.is_active !== false && p.plan_type !== "REGISTRATION");
-      const firstPlanId = firstPlan ? String(firstPlan.id) : "";
-      if (firstPlanId) setSelectedPlanId(firstPlanId);
-
-      const allPayments = paymentRes.data.data || [];
-      setRecentPayments(allPayments.slice(0, 5));
-
-      const targetKey = `${studentIdParam || ""}:${studentCodeParam || ""}`;
-      if ((studentIdParam || studentCodeParam) && autoSelectedKeyRef.current !== targetKey) {
-        const matched = studentList.find((s) =>
-          (studentIdParam && String(s.id) === String(studentIdParam)) ||
-          (studentCodeParam && String(s.student_code || "").trim().toLowerCase() === String(studentCodeParam).trim().toLowerCase())
-        );
-        if (matched) {
-          autoSelectedKeyRef.current = targetKey;
-          await loadStudentDetails(matched, plans, firstPlanId);
-        }
-      }
-    } catch {
-      showToast("Failed to load initial data", "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [loadStudentDetails, showToast, studentCodeParam, studentIdParam]);
+  const handleSelectStudent = (student) => loadStudentDetails(student, feePlans, effectiveSelectedPlanId);
 
   useEffect(() => {
+    const targetKey = `${studentIdParam || ""}:${studentCodeParam || ""}`;
+    if ((!studentIdParam && !studentCodeParam) || students.length === 0) return;
+    if (autoSelectedKeyRef.current === targetKey) return;
+
+    const matched = students.find((s) =>
+      (studentIdParam && String(s.id) === String(studentIdParam)) ||
+      (studentCodeParam && String(s.student_code || "").trim().toLowerCase() === String(studentCodeParam).trim().toLowerCase())
+    );
+    if (!matched) return;
+
     let active = true;
+    autoSelectedKeyRef.current = targetKey;
     Promise.resolve().then(() => {
-      if (active) fetchData();
+      if (active) {
+        loadStudentDetails(matched, feePlans, effectiveSelectedPlanId);
+      }
     });
     return () => {
       active = false;
     };
-  }, [fetchData]);
+  }, [effectiveSelectedPlanId, feePlans, loadStudentDetails, studentCodeParam, studentIdParam, students]);
 
   // Handle Search Input Change
   const handleSearchChange = (e) => {
@@ -295,6 +307,7 @@ const CollectFee = () => {
   // Submit Payment Collection
   const handleSubmitPayment = async (e) => {
     e.preventDefault();
+    if (submitLockRef.current) return;
     if (!selectedStudent) {
       showToast("Please search and select a student first", "error");
       return;
@@ -303,7 +316,7 @@ const CollectFee = () => {
       showToast("Enter a valid payment amount", "error");
       return;
     }
-    if (!paymentModeId) {
+    if (!paymentModeId && !effectivePaymentModeId) {
       showToast("Select a payment mode", "error");
       return;
     }
@@ -311,11 +324,12 @@ const CollectFee = () => {
       showToast("Invoice number is required", "error");
       return;
     }
-    if (!studentValidity && !selectedPlanId) {
+    if (!studentValidity && !effectiveSelectedPlanId) {
       showToast("Select a fee plan for this student", "error");
       return;
     }
 
+    submitLockRef.current = true;
     setSubmitting(true);
     const isRegistration = collectType === "registration" && !!studentValidity;
     const due = Number(selectedStudent?.due_amount ?? studentValidity?.due_amount ?? 0);
@@ -341,17 +355,17 @@ const CollectFee = () => {
         return {
           ...base,
           validity_id: studentValidity.id,
-          payment_mode_id: parseInt(paymentModeId, 10),
+          payment_mode_id: parseInt(effectivePaymentModeId, 10),
           payment_type: isRegistration ? "registration" : "fee",
         };
       }
       return {
         ...base,
         student_id: selectedStudent.id,
-        fee_plan_id: parseInt(selectedPlanId, 10),
+        fee_plan_id: parseInt(effectiveSelectedPlanId, 10),
         start_date: getTodayStr(),
         access_type: selectedStudent.access_type || "UNRESERVED",
-        payment_mode_id: parseInt(paymentModeId, 10),
+        payment_mode_id: parseInt(effectivePaymentModeId, 10),
       };
     };
 
@@ -375,11 +389,13 @@ const CollectFee = () => {
           paymentRes = await submitOnce(freshInvoice);
         } catch (err2) {
           showToast(err2.response?.data?.message || "Failed to collect payment", "error");
+          submitLockRef.current = false;
           setSubmitting(false);
           return;
         }
       } else {
         showToast(err.response?.data?.message || "Failed to collect payment", "error");
+        submitLockRef.current = false;
         setSubmitting(false);
         return;
       }
@@ -425,7 +441,9 @@ const CollectFee = () => {
     queryClient.invalidateQueries({ queryKey: ["studentsList"] });
     queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
     queryClient.invalidateQueries({ queryKey: ["recentPayments"] });
-    fetchData();
+    queryClient.invalidateQueries({ queryKey: ["paymentsList"] });
+    queryClient.invalidateQueries({ queryKey: ["feePlansAll"] });
+    submitLockRef.current = false;
     setSubmitting(false);
   };
 
@@ -739,7 +757,7 @@ const CollectFee = () => {
                       Fee Plan <span style={{ color: "#ef4444" }}>*</span>
                     </label>
                     <select
-                      value={selectedPlanId}
+                      value={effectiveSelectedPlanId}
                       onChange={(e) => handlePlanChange(e.target.value)}
                       style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: `1px solid ${border}`, background: inputBg, color: textPrimary, fontSize: "14px", fontWeight: "600", outline: "none", boxSizing: "border-box", cursor: "pointer" }}
                     >
@@ -866,7 +884,7 @@ const CollectFee = () => {
                   Payment Mode <span style={{ color: "#ef4444" }}>*</span>
                 </label>
                 <select
-                  value={paymentModeId}
+                  value={effectivePaymentModeId}
                   onChange={(e) => setPaymentModeId(e.target.value)}
                   required
                   style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: `1px solid ${border}`, background: inputBg, color: textPrimary, fontSize: "14px", fontWeight: "600", outline: "none", boxSizing: "border-box", cursor: "pointer" }}
@@ -1013,7 +1031,7 @@ const CollectFee = () => {
                         <FaClock style={{ fontSize: "10px", marginRight: "4px" }} />
                         {p.payment_date ? p.payment_date.split(" ")[0] : ""}
                         <span style={{ fontSize: "11px", marginLeft: "6px", color: textMuted }}>
-                          {formatTime(p.payment_date ? p.payment_date.split(" ").slice(1).join(" ") : "", timeFormat)}
+                          {formatTime(p.payment_date ? p.payment_date.split(" ").slice(1).join(" ") : "", "12hr")}
                         </span>
                       </span>
                     </div>

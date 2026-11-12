@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { FaArrowLeft, FaCalendarAlt } from "react-icons/fa";
 import api from "../api/axios";
 import CustomDatePicker from "../components/CustomDatePicker";
+import { formatTime } from "../utils/timeUtils";
 
 const DailyAttendanceReport = () => {
   const user = (() => {
@@ -125,8 +126,8 @@ const DailyAttendanceReport = () => {
                   <td>{r.full_name}</td>
                   <td>{r.shift_name}</td>
                   <td>{r.seat_number || "-"}</td>
-                  <td>{r.check_in_time || "-"}</td>
-                  <td>{r.check_out_time || "-"}</td>
+                  <td>{r.check_in_time ? formatTime(r.check_in_time, "12hr") : "-"}</td>
+                  <td>{r.check_out_time ? formatTime(r.check_out_time, "12hr") : "-"}</td>
                   <td>
                     <span
                       className={

@@ -38,14 +38,7 @@ const applyValidityAndReactivation = async ({
 
   let renewalFee = 0;
   if (feePlan) {
-    const assignments = await tx.studentShiftAssignment.findMany({
-      where: { validityId: validity.id, assignmentStatus: "ACTIVE" },
-    });
-    const shiftCount =
-      validity.accessType === "UNRESERVED" && assignments.length > 1
-        ? assignments.length
-        : 1;
-    renewalFee = Number(feePlan.amount) * shiftCount;
+    renewalFee = Number(feePlan.amount);
   }
 
   // Trigger renewal either when previous period had no due (prevPaid >= currentTotalAmount),

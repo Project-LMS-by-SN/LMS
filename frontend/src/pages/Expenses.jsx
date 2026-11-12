@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FaTrash, FaPlus, FaTimes, FaMoneyBillWave, FaCheckCircle } from "react-icons/fa";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
@@ -40,6 +40,9 @@ const Expenses = () => {
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
+  const deleteLockRef = useRef(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [toast, setToast] = useState(null);
   const [filter, setFilter] = useState("1M");
   const [selectedYear, setSelectedYear] = useState(currentYear.toString());
@@ -74,11 +77,13 @@ const Expenses = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitLockRef.current) return;
     if (!formData.category || !formData.date || !formData.amount) {
       showToast("Category, Date and Amount are required", "error");
       return;
     }
 
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       await api.post("/expenses", formData);
@@ -89,19 +94,26 @@ const Expenses = () => {
     } catch (err) {
       showToast(err.response?.data?.message || "Failed to add expense", "error");
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
 
   const handleDelete = async (id, description) => {
-    const descText = description ? `"${description}"` : "this expense";
-    if (!window.confirm(`Delete expense ${descText}?`)) return;
+    if (deleteLockRef.current) return;
+    deleteLockRef.current = true;
+    setDeletingId(id);
     try {
+      const descText = description ? `"${description}"` : "this expense";
+      if (!window.confirm(`Delete expense ${descText}?`)) return;
       await api.delete(`/expenses/${id}`);
       showToast("Expense removed successfully");
       fetchExpenses();
     } catch (err) {
       showToast("Failed to delete expense", "error");
+    } finally {
+      deleteLockRef.current = false;
+      setDeletingId(null);
     }
   };
 
@@ -393,6 +405,8 @@ const Expenses = () => {
                     </td>
                     <td style={{ padding: "16px", textAlign: "center" }}>
                       <button
+                        type="button"
+                        disabled={deletingId === exp.id}
                         onClick={() => handleDelete(exp.id, exp.description)}
                         style={{
                           background: "none",

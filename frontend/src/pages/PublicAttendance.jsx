@@ -14,10 +14,8 @@ import {
 } from "react-icons/fa";
 import { Html5Qrcode } from "html5-qrcode";
 import api from "../api/axios";
-import { useTheme } from "../context/ThemeContext";
 
 const PublicAttendance = () => {
-  const { timeFormat } = useTheme();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [studentCodeOrMobile, setStudentCodeOrMobile] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -33,6 +31,7 @@ const PublicAttendance = () => {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerError, setScannerError] = useState("");
   const html5QrCodeRef = useRef(null);
+  const submitLockRef = useRef(false);
 
   // Update clock every second
   useEffect(() => {
@@ -166,6 +165,7 @@ const PublicAttendance = () => {
   };
 
   const executeCheckIn = async (codeToMark) => {
+    if (submitLockRef.current) return;
     const term = (codeToMark || studentCodeOrMobile || "").trim();
     if (!term) {
       setErrorMsg("Please enter or scan your Student Code or Mobile Number.");
@@ -184,6 +184,7 @@ const PublicAttendance = () => {
 
     setErrorMsg("");
     setResult(null);
+    submitLockRef.current = true;
     setSubmitting(true);
 
     try {
@@ -208,6 +209,7 @@ const PublicAttendance = () => {
     } catch (err) {
       setErrorMsg(err.response?.data?.message || "Failed to mark attendance. Please verify details.");
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };

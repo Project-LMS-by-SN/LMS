@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import api from "../api/axios";
 import { formatTime } from "../utils/timeUtils";
 import { useTheme } from "../context/ThemeContext";
@@ -16,12 +16,14 @@ const parseSeatParts = (seatNumber = "") => {
 };
 
 const Seats = () => {
-  const { darkMode, timeFormat } = useTheme();
+  const { darkMode } = useTheme();
   const [seats, setSeats] = useState([]);
+  const [shifts, setShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
   const [showGenModal, setShowGenModal] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const seatLockRef = useRef(false);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState(null);
@@ -64,8 +66,12 @@ const Seats = () => {
 
   const fetchSeats = async () => {
     try {
-      const res = await api.get("/seats");
-      setSeats(res.data.data);
+      const [seatsRes, shiftsRes] = await Promise.all([
+        api.get("/seats"),
+        api.get("/shifts").catch(() => ({ data: { data: [] } })),
+      ]);
+      setSeats(seatsRes.data.data || []);
+      setShifts(shiftsRes.data?.data || []);
     } catch {
       showToast("Failed to load seats", "error");
     } finally {
@@ -245,6 +251,7 @@ const Seats = () => {
   };
 
   const handleBulkGenerate = async () => {
+    if (seatLockRef.current) return;
     const start = parseInt(genStart, 10);
     const count = parseInt(genCount, 10);
     if (!genStart || !genCount || isNaN(start) || isNaN(count) || start < 1) { showToast("Enter valid start and count", "error"); return; }
@@ -260,6 +267,7 @@ const Seats = () => {
     }
     const generated = [];
     for (let i = 0; i < count; i++) generated.push(`${prefix}${start + i}`);
+    seatLockRef.current = true;
     setGenerating(true);
     try {
       const payload = { seats: generated, floor: genFloor.trim(), room: genRoom.trim() };
@@ -272,14 +280,19 @@ const Seats = () => {
       fetchSeats();
     } catch (err) {
       showToast(err.response?.data?.message || "Failed to generate seats", "error");
-    } finally { setGenerating(false); }
+    } finally {
+      seatLockRef.current = false;
+      setGenerating(false);
+    }
   };
 
   const handleToggleActive = async (seat) => {
+    if (seatLockRef.current) return;
     if (seat.is_active !== false && (seat.is_occupied || (seat.occupied_shifts && seat.occupied_shifts.length > 0))) {
       showToast("Allocated seat cannot be disabled. It is currently assigned to a student.", "error");
       return;
     }
+    seatLockRef.current = true;
     setActionLoading(seat.id);
     try {
       const res = await api.patch(`/seats/${seat.id}/toggle-active`);
@@ -289,32 +302,45 @@ const Seats = () => {
       fetchSeats();
     } catch (err) {
       showToast(err.response?.data?.message || "Failed to toggle seat", "error");
-    } finally { setActionLoading(null); }
+    } finally {
+      seatLockRef.current = false;
+      setActionLoading(null);
+    }
   };
 
   const handleDelete = async (seat) => {
-    if (!window.confirm(`Delete seat ${seat.seat_number}? This cannot be undone.`)) return;
-    setActionLoading(seat.id);
+    if (seatLockRef.current) return;
+    seatLockRef.current = true;
     try {
+      if (!window.confirm(`Delete seat ${seat.seat_number}? This cannot be undone.`)) return;
+      setActionLoading(seat.id);
       await api.delete(`/seats/${seat.id}`);
       showToast(`Seat ${seat.seat_number} deleted and seats renumbered`);
       setSelectedSeat(null);
       fetchSeats();
     } catch (err) {
       showToast(err.response?.data?.message || "Failed to delete seat", "error");
-    } finally { setActionLoading(null); }
+    } finally {
+      seatLockRef.current = false;
+      setActionLoading(null);
+    }
   };
 
   const handleRenumber = async () => {
-    if (!window.confirm("This will renumber all seats sequentially (A1, A2, A3...). Continue?")) return;
-    setActionLoading("renumber");
+    if (seatLockRef.current) return;
+    seatLockRef.current = true;
     try {
+      if (!window.confirm("This will renumber all seats sequentially (A1, A2, A3...). Continue?")) return;
+      setActionLoading("renumber");
       const res = await api.post("/seats/renumber");
       showToast(res.data.message || "Seats renumbered");
       fetchSeats();
     } catch (err) {
       showToast(err.response?.data?.message || "Failed to renumber seats", "error");
-    } finally { setActionLoading(null); }
+    } finally {
+      seatLockRef.current = false;
+      setActionLoading(null);
+    }
   };
 
   const toggleSeatSelect = (seatId) => {
@@ -324,6 +350,7 @@ const Seats = () => {
   };
 
   const handleBulkDelete = async () => {
+    if (seatLockRef.current) return;
     const occupied = selectedSeatIds.filter(id => {
       const s = seats.find(seat => seat.id === id);
       return s && s.is_occupied;
@@ -332,9 +359,10 @@ const Seats = () => {
       showToast(`${occupied.length} selected seat(s) are occupied and cannot be deleted`, "error");
       return;
     }
-    if (!window.confirm(`Delete ${selectedSeatIds.length} seat(s)? This cannot be undone.`)) return;
-    setActionLoading("bulk-delete");
+    seatLockRef.current = true;
     try {
+      if (!window.confirm(`Delete ${selectedSeatIds.length} seat(s)? This cannot be undone.`)) return;
+      setActionLoading("bulk-delete");
       const res = await api.post("/seats/delete-bulk", { seat_ids: selectedSeatIds });
       showToast(res.data.message || `${selectedSeatIds.length} seats deleted`);
       setSelectedSeatIds([]);
@@ -342,7 +370,10 @@ const Seats = () => {
       fetchSeats();
     } catch (err) {
       showToast(err.response?.data?.message || "Failed to delete seats", "error");
-    } finally { setActionLoading(null); }
+    } finally {
+      seatLockRef.current = false;
+      setActionLoading(null);
+    }
   };
 
   const totalCount = seats.length;
@@ -395,6 +426,11 @@ const Seats = () => {
     return sorted;
   }, [filteredSeats]);
 
+  const activeShiftsCount = useMemo(
+    () => shifts.filter(s => s.is_active !== false).length,
+    [shifts]
+  );
+
   const getSeatColor = (seat) => {
     if (seat.is_active === false) {
       return {
@@ -404,7 +440,7 @@ const Seats = () => {
         label: "Inactive"
       };
     }
-    
+
     const activeShifts = seat.occupied_shifts || [];
     const count = activeShifts.length;
 
@@ -416,7 +452,17 @@ const Seats = () => {
         label: "Available"
       };
     }
-    
+
+    // Full Day: strictly when all active shifts in the branch are booked (e.g., 3 of 3, or 4 of 4)
+    if (activeShiftsCount > 1 && count >= activeShiftsCount) {
+      return {
+        bg: darkMode ? "rgba(249,115,22,0.12)" : "#fff7ed",
+        border: "#f97316",
+        color: "#ea580c",
+        label: `${activeShiftsCount} shifts (Full Day)`
+      };
+    }
+
     if (count === 1) {
       return {
         bg: darkMode ? "rgba(139,92,246,0.12)" : "#f5f3ff",
@@ -434,24 +480,56 @@ const Seats = () => {
         label: "2 shifts"
       };
     }
-    
-    if (count === 3) {
+
+    if (count >= 3 && (activeShiftsCount === 0 && count >= 4)) {
       return {
-        bg: darkMode ? "rgba(239,68,68,0.12)" : "#fef2f2",
-        border: "#ef4444",
-        color: "#dc2626",
-        label: "3 shifts"
+        bg: darkMode ? "rgba(249,115,22,0.12)" : "#fff7ed",
+        border: "#f97316",
+        color: "#ea580c",
+        label: `${count} shifts (Full Day)`
       };
     }
 
-    // count >= 4 (Full Shift)
     return {
-      bg: darkMode ? "rgba(249,115,22,0.12)" : "#fff7ed",
-      border: "#f97316",
-      color: "#ea580c",
-      label: "4 shifts (Full Shift)"
+      bg: darkMode ? "rgba(239,68,68,0.12)" : "#fef2f2",
+      border: "#ef4444",
+      color: "#dc2626",
+      label: `${count} shifts`
     };
   };
+
+  const seatLegendItems = useMemo(() => {
+    const items = [
+      { label: "0 shifts (Vacant)", bg: darkMode ? "rgba(34,197,94,0.12)" : "#f0fdf4", border: "#22c55e", color: "#16a34a" },
+    ];
+    const effectiveTotal = activeShiftsCount > 0 ? activeShiftsCount : 4;
+    for (let k = 1; k < effectiveTotal; k += 1) {
+      if (k === 1) {
+        items.push({ label: "1 shift booked", bg: darkMode ? "rgba(139,92,246,0.12)" : "#f5f3ff", border: "#8b5cf6", color: "#7c3aed" });
+      } else if (k === 2) {
+        items.push({ label: "2 shifts booked", bg: darkMode ? "rgba(59,130,246,0.12)" : "#eff6ff", border: "#3b82f6", color: "#2563eb" });
+      } else {
+        items.push({ label: `${k} shifts booked`, bg: darkMode ? "rgba(239,68,68,0.12)" : "#fef2f2", border: "#ef4444", color: "#dc2626" });
+      }
+    }
+    if (effectiveTotal > 1) {
+      items.push({
+        label: `${effectiveTotal} shifts (Full Day) booked`,
+        bg: darkMode ? "rgba(249,115,22,0.12)" : "#fff7ed",
+        border: "#f97316",
+        color: "#ea580c",
+      });
+    } else if (effectiveTotal === 1) {
+      items.push({ label: "1 shift (Full Day) booked", bg: darkMode ? "rgba(249,115,22,0.12)" : "#fff7ed", border: "#f97316", color: "#ea580c" });
+    }
+    items.push({
+      label: "Inactive seat",
+      bg: darkMode ? "#1e293b" : "#f1f5f9",
+      border: darkMode ? "#475569" : "#94a3b8",
+      color: darkMode ? "#94a3b8" : "#64748b",
+    });
+    return items;
+  }, [activeShiftsCount, darkMode]);
 
   const getSectionColor = (section) => {
     if (!section) return { bg: darkMode ? "#1e293b" : "#ffffff", border: darkMode ? "#334155" : "#e2e8f0", labelBg: darkMode ? "#334155" : "#f1f5f9" };
@@ -517,7 +595,7 @@ const Seats = () => {
                     <span style={{ color: textMuted, marginLeft: "4px" }}>({o.student_code})</span>
                   </span>
                   <span style={{ color: textMuted, fontSize: "11px" }}>
-                    {o.shift_name} · {formatTime(o.start_time, timeFormat)} - {formatTime(o.end_time, timeFormat)}
+                    {o.shift_name} · {formatTime(o.start_time, "12hr")} - {formatTime(o.end_time, "12hr")}
                   </span>
                 </div>
               ))}
@@ -686,14 +764,7 @@ const Seats = () => {
 
       <div style={{ background: card, border: `1px solid ${border}`, borderRadius: "14px", padding: "20px" }}>
         <div style={{ display: "flex", gap: "16px", marginBottom: "16px", fontSize: "12px", flexWrap: "wrap" }}>
-          {[
-            { label: "0 shifts (Vacant)", bg: darkMode ? "rgba(34,197,94,0.12)" : "#f0fdf4", border: "#22c55e", color: "#16a34a" },
-            { label: "1 shift booked", bg: darkMode ? "rgba(139,92,246,0.12)" : "#f5f3ff", border: "#8b5cf6", color: "#7c3aed" },
-            { label: "2 shifts booked", bg: darkMode ? "rgba(59,130,246,0.12)" : "#eff6ff", border: "#3b82f6", color: "#2563eb" },
-            { label: "3 shifts booked", bg: darkMode ? "rgba(239,68,68,0.12)" : "#fef2f2", border: "#ef4444", color: "#dc2626" },
-            { label: "4 shifts (Full Shift) booked", bg: darkMode ? "rgba(249,115,22,0.12)" : "#fff7ed", border: "#f97316", color: "#ea580c" },
-            { label: "Inactive seat", bg: darkMode ? "#1e293b" : "#f1f5f9", border: darkMode ? "#475569" : "#94a3b8", color: darkMode ? "#94a3b8" : "#64748b" },
-          ].map(l => (
+          {seatLegendItems.map(l => (
             <div key={l.label} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <div style={{ width: "14px", height: "14px", background: l.bg, border: `2px solid ${l.border}`, borderRadius: "4px" }} />
               <span style={{ color: textMuted, fontWeight: 600 }}>{l.label}</span>

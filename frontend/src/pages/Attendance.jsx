@@ -7,6 +7,7 @@ import QRCodeLib from "qrcode";
 import { Html5Qrcode } from "html5-qrcode";
 import CustomDatePicker from "../components/CustomDatePicker";
 import { downloadQrPoster } from "../utils/qrPoster";
+import { useSubmitLock } from "../hooks/useSubmitLock";
 
 const formatDateLocal = (d) => {
   const year = d.getFullYear();
@@ -120,7 +121,8 @@ const Attendance = () => {
   const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
   const [cameraScannerError, setCameraScannerError] = useState("");
   const staffQrScannerRef = useRef(null);
-  const { darkMode, timeFormat } = useTheme();
+  const { isSubmitting: attendanceBusy, runWithLock: runAttendanceWithLock } = useSubmitLock();
+  const { darkMode } = useTheme();
 
   useEffect(() => {
     const fetchQrInfo = async () => {
@@ -480,179 +482,187 @@ const Attendance = () => {
   };
 
   const handleCheckIn = async () => {
-    if (!studentData?.student?.id) return;
-    const selected = getSelectedAssignment();
-    if (!selected) {
-      setError("Please select a shift first");
-      return;
-    }
-    setError("");
-    setSuccessMsg("");
+    await runAttendanceWithLock(async () => {
+      if (!studentData?.student?.id) return;
+      const selected = getSelectedAssignment();
+      if (!selected) {
+        setError("Please select a shift first");
+        return;
+      }
+      setError("");
+      setSuccessMsg("");
 
-    const prevStudentData = studentData;
+      const prevStudentData = studentData;
 
-    // Instant optimistic update (0ms UI latency!)
-    const now = new Date();
-    const timeHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    const todayYMD = formatDateLocal(now);
-    const targetShiftId = selected.shift_id;
-    const consecutiveIds = getConsecutiveBlockForShift(targetShiftId, studentData.assignments || []);
-    const affectedShiftIds = Array.from(new Set([targetShiftId, ...consecutiveIds]));
+      // Instant optimistic update (0ms UI latency!)
+      const now = new Date();
+      const timeHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const todayYMD = formatDateLocal(now);
+      const targetShiftId = selected.shift_id;
+      const consecutiveIds = getConsecutiveBlockForShift(targetShiftId, studentData.assignments || []);
+      const affectedShiftIds = Array.from(new Set([targetShiftId, ...consecutiveIds]));
 
-    const updatedToday = [...(studentData.todayAttendance || [])];
-    affectedShiftIds.forEach((sId) => {
-      const idx = updatedToday.findIndex((a) => a.shift_id === sId);
-      const record = {
-        shift_id: sId,
-        status: "PRESENT",
-        check_in_time: timeHHMM,
-        check_out_time: null,
-        attendance_date: todayYMD,
-      };
-      if (idx >= 0) {
-        updatedToday[idx] = { ...updatedToday[idx], ...record };
-      } else {
-        updatedToday.push(record);
+      const updatedToday = [...(studentData.todayAttendance || [])];
+      affectedShiftIds.forEach((sId) => {
+        const idx = updatedToday.findIndex((a) => a.shift_id === sId);
+        const record = {
+          shift_id: sId,
+          status: "PRESENT",
+          check_in_time: timeHHMM,
+          check_out_time: null,
+          attendance_date: todayYMD,
+        };
+        if (idx >= 0) {
+          updatedToday[idx] = { ...updatedToday[idx], ...record };
+        } else {
+          updatedToday.push(record);
+        }
+      });
+
+      setStudentData({ ...studentData, todayAttendance: updatedToday });
+
+      try {
+        const res = await api.post("/attendance/check-in", {
+          student_id: studentData.student.id,
+          shift_id: selected.shift_id
+        });
+        setSuccessMsg(res.data.message);
+        startAutoClose(5);
+
+        if (res.data?.data?.check_in_time) {
+          const serverInTime = res.data.data.check_in_time;
+          setStudentData((curr) => {
+            if (!curr) return curr;
+            const list = (curr.todayAttendance || []).map((item) =>
+              affectedShiftIds.includes(item.shift_id)
+                ? { ...item, check_in_time: serverInTime, status: "PRESENT" }
+                : item
+            );
+            return { ...curr, todayAttendance: list };
+          });
+        }
+
+        Promise.all([
+          fetchAttendance(),
+          fetchActiveCheckIns()
+        ]).catch(() => {});
+      } catch (err) {
+        setStudentData(prevStudentData);
+        setError(err.response?.data?.message || "Failed to check in");
       }
     });
-
-    setStudentData({ ...studentData, todayAttendance: updatedToday });
-
-    try {
-      const res = await api.post("/attendance/check-in", {
-        student_id: studentData.student.id,
-        shift_id: selected.shift_id
-      });
-      setSuccessMsg(res.data.message);
-      startAutoClose(5);
-
-      if (res.data?.data?.check_in_time) {
-        const serverInTime = res.data.data.check_in_time;
-        setStudentData((curr) => {
-          if (!curr) return curr;
-          const list = (curr.todayAttendance || []).map((item) =>
-            affectedShiftIds.includes(item.shift_id)
-              ? { ...item, check_in_time: serverInTime, status: "PRESENT" }
-              : item
-          );
-          return { ...curr, todayAttendance: list };
-        });
-      }
-
-      Promise.all([
-        fetchAttendance(),
-        fetchActiveCheckIns()
-      ]).catch(() => {});
-    } catch (err) {
-      setStudentData(prevStudentData);
-      setError(err.response?.data?.message || "Failed to check in");
-    }
   };
 
   const handleCheckOut = async () => {
-    if (!studentData?.student?.id) return;
-    const selected = getSelectedAssignment();
-    if (!selected) {
-      setError("Please select a shift first");
-      return;
-    }
-    setError("");
-    setSuccessMsg("");
-
-    const prevStudentData = studentData;
-
-    // Instant optimistic update (0ms UI latency!)
-    const now = new Date();
-    const timeHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    const targetShiftId = selected.shift_id;
-    const consecutiveIds = getConsecutiveBlockForShift(targetShiftId, studentData.assignments || []);
-    const affectedShiftIds = Array.from(new Set([targetShiftId, ...consecutiveIds]));
-
-    const updatedToday = [...(studentData.todayAttendance || [])].map((item) => {
-      if (affectedShiftIds.includes(item.shift_id)) {
-        return { ...item, check_out_time: timeHHMM };
+    await runAttendanceWithLock(async () => {
+      if (!studentData?.student?.id) return;
+      const selected = getSelectedAssignment();
+      if (!selected) {
+        setError("Please select a shift first");
+        return;
       }
-      return item;
-    });
+      setError("");
+      setSuccessMsg("");
 
-    setStudentData({ ...studentData, todayAttendance: updatedToday });
+      const prevStudentData = studentData;
 
-    try {
-      const res = await api.post("/attendance/check-out", {
-        student_id: studentData.student.id,
-        shift_id: selected.shift_id
+      // Instant optimistic update (0ms UI latency!)
+      const now = new Date();
+      const timeHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const targetShiftId = selected.shift_id;
+      const consecutiveIds = getConsecutiveBlockForShift(targetShiftId, studentData.assignments || []);
+      const affectedShiftIds = Array.from(new Set([targetShiftId, ...consecutiveIds]));
+
+      const updatedToday = [...(studentData.todayAttendance || [])].map((item) => {
+        if (affectedShiftIds.includes(item.shift_id)) {
+          return { ...item, check_out_time: timeHHMM };
+        }
+        return item;
       });
-      setSuccessMsg(res.data.message);
-      startAutoClose(5);
 
-      if (res.data?.data?.check_out_time) {
-        const serverOutTime = res.data.data.check_out_time;
-        setStudentData((curr) => {
-          if (!curr) return curr;
-          const list = (curr.todayAttendance || []).map((item) =>
-            affectedShiftIds.includes(item.shift_id)
-              ? { ...item, check_out_time: serverOutTime }
-              : item
-          );
-          return { ...curr, todayAttendance: list };
+      setStudentData({ ...studentData, todayAttendance: updatedToday });
+
+      try {
+        const res = await api.post("/attendance/check-out", {
+          student_id: studentData.student.id,
+          shift_id: selected.shift_id
         });
-      }
+        setSuccessMsg(res.data.message);
+        startAutoClose(5);
 
-      Promise.all([
-        fetchAttendance(),
-        fetchActiveCheckIns()
-      ]).catch(() => {});
-    } catch (err) {
-      setStudentData(prevStudentData);
-      setError(err.response?.data?.message || "Failed to check out");
-    }
+        if (res.data?.data?.check_out_time) {
+          const serverOutTime = res.data.data.check_out_time;
+          setStudentData((curr) => {
+            if (!curr) return curr;
+            const list = (curr.todayAttendance || []).map((item) =>
+              affectedShiftIds.includes(item.shift_id)
+                ? { ...item, check_out_time: serverOutTime }
+                : item
+            );
+            return { ...curr, todayAttendance: list };
+          });
+        }
+
+        Promise.all([
+          fetchAttendance(),
+          fetchActiveCheckIns()
+        ]).catch(() => {});
+      } catch (err) {
+        setStudentData(prevStudentData);
+        setError(err.response?.data?.message || "Failed to check out");
+      }
+    });
   };
 
   const handleCheckoutAllActive = async () => {
-    if (activeCheckIns.length === 0) return;
-    if (!window.confirm(`Check out / Logout all ${activeCheckIns.length} active students currently in the library?`)) return;
-    setError("");
-    setSuccessMsg("");
-    try {
-      const res = await api.post("/attendance/checkout-all");
-      setSuccessMsg(res.data.message || `Checked out all active students`);
-      fetchAttendance();
-      fetchActiveCheckIns();
-      if (studentData) {
-        const query = searchQuery.trim() || studentData.student.student_code;
-        const refreshRes = await api.get(`/attendance/search?q=${encodeURIComponent(query)}`);
-        setStudentData(refreshRes.data.data);
+    await runAttendanceWithLock(async () => {
+      if (activeCheckIns.length === 0) return;
+      if (!window.confirm(`Check out / Logout all ${activeCheckIns.length} active students currently in the library?`)) return;
+      setError("");
+      setSuccessMsg("");
+      try {
+        const res = await api.post("/attendance/checkout-all");
+        setSuccessMsg(res.data.message || `Checked out all active students`);
+        fetchAttendance();
+        fetchActiveCheckIns();
+        if (studentData) {
+          const query = searchQuery.trim() || studentData.student.student_code;
+          const refreshRes = await api.get(`/attendance/search?q=${encodeURIComponent(query)}`);
+          setStudentData(refreshRes.data.data);
+        }
+      } catch (err) {
+        setError(err.response?.data?.message || "Failed to check out active students");
       }
-    } catch (err) {
-      setError(err.response?.data?.message || "Failed to check out active students");
-    }
+    });
   };
 
   const handleDirectCheckoutByCode = async (studentCode) => {
-    setError("");
-    setSuccessMsg("");
-    try {
-      const searchRes = await api.get(`/attendance/search?q=${encodeURIComponent(studentCode)}`);
-      const sData = searchRes.data.data;
-      if (!sData) throw new Error("Student not found");
-      const activeCheckIn = (sData.todayAttendance || []).find(a => a.check_in_time && !a.check_out_time);
-      if (!activeCheckIn) throw new Error("No active check-in found for this student");
+    await runAttendanceWithLock(async () => {
+      setError("");
+      setSuccessMsg("");
+      try {
+        const searchRes = await api.get(`/attendance/search?q=${encodeURIComponent(studentCode)}`);
+        const sData = searchRes.data.data;
+        if (!sData) throw new Error("Student not found");
+        const activeCheckIn = (sData.todayAttendance || []).find(a => a.check_in_time && !a.check_out_time);
+        if (!activeCheckIn) throw new Error("No active check-in found for this student");
 
-      const res = await api.post("/attendance/check-out", {
-        student_id: sData.student.id,
-        shift_id: activeCheckIn.shift_id
-      });
-      setSuccessMsg(res.data.message || `Checked out ${sData.student.full_name}`);
-      startAutoClose(5);
-      fetchAttendance();
-      fetchActiveCheckIns();
-      if (studentData && studentData.student.student_code === studentCode) {
-        const refreshRes = await api.get(`/attendance/search?q=${encodeURIComponent(studentCode)}`);
-        setStudentData(refreshRes.data.data);
+        const res = await api.post("/attendance/check-out", {
+          student_id: sData.student.id,
+          shift_id: activeCheckIn.shift_id
+        });
+        setSuccessMsg(res.data.message || `Checked out ${sData.student.full_name}`);
+        startAutoClose(5);
+        fetchAttendance();
+        fetchActiveCheckIns();
+        if (studentData && studentData.student.student_code === studentCode) {
+          const refreshRes = await api.get(`/attendance/search?q=${encodeURIComponent(studentCode)}`);
+          setStudentData(refreshRes.data.data);
+        }
+      } catch (err) {
+        setError(err.response?.data?.message || err.message || "Failed to check out student");
       }
-    } catch (err) {
-      setError(err.response?.data?.message || err.message || "Failed to check out student");
-    }
+    });
   };
 
   const studentHistory = (studentData?.attendanceHistory && studentData.attendanceHistory.length > 0)
@@ -1256,17 +1266,17 @@ const Attendance = () => {
                             }}
                           >
                             <div style={{ fontWeight: 600, fontSize: "14px" }}>{a.shift_name}</div>
-                            <div style={{ fontSize: "12px", color: textSecondary }}>{formatTime(a.start_time, timeFormat)} - {formatTime(a.end_time, timeFormat)}</div>
+                            <div style={{ fontSize: "12px", color: textSecondary }}>{formatTime(a.start_time, "12hr")} - {formatTime(a.end_time, "12hr")}</div>
                             {a.seat_number && <div style={{ fontSize: "12px", color: textSecondary }}>Seat: {a.seat_number}</div>}
                             
                             {/* Attendance status badge */}
                             {todayAttendance ? (
                               <div style={{ marginTop: "6px", fontSize: "12px", fontWeight: 600 }}>
                                 {todayAttendance.check_in_time && !todayAttendance.check_out_time && (
-                                  <span style={{ color: "#15803d" }}>● In at {formatTime(todayAttendance.check_in_time, timeFormat)}</span>
+                                  <span style={{ color: "#15803d" }}>● In at {formatTime(todayAttendance.check_in_time, "12hr")}</span>
                                 )}
                                 {todayAttendance.check_in_time && todayAttendance.check_out_time && (
-                                  <span style={{ color: "#dc2626" }}>● Done ({formatTime(todayAttendance.check_in_time, timeFormat)} - {formatTime(todayAttendance.check_out_time, timeFormat)})</span>
+                                  <span style={{ color: "#dc2626" }}>● Done ({formatTime(todayAttendance.check_in_time, "12hr")} - {formatTime(todayAttendance.check_out_time, "12hr")})</span>
                                 )}
                               </div>
                             ) : ended ? (
@@ -1342,7 +1352,7 @@ const Attendance = () => {
                         }
 
                         if (selectedAss && !selectedAtt) {
-                          return <button className="primary-btn" onClick={handleCheckIn}>IN</button>;
+                          return <button type="button" className="primary-btn" disabled={attendanceBusy} onClick={handleCheckIn}>{attendanceBusy ? "Checking In..." : "IN"}</button>;
                         }
 
                         if (selectedAss && selectedAtt && !selectedAtt.check_out_time) {
@@ -1351,11 +1361,11 @@ const Attendance = () => {
                               <div className="profile-info-group">
                                 <div className="profile-info-label">Checked In At</div>
                                 <div className="profile-info-value" style={{ color: "#15803d" }}>
-                                  {formatTime(selectedAtt.check_in_time, timeFormat)}
+                                  {formatTime(selectedAtt.check_in_time, "12hr")}
                                 </div>
                               </div>
-                              <button className="primary-btn" onClick={handleCheckOut} style={{ background: "linear-gradient(135deg,#f97316,#ea580c)" }}>
-                                OUT
+                              <button type="button" className="primary-btn" disabled={attendanceBusy} onClick={handleCheckOut} style={{ background: "linear-gradient(135deg,#f97316,#ea580c)" }}>
+                                {attendanceBusy ? "Checking Out..." : "OUT"}
                               </button>
                             </>
                           );
@@ -1367,13 +1377,13 @@ const Attendance = () => {
                               <div className="profile-info-group">
                                 <div className="profile-info-label">Checked In</div>
                                 <div className="profile-info-value" style={{ color: "#15803d" }}>
-                                  {formatTime(selectedAtt.check_in_time, timeFormat)}
+                                  {formatTime(selectedAtt.check_in_time, "12hr")}
                                 </div>
                               </div>
                               <div className="profile-info-group">
                                 <div className="profile-info-label">Checked Out</div>
                                 <div className="profile-info-value" style={{ color: "#dc2626" }}>
-                                  {formatTime(selectedAtt.check_out_time, timeFormat)}
+                                  {formatTime(selectedAtt.check_out_time, "12hr")}
                                 </div>
                               </div>
                             </div>
@@ -1410,10 +1420,10 @@ const Attendance = () => {
                         <td style={{ fontWeight: 500 }}>{a.shift_name}</td>
                         <td>{a.seat_number || "—"}</td>
                         <td style={{ color: a.check_in_time ? "#16a34a" : textSecondary, fontWeight: a.check_in_time ? 600 : 400 }}>
-                          {formatTime(a.check_in_time, timeFormat) || "—"}
+                          {formatTime(a.check_in_time, "12hr") || "—"}
                         </td>
                         <td style={{ color: a.check_out_time ? "#ea580c" : textSecondary, fontWeight: a.check_out_time ? 600 : 400 }}>
-                          {formatTime(a.check_out_time, timeFormat) || "—"}
+                          {formatTime(a.check_out_time, "12hr") || "—"}
                         </td>
                         <td><span className={a.status === "PRESENT" ? "status-badge" : "danger-badge"}>{a.status}</span></td>
                       </tr>
@@ -1453,10 +1463,10 @@ const Attendance = () => {
                       <td>{a.shift_name}</td>
                       <td>{a.seat_number || "—"}</td>
                       <td style={{ color: a.check_in_time ? "#16a34a" : textSecondary, fontWeight: a.check_in_time ? 600 : 400 }}>
-                        {formatTime(a.check_in_time, timeFormat) || "—"}
+                        {formatTime(a.check_in_time, "12hr") || "—"}
                       </td>
                       <td style={{ color: a.check_out_time ? "#ea580c" : textSecondary, fontWeight: a.check_out_time ? 600 : 400 }}>
-                        {formatTime(a.check_out_time, timeFormat) || "—"}
+                        {formatTime(a.check_out_time, "12hr") || "—"}
                       </td>
                       <td><span className={a.status === "PRESENT" ? "status-badge" : "danger-badge"}>{a.status}</span></td>
                     </tr>
@@ -1514,10 +1524,11 @@ const Attendance = () => {
                       >
                         <div className="profile-info-label" style={{ fontSize: "10px" }}>{item.student_code}</div>
                         <div className="profile-info-value" style={{ fontSize: "14px", color: textPrimary }}>{item.full_name}</div>
-                        <div style={{ fontSize: "11px", color: "#15803d", marginTop: "2px" }}>In: {formatTime(item.check_in_time, timeFormat)} - {item.shift_name}</div>
+                        <div style={{ fontSize: "11px", color: "#15803d", marginTop: "2px" }}>In: {formatTime(item.check_in_time, "12hr")} - {item.shift_name}</div>
                       </div>
                       <button
                         type="button"
+                        disabled={attendanceBusy}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDirectCheckoutByCode(item.student_code);

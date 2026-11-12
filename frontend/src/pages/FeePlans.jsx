@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
+import { useSubmitLock } from "../hooks/useSubmitLock";
 
 const emptyForm = {
   plan_name: "",
@@ -11,26 +13,45 @@ const emptyForm = {
 
 const FeePlans = () => {
   const { darkMode } = useTheme();
+  const queryClient = useQueryClient();
   const textPrimary = darkMode ? "#f1f5f9" : "#1e293b";
   const userObj = JSON.parse(localStorage.getItem("lms_user") || "{}");
   const isOwner = !userObj.role || userObj.role === "OWNER";
-  const [feePlans, setFeePlans] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
-
-  const fetchFeePlans = async () => {
-    try {
-      const res = await api.get("/fee-plans");
-      setFeePlans(res.data.data);
-    } catch (error) {
-      console.log("Fee plans fetch error:", error);
-    }
-  };
+  const formRef = useRef(null);
+  const nameInputRef = useRef(null);
+  const { isSubmitting, runWithLock } = useSubmitLock();
+  const { isSubmitting: isRowBusy, runWithLock: runRowWithLock } = useSubmitLock();
 
   useEffect(() => {
-    fetchFeePlans();
-  }, []);
+    if (!showForm) return;
+    const frameId = requestAnimationFrame(() => {
+      if (formRef.current) {
+        formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      if (nameInputRef.current) {
+        nameInputRef.current.focus({ preventScroll: true });
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [showForm, editingPlanId]);
+
+  const { data: feePlans = [], isLoading } = useQuery({
+    queryKey: ["feePlansAll"],
+    queryFn: async () => {
+      const res = await api.get("/fee-plans");
+      return res.data?.data || [];
+    },
+  });
+
+  const refreshFeePlans = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["feePlansAll"] }),
+      queryClient.invalidateQueries({ queryKey: ["feePlans"] }),
+    ]);
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -58,9 +79,6 @@ const FeePlans = () => {
     });
 
     setShowForm(true);
-    setTimeout(() => {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }, 50);
   };
 
   const closeForm = () => {
@@ -96,51 +114,63 @@ const FeePlans = () => {
       plan_type: formData.plan_type || "RESERVED",
     };
 
-    try {
-      if (editingPlanId) {
-        await api.put(`/fee-plans/${editingPlanId}`, payload);
-        alert("Fee plan updated successfully");
-      } else {
-        await api.post("/fee-plans", payload);
-        alert("Fee plan added successfully");
+    await runWithLock(async () => {
+      try {
+        if (editingPlanId) {
+          await api.put(`/fee-plans/${editingPlanId}`, payload);
+          closeForm();
+          await refreshFeePlans();
+          alert("Fee plan updated successfully");
+        } else {
+          await api.post("/fee-plans", payload);
+          closeForm();
+          await refreshFeePlans();
+          alert("Fee plan added successfully");
+        }
+      } catch (error) {
+        alert(error.response?.data?.message || "Failed to save fee plan");
       }
-
-      closeForm();
-      fetchFeePlans();
-    } catch (error) {
-      alert(error.response?.data?.message || "Failed to save fee plan");
-    }
+    });
   };
 
   const handleToggleStatus = async (plan) => {
-    const newAction = plan.is_active ? "deactivate" : "activate";
-    const confirmMsg = `Are you sure you want to ${newAction} this fee plan?`;
+    await runRowWithLock(async () => {
+      const newAction = plan.is_active ? "deactivate" : "activate";
+      const confirmMsg = `Are you sure you want to ${newAction} this fee plan?`;
 
-    if (!window.confirm(confirmMsg)) return;
+      if (!window.confirm(confirmMsg)) return;
 
-    try {
-      await api.patch(`/fee-plans/${plan.id}/deactivate`);
-      alert(`Fee plan ${plan.is_active ? "deactivated" : "activated"} successfully`);
-      fetchFeePlans();
-    } catch (error) {
-      alert(error.response?.data?.message || `Failed to ${newAction} fee plan`);
-    }
+      try {
+        await api.patch(`/fee-plans/${plan.id}/deactivate`);
+        alert(`Fee plan ${plan.is_active ? "deactivated" : "activated"} successfully`);
+        await refreshFeePlans();
+      } catch (error) {
+        alert(error.response?.data?.message || `Failed to ${newAction} fee plan`);
+      }
+    });
   };
 
-  const handleDelete = async (id) => {
-    const confirmDelete = window.confirm(
-      "Delete permanently only if this plan was created by mistake. Continue?"
-    );
-
-    if (!confirmDelete) return;
-
-    try {
-      await api.delete(`/fee-plans/${id}`);
-      alert("Fee plan deleted permanently");
-      fetchFeePlans();
-    } catch (error) {
-      alert(error.response?.data?.message || "Failed to delete fee plan");
+  const handleDelete = async (plan) => {
+    if (plan?.is_allocated) {
+      alert(`This fee plan is currently allocated to ${plan.allocated_count || 1} student(s), so it cannot be deleted. Deactivate it instead.`);
+      return;
     }
+
+    await runRowWithLock(async () => {
+      const confirmDelete = window.confirm(
+        "Delete permanently only if this plan was created by mistake. Continue?"
+      );
+
+      if (!confirmDelete) return;
+
+      try {
+        await api.delete(`/fee-plans/${plan.id}`);
+        alert("Fee plan deleted permanently");
+        await refreshFeePlans();
+      } catch (error) {
+        alert(error.response?.data?.message || "Failed to delete fee plan");
+      }
+    });
   };
 
   const reservedPlans = feePlans.filter(p => p.plan_type === "RESERVED");
@@ -164,7 +194,27 @@ const FeePlans = () => {
           <tbody>
             {plans.map((plan) => (
               <tr key={plan.id}>
-                <td>{plan.plan_name}</td>
+                <td>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <span>{plan.plan_name}</span>
+                    {plan.is_allocated && (
+                      <span
+                        title={`Allocated to ${plan.allocated_count || 1} student(s)`}
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          padding: "2px 8px",
+                          borderRadius: "999px",
+                          background: darkMode ? "rgba(59, 130, 246, 0.18)" : "#eff6ff",
+                          color: darkMode ? "#93c5fd" : "#1d4ed8",
+                          border: `1px solid ${darkMode ? "rgba(59, 130, 246, 0.35)" : "#bfdbfe"}`,
+                        }}
+                      >
+                        Allocated ({plan.allocated_count || 1})
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td>{plan.duration_days} days</td>
                 <td>₹{plan.amount}</td>
                 <td>
@@ -179,15 +229,29 @@ const FeePlans = () => {
                         Edit
                       </button>
                       <button
+                        type="button"
                         className={plan.is_active ? "deactivate-btn" : "edit-btn"}
                         style={!plan.is_active ? { background: "#22c55e", color: "white" } : {}}
+                        disabled={isRowBusy}
                         onClick={() => handleToggleStatus(plan)}
                       >
                         {plan.is_active ? "Deactivate" : "Activate"}
                       </button>
                       <button
+                        type="button"
                         className="delete-btn"
-                        onClick={() => handleDelete(plan.id)}
+                        disabled={Boolean(plan.is_allocated) || isRowBusy}
+                        title={
+                          plan.is_allocated
+                            ? `Allocated to ${plan.allocated_count || 1} student(s) — deactivate instead of deleting`
+                            : "Delete fee plan permanently"
+                        }
+                        style={
+                          plan.is_allocated
+                            ? { opacity: 0.45, cursor: "not-allowed" }
+                            : undefined
+                        }
+                        onClick={() => handleDelete(plan)}
                       >
                         Delete
                       </button>
@@ -200,7 +264,7 @@ const FeePlans = () => {
         </table>
 
         {plans.length === 0 && (
-          <p className="empty-text">{emptyMsg}</p>
+          <p className="empty-text">{isLoading && feePlans.length === 0 ? "Loading fee plans..." : emptyMsg}</p>
         )}
       </>
     );
@@ -223,7 +287,27 @@ const FeePlans = () => {
           <tbody>
             {plans.map((plan) => (
               <tr key={plan.id}>
-                <td>{plan.plan_name}</td>
+                <td>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <span>{plan.plan_name}</span>
+                    {plan.is_allocated && (
+                      <span
+                        title={`Allocated to ${plan.allocated_count || 1} student(s)`}
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          padding: "2px 8px",
+                          borderRadius: "999px",
+                          background: darkMode ? "rgba(59, 130, 246, 0.18)" : "#eff6ff",
+                          color: darkMode ? "#93c5fd" : "#1d4ed8",
+                          border: `1px solid ${darkMode ? "rgba(59, 130, 246, 0.35)" : "#bfdbfe"}`,
+                        }}
+                      >
+                        Allocated ({plan.allocated_count || 1})
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td>{plan.duration_days} days</td>
                 <td>₹{plan.amount}</td>
                 <td>
@@ -238,15 +322,29 @@ const FeePlans = () => {
                         Edit
                       </button>
                       <button
+                        type="button"
                         className={plan.is_active ? "deactivate-btn" : "edit-btn"}
                         style={!plan.is_active ? { background: "#22c55e", color: "white" } : {}}
+                        disabled={isRowBusy}
                         onClick={() => handleToggleStatus(plan)}
                       >
                         {plan.is_active ? "Deactivate" : "Activate"}
                       </button>
                       <button
+                        type="button"
                         className="delete-btn"
-                        onClick={() => handleDelete(plan.id)}
+                        disabled={Boolean(plan.is_allocated) || isRowBusy}
+                        title={
+                          plan.is_allocated
+                            ? `Allocated to ${plan.allocated_count || 1} student(s) — deactivate instead of deleting`
+                            : "Delete fee plan permanently"
+                        }
+                        style={
+                          plan.is_allocated
+                            ? { opacity: 0.45, cursor: "not-allowed" }
+                            : undefined
+                        }
+                        onClick={() => handleDelete(plan)}
                       >
                         Delete
                       </button>
@@ -259,7 +357,7 @@ const FeePlans = () => {
         </table>
 
         {plans.length === 0 && (
-          <p className="empty-text">{emptyMsg}</p>
+          <p className="empty-text">{isLoading && feePlans.length === 0 ? "Loading fee plans..." : emptyMsg}</p>
         )}
       </>
     );
@@ -295,8 +393,10 @@ const FeePlans = () => {
                         Edit
                       </button>
                       <button
+                        type="button"
                         className={plan.is_active ? "deactivate-btn" : "edit-btn"}
                         style={!plan.is_active ? { background: "#22c55e", color: "white" } : {}}
+                        disabled={isRowBusy}
                         onClick={() => handleToggleStatus(plan)}
                       >
                         {plan.is_active ? "Deactivate" : "Activate"}
@@ -332,13 +432,21 @@ const FeePlans = () => {
       </div>
 
       {showForm && isOwner && (
-        <div className="form-card">
+        <div
+          ref={formRef}
+          className="form-card"
+          style={{
+            scrollMarginTop: "88px",
+            ...(editingPlanId ? { border: "2px solid #3b82f6" } : {}),
+          }}
+        >
           <h2>{formData.plan_type === "REGISTRATION" ? "Edit Registration Fee Plan" : (editingPlanId ? "Edit Fee Plan" : "Add Fee Plan")}</h2>
 
           <form onSubmit={handleSubmit} className="student-form">
             <div className="form-group">
               <label>Plan Name *</label>
               <input
+                ref={nameInputRef}
                 type="text"
                 name="plan_name"
                 value={formData.plan_name}
@@ -386,11 +494,11 @@ const FeePlans = () => {
             </div>
 
             <div className="form-actions">
-              <button type="submit" className="primary-btn">
-                {editingPlanId ? "Update Plan" : "Save Plan"}
+              <button type="submit" className="primary-btn" disabled={isSubmitting}>
+                {isSubmitting ? "Saving..." : editingPlanId ? "Update Plan" : "Save Plan"}
               </button>
 
-              <button type="button" className="secondary-btn" onClick={closeForm}>
+              <button type="button" className="secondary-btn" onClick={closeForm} disabled={isSubmitting}>
                 Cancel
               </button>
             </div>

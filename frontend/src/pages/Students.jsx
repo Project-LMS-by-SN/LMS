@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSubmitLock } from "../hooks/useSubmitLock";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FaSearch, FaTimes, FaTrash, FaCreditCard, FaClock, FaCalendarAlt, FaArrowLeft, FaEdit, FaWhatsapp, FaCheckCircle, FaTimesCircle, FaDownload } from "react-icons/fa";
 import { SiGmail } from "react-icons/si";
-import { generateStudentInvoicePdf, sendInvoiceOnWhatsApp, sendInvoiceOnGmail } from "../utils/studentInvoicePdf";
+import {
+  generateStudentInvoicePdf,
+  sendInvoiceOnWhatsApp,
+  sendInvoiceOnGmail,
+  normalizeWhatsAppPhone,
+} from "../utils/studentInvoicePdf";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
@@ -72,8 +78,9 @@ const getSeatColorForEdit = (seat, selectedShiftIds, selectedSeatId, profileData
 };
 
 const Students = () => {
-  const { darkMode, timeFormat } = useTheme();
+  const { darkMode } = useTheme();
   const queryClient = useQueryClient();
+  const { isSubmitting: studentActionBusy, runWithLock: runStudentActionWithLock } = useSubmitLock();
 
   const formatReadableDate = (dateStr) => {
     if (!dateStr) return "—";
@@ -200,30 +207,32 @@ const Students = () => {
   }, []);
 
   const handleToggleStudentStatus = async (student) => {
-    const newStatus = canManuallyActivateMember(student) ? "ACTIVE" : "DISABLED";
-    const confirmMsg = newStatus === "DISABLED"
-      ? `Are you sure you want to disable ${student.full_name}? Their assigned seat will be released.`
-      : `Are you sure you want to activate ${student.full_name}?`;
-    if (!window.confirm(confirmMsg)) return;
+    await runStudentActionWithLock(async () => {
+      const newStatus = canManuallyActivateMember(student) ? "ACTIVE" : "DISABLED";
+      const confirmMsg = newStatus === "DISABLED"
+        ? `Are you sure you want to disable ${student.full_name}? Their assigned seat will be released.`
+        : `Are you sure you want to activate ${student.full_name}?`;
+      if (!window.confirm(confirmMsg)) return;
 
-    try {
-      const res = await api.put(`/students/${student.id}`, { account_status: newStatus });
-      const resData = res.data?.data;
-      if (newStatus === "ACTIVE" && resData?.account_status && resData.account_status !== "ACTIVE") {
-        alert(res.data?.message || `Member status updated to ${resData.account_status}. Collect fees to activate to Active.`);
-      } else if (newStatus === "ACTIVE" && resData?.seat_reassignment_required) {
-        alert(resData.seat_prompt || "Seat was reassigned. Please allocate a new seat.");
-        openProfile({ ...student, account_status: "ACTIVE" });
-      } else if (newStatus === "ACTIVE" && resData?.restored_seat_number) {
-        alert(`Student activated and Seat ${resData.restored_seat_number} restored.`);
-      } else {
-        alert(`Student successfully ${newStatus === "DISABLED" ? "disabled (seat unassigned)" : "activated"}`);
+      try {
+        const res = await api.put(`/students/${student.id}`, { account_status: newStatus });
+        const resData = res.data?.data;
+        if (newStatus === "ACTIVE" && resData?.account_status && resData.account_status !== "ACTIVE") {
+          alert(res.data?.message || `Member status updated to ${resData.account_status}. Collect fees to activate to Active.`);
+        } else if (newStatus === "ACTIVE" && resData?.seat_reassignment_required) {
+          alert(resData.seat_prompt || "Seat was reassigned. Please allocate a new seat.");
+          openProfile({ ...student, account_status: "ACTIVE" });
+        } else if (newStatus === "ACTIVE" && resData?.restored_seat_number) {
+          alert(`Student activated and Seat ${resData.restored_seat_number} restored.`);
+        } else {
+          alert(`Student successfully ${newStatus === "DISABLED" ? "disabled (seat unassigned)" : "activated"}`);
+        }
+        fetchStudents();
+        queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+      } catch (error) {
+        alert(error.response?.data?.message || "Failed to update status");
       }
-      fetchStudents();
-      queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
-    } catch (error) {
-      alert(error.response?.data?.message || "Failed to update status");
-    }
+    });
   };
 
   useEffect(() => {
@@ -303,13 +312,13 @@ const Students = () => {
   const handleSendWhatsApp = () => {
     const message = getWhatsAppMessage();
     if (!message.trim()) return;
-    const mobile = profileData?.mobile?.replace(/[^0-9]/g, "");
+    const mobile = normalizeWhatsAppPhone(profileData?.mobile);
     if (!mobile) {
-      alert("No mobile number found for this student");
+      alert("No valid mobile number found for this student");
       return;
     }
     const encodedMsg = encodeURIComponent(message);
-    window.open(`https://wa.me/${mobile}?text=${encodedMsg}`, "_blank");
+    window.open(`https://wa.me/${mobile}?text=${encodedMsg}`, "_blank", "noopener,noreferrer");
   };
 
   const getModalMessage = () => {
@@ -336,54 +345,59 @@ const Students = () => {
     const message = getModalMessage();
     if (!message.trim()) return;
     const sd = profileData || quickMsgStudent;
-    const mobile = sd?.mobile?.replace(/[^0-9]/g, "");
-    if (!mobile) { alert("No mobile number found"); return; }
-    window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(message)}`, "_blank");
+    const mobile = normalizeWhatsAppPhone(sd?.mobile);
+    if (!mobile) { alert("No valid mobile number found"); return; }
+    window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
     setShowMsgModal(false);
     setQuickMsgStudent(null);
   };
 
   const handleDeleteAdmission = async () => {
-    const confirmDelete = window.confirm(
-      "Are you sure you want to delete this admission? This will soft-delete the student. Payments and attendance data will be preserved."
-    );
-    if (!confirmDelete) return;
-    try {
-      await api.delete(`/students/${selectedStudent.id}`);
-      alert("Admission deleted successfully");
-      closeProfile();
-      fetchStudents();
-      queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
-    } catch (error) {
-      alert(error.response?.data?.message || "Failed to delete admission");
-    }
+    await runStudentActionWithLock(async () => {
+      const confirmDelete = window.confirm(
+        "Are you sure you want to delete this admission? This will soft-delete the student. Payments and attendance data will be preserved."
+      );
+      if (!confirmDelete) return;
+      try {
+        await api.delete(`/students/${selectedStudent.id}`);
+        closeProfile();
+        fetchStudents();
+        queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+        queryClient.invalidateQueries({ queryKey: ["feePlansAll"] });
+        alert("Admission deleted successfully");
+      } catch (error) {
+        alert(error.response?.data?.message || "Failed to delete admission");
+      }
+    });
   };
 
   const handleToggleStatus = async () => {
-    const newStatus = canManuallyActivateMember(profileData) ? "ACTIVE" : "DISABLED";
-    const confirmMsg = newStatus === "DISABLED"
-      ? "Are you sure you want to disable this member? Their assigned seat will be unassigned."
-      : "Are you sure you want to activate this member?";
-    if (!window.confirm(confirmMsg)) return;
+    await runStudentActionWithLock(async () => {
+      const newStatus = canManuallyActivateMember(profileData) ? "ACTIVE" : "DISABLED";
+      const confirmMsg = newStatus === "DISABLED"
+        ? "Are you sure you want to disable this member? Their assigned seat will be unassigned."
+        : "Are you sure you want to activate this member?";
+      if (!window.confirm(confirmMsg)) return;
 
-    try {
-      const res = await api.put(`/students/${selectedStudent.id}`, { account_status: newStatus });
-      const resData = res.data?.data;
-      await openProfile(selectedStudent);
-      if (newStatus === "ACTIVE" && resData?.account_status && resData.account_status !== "ACTIVE") {
-        alert(res.data?.message || `Member status updated to ${resData.account_status}. Collect fees to activate to Active.`);
-      } else if (newStatus === "ACTIVE" && resData?.seat_reassignment_required) {
-        alert(resData.seat_prompt || "Seat was reassigned. Please allocate a new seat.");
-      } else if (newStatus === "ACTIVE" && resData?.restored_seat_number) {
-        alert(`Student activated and Seat ${resData.restored_seat_number} restored.`);
-      } else {
-        alert(`Student successfully ${newStatus === "DISABLED" ? "disabled (seat unassigned)" : "activated"}`);
+      try {
+        const res = await api.put(`/students/${selectedStudent.id}`, { account_status: newStatus });
+        const resData = res.data?.data;
+        await openProfile(selectedStudent);
+        if (newStatus === "ACTIVE" && resData?.account_status && resData.account_status !== "ACTIVE") {
+          alert(res.data?.message || `Member status updated to ${resData.account_status}. Collect fees to activate to Active.`);
+        } else if (newStatus === "ACTIVE" && resData?.seat_reassignment_required) {
+          alert(resData.seat_prompt || "Seat was reassigned. Please allocate a new seat.");
+        } else if (newStatus === "ACTIVE" && resData?.restored_seat_number) {
+          alert(`Student activated and Seat ${resData.restored_seat_number} restored.`);
+        } else {
+          alert(`Student successfully ${newStatus === "DISABLED" ? "disabled (seat unassigned)" : "activated"}`);
+        }
+        fetchStudents();
+        queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+      } catch (error) {
+        alert(error.response?.data?.message || "Failed to update status");
       }
-      fetchStudents();
-      queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
-    } catch (error) {
-      alert(error.response?.data?.message || "Failed to update status");
-    }
+    });
   };
 
   const handleEditChange = (field, value) => {
@@ -452,35 +466,38 @@ const Students = () => {
   };
 
   const handleSaveEdit = async () => {
-    setEditSaving(true);
-    try {
-      await api.put(`/students/${selectedStudent.id}`, {
-        full_name: editForm.full_name,
-        mobile: editForm.mobile,
-        email: editForm.email,
-        gender: editForm.gender,
-        dob: editForm.dob,
-        admission_date: editForm.admission_date,
-        aadhar_number: editForm.aadhar_number,
-        address: editForm.address,
-        reg_no: editForm.reg_no,
-      });
-      await api.put(`/students/${selectedStudent.id}/details`, {
-        shift_ids: editForm.shift_ids || [],
-        seat_id: editForm.seat_id || null,
-        fee_plan_id: editForm.fee_plan_id || null,
-        access_type: editForm.access_type || null,
-      });
-      alert("Student profile updated successfully!");
-      openProfile(selectedStudent);
-      setEditingStudent(false);
-      fetchStudents();
-      queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
-    } catch (error) {
-      alert(error.response?.data?.message || "Failed to update profile");
-    } finally {
-      setEditSaving(false);
-    }
+    await runStudentActionWithLock(async () => {
+      setEditSaving(true);
+      try {
+        await api.put(`/students/${selectedStudent.id}`, {
+          full_name: editForm.full_name,
+          mobile: editForm.mobile,
+          email: editForm.email,
+          gender: editForm.gender,
+          dob: editForm.dob,
+          admission_date: editForm.admission_date,
+          aadhar_number: editForm.aadhar_number,
+          address: editForm.address,
+          reg_no: editForm.reg_no,
+        });
+        await api.put(`/students/${selectedStudent.id}/details`, {
+          shift_ids: editForm.shift_ids || [],
+          seat_id: editForm.seat_id || null,
+          fee_plan_id: editForm.fee_plan_id || null,
+          access_type: editForm.access_type || null,
+        });
+        alert("Student profile updated successfully!");
+        openProfile(selectedStudent);
+        setEditingStudent(false);
+        fetchStudents();
+        queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+        queryClient.invalidateQueries({ queryKey: ["feePlansAll"] });
+      } catch (error) {
+        alert(error.response?.data?.message || "Failed to update profile");
+      } finally {
+        setEditSaving(false);
+      }
+    });
   };
 
   const getStatusCounts = () => computeStatusCounts(students, accessTypeFilter);
@@ -746,7 +763,7 @@ const Students = () => {
                         <div className="profile-info-group">
                           <div className="profile-info-label">Timing</div>
                           <div className="profile-info-value" style={{ color: textPrimary }}>
-                            {formatTime(sa.start_time, timeFormat)} - {formatTime(sa.end_time, timeFormat)}
+                            {formatTime(sa.start_time, "12hr")} - {formatTime(sa.end_time, "12hr")}
                           </div>
                         </div>
                         <div className="profile-info-group" style={{ gridColumn: "span 2" }}>
@@ -804,6 +821,7 @@ const Students = () => {
                           ? "Suspended/Inactive members become Active only after clearing fees in Collect Fee. Click to disable member."
                           : "Disable member"
                       }
+                      disabled={studentActionBusy}
                       onClick={handleToggleStatus}
                     >
                       {showActivate ? "Activate Member" : "Disable Member"}
@@ -819,6 +837,7 @@ const Students = () => {
                         borderRadius: "10px",
                         whiteSpace: "nowrap",
                       }}
+                      disabled={studentActionBusy}
                       onClick={handleDeleteAdmission}
                     >
                       <FaTrash style={{ marginRight: "6px" }} /> Delete Admission
@@ -1107,9 +1126,9 @@ const Students = () => {
                                 <br />
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}><FaCheckCircle /> Present</span>
                                 <br />
-                                In: {record.check_in_time || "—"}
+                                In: {record.check_in_time ? formatTime(record.check_in_time, "12hr") : "—"}
                                 <br />
-                                Out: {record.check_out_time || "—"}
+                                Out: {record.check_out_time ? formatTime(record.check_out_time, "12hr") : "—"}
                               </div>
                             );
                           } else if (record.status === "ABSENT") {
@@ -1175,7 +1194,7 @@ const Students = () => {
                                     {p.payment_date ? p.payment_date.split(" ")[0] : ""}
                                   </div>
                                   <div style={{ fontSize: "11px", color: textSecondary, marginTop: "2px" }}>
-                                    {formatTime(p.payment_date ? p.payment_date.split(" ").slice(1).join(" ") : "", timeFormat)}
+                                    {formatTime(p.payment_date ? p.payment_date.split(" ").slice(1).join(" ") : "", "12hr")}
                                   </div>
                                 </td>
                                 <td style={{ padding: "12px 10px", textAlign: "center" }}>
@@ -1567,32 +1586,40 @@ const Students = () => {
                         <label style={{ fontSize: "13px", fontWeight: 600, color: textSecondary }}>Shifts *</label>
                         <span style={{ fontSize: "11px", color: "#ef4444", fontWeight: 500 }}>(Uncheck a shift to remove/delete it)</span>
                       </div>
-                      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const allIds = shifts.map(s => s.id);
-                            handleEditChange("shift_ids", editForm.shift_ids?.length === allIds.length ? [] : allIds);
-                          }}
-                          style={{
-                            padding: '8px 18px', borderRadius: '8px',
-                            border: `2px solid ${editForm.shift_ids?.length === shifts.length && shifts.length > 0 ? '#2563eb' : '#d4d4d8'}`,
-                            background: editForm.shift_ids?.length === shifts.length && shifts.length > 0 ? '#eff6ff' : '#FCFBF9',
-                            color: editForm.shift_ids?.length === shifts.length && shifts.length > 0 ? '#2563eb' : '#64748b',
-                            fontWeight: 600, fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
-                          }}
-                        >
-                          Full Day {editForm.shift_ids?.length === shifts.length && shifts.length > 0 && <FaCheckCircle style={{ marginLeft: "4px" }} />}
-                        </button>
-                        {editForm.shift_ids?.length > 0 && editForm.shift_ids.length < shifts.length && (
-                          <span style={{
-                            padding: '8px 18px', borderRadius: '8px', border: '2px solid #f59e0b',
-                            background: '#fffbeb', color: '#d97706', fontWeight: 600, fontSize: '13px',
-                          }}>
-                            Custom
-                          </span>
-                        )}
-                      </div>
+                      {(() => {
+                        const activeShiftIds = shifts
+                          .filter(s => s.isActive !== false && s.is_active !== false)
+                          .map(s => s.id);
+                        const selectedIds = editForm.shift_ids || [];
+                        const isFullDayEdit = activeShiftIds.length > 0 && activeShiftIds.every(id => selectedIds.includes(id));
+                        return (
+                          <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleEditChange("shift_ids", isFullDayEdit ? [] : activeShiftIds);
+                              }}
+                              style={{
+                                padding: '8px 18px', borderRadius: '8px',
+                                border: `2px solid ${isFullDayEdit ? '#2563eb' : '#d4d4d8'}`,
+                                background: isFullDayEdit ? '#eff6ff' : '#FCFBF9',
+                                color: isFullDayEdit ? '#2563eb' : '#64748b',
+                                fontWeight: 600, fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
+                              }}
+                            >
+                              Full Day{activeShiftIds.length > 0 ? ` (${activeShiftIds.length} Shifts)` : ""} {isFullDayEdit && <FaCheckCircle style={{ marginLeft: "4px" }} />}
+                            </button>
+                            {selectedIds.length > 0 && !isFullDayEdit && (
+                              <span style={{
+                                padding: '8px 18px', borderRadius: '8px', border: '2px solid #f59e0b',
+                                background: '#fffbeb', color: '#d97706', fontWeight: 600, fontSize: '13px',
+                              }}>
+                                Custom
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                         {shifts.map(shift => {
                           const selected = editForm.shift_ids?.includes(shift.id);
@@ -1623,7 +1650,7 @@ const Students = () => {
                               <div>
                                 <div style={{ fontWeight: 600, fontSize: '14px', color: textPrimary }}>{shift.shiftName}</div>
                                 <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-                                  {formatTime(shift.startTime?.slice(0, 5), timeFormat)} - {formatTime(shift.endTime?.slice(0, 5), timeFormat)}
+                                  {formatTime(shift.startTime?.slice(0, 5), "12hr")} - {formatTime(shift.endTime?.slice(0, 5), "12hr")}
                                 </div>
                               </div>
                             </div>
@@ -2332,6 +2359,7 @@ const Students = () => {
                                   ? 'Suspended/Inactive members become Active only after clearing fees in Collect Fee. Click to disable member.'
                                   : 'Disable member'
                               }
+                              disabled={studentActionBusy}
                               onClick={() => handleToggleStudentStatus(student)}
                               onMouseEnter={(e) => {
                                 e.currentTarget.style.backgroundColor = showActivate ? '#dcfce7' : '#fecaca';

@@ -33,6 +33,7 @@ const PublicAdmission = () => {
   const [photoPreview, setPhotoPreview] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
+  const submitLockRef = useRef(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(null);
@@ -115,6 +116,7 @@ const PublicAdmission = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitLockRef.current) return;
     setSubmitError("");
 
     if (!formData.fullName.trim()) {
@@ -139,6 +141,7 @@ const PublicAdmission = () => {
       return;
     }
 
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       const payload = {
@@ -163,6 +166,7 @@ const PublicAdmission = () => {
     } catch (err) {
       setSubmitError(err.response?.data?.message || "Submission failed. Please check your details and try again.");
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };

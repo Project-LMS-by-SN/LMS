@@ -18,7 +18,7 @@ const Payments = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState("30d");
   const [customDate, setCustomDate] = useState("");
-  const { darkMode, timeFormat } = useTheme();
+  const { darkMode } = useTheme();
 
   const DATE_FILTERS = [
     { label: "All time", value: "all" },
@@ -289,7 +289,7 @@ const Payments = () => {
                     {payment.payment_date ? payment.payment_date.split(" ")[0] : ""}
                   </div>
                   <div style={{ fontSize: "11px", color: textMuted, marginTop: "2px" }}>
-                    {formatTime(payment.payment_date ? payment.payment_date.split(" ").slice(1).join(" ") : "", timeFormat)}
+                    {formatTime(payment.payment_date ? payment.payment_date.split(" ").slice(1).join(" ") : "", "12hr")}
                   </div>
                 </td>
                 <td style={{ padding: "12px", textAlign: "center" }}>

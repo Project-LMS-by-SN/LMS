@@ -1,6 +1,28 @@
 const mongoClient = require("../config/mongoClient");
 const cache = require("../utils/cache");
 
+// Per-branch mutex so concurrent double-click requests cannot race past overlap/duplicate checks
+const branchShiftLocks = new Map();
+const withBranchShiftLock = async (branchId, task) => {
+  const key = String(branchId ?? "default");
+  const prev = branchShiftLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  const chained = prev.then(() => current);
+  branchShiftLocks.set(key, chained);
+  await prev;
+  try {
+    return await task();
+  } finally {
+    release();
+    if (branchShiftLocks.get(key) === chained) {
+      branchShiftLocks.delete(key);
+    }
+  }
+};
+
 const formatShift = (s) => ({
   id: s.id,
   shift_name: s.shiftName,
@@ -9,14 +31,59 @@ const formatShift = (s) => ({
   is_active: s.isActive,
 });
 
+const parseShiftMinutes = (t) => {
+  if (!t) return null;
+  const raw = String(t).trim().toUpperCase();
+  const hasPM = raw.includes("PM");
+  const hasAM = raw.includes("AM");
+  const cleaned = raw.replace(/[^0-9:]/g, "");
+  const parts = cleaned.split(":");
+  if (parts.length < 2 || parts[0] === "" || parts[1] === "") return null;
+
+  let h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1].slice(0, 2), 10);
+  if (isNaN(h) || isNaN(m) || m < 0 || m > 59) return null;
+
+  if (hasPM || hasAM) {
+    if (h < 1 || h > 12) return null;
+    if (hasPM && h < 12) h += 12;
+    if (hasAM && h === 12) h = 0;
+  } else if (h < 0 || h > 23) {
+    return null;
+  }
+
+  return h * 60 + m;
+};
+
+const formatShiftTime12Hr = (t) => {
+  const mins = parseShiftMinutes(t);
+  if (mins === null) return String(t || "").slice(0, 5);
+  const h24 = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  const period = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 || 12;
+  return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
+};
+
 const checkTimeOverlap = (start1, end1, start2, end2) => {
-  const toMinutes = (t) => {
-    const [h, m] = t.split(":").map(Number);
-    return h * 60 + m;
-  };
-  const s1 = toMinutes(start1), e1 = toMinutes(end1);
-  const s2 = toMinutes(start2), e2 = toMinutes(end2);
-  return s1 < e2 && s2 < e1;
+  const s1 = parseShiftMinutes(start1);
+  const e1Raw = parseShiftMinutes(end1);
+  const s2 = parseShiftMinutes(start2);
+  const e2Raw = parseShiftMinutes(end2);
+  if (s1 === null || e1Raw === null || s2 === null || e2Raw === null) return false;
+  if (s1 === e1Raw || s2 === e2Raw) return true;
+
+  const e1 = e1Raw > s1 ? e1Raw : e1Raw + 1440;
+  const e2 = e2Raw > s2 ? e2Raw : e2Raw + 1440;
+
+  for (const offset of [-1440, 0, 1440]) {
+    const oStart = s2 + offset;
+    const oEnd = e2 + offset;
+    if (s1 < oEnd && oStart < e1) {
+      return true;
+    }
+  }
+  return false;
 };
 
 const getShifts = async (req, res) => {
@@ -67,24 +134,48 @@ const createShift = async (req, res) => {
       });
     }
 
-    // Check overlap with existing active shifts (same branch only)
-    const activeShifts = await mongoClient.shift.findMany({ where: { isActive: true, branchId: req.user.branchId } });
-    for (const existing of activeShifts) {
-      if (checkTimeOverlap(start_time, end_time, existing.startTime, existing.endTime)) {
-        return res.status(400).json({
-          success: false,
-          message: `Time overlap with "${existing.shiftName}" (${existing.startTime.slice(0, 5)} - ${existing.endTime.slice(0, 5)})`,
-        });
-      }
+    const startMins = parseShiftMinutes(start_time);
+    const endMins = parseShiftMinutes(end_time);
+    if (startMins === null || endMins === null) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid start_time or end_time format",
+      });
+    }
+    if (startMins === endMins) {
+      return res.status(400).json({
+        success: false,
+        message: "Start time and end time cannot be the same",
+      });
     }
 
-    const newShift = await mongoClient.shift.create({
-      data: {
-        shiftName: shift_name,
-        startTime: start_time,
-        endTime: end_time,
-        branchId: req.user.branchId,
-      },
+    const newShift = await withBranchShiftLock(req.user.branchId, async () => {
+      // Re-check inside per-branch lock so concurrent requests cannot race past overlap/duplicate checks
+      const activeShifts = await mongoClient.shift.findMany({ where: { isActive: true, branchId: req.user.branchId } });
+      const trimmedName = String(shift_name).trim().toLowerCase();
+      for (const existing of activeShifts) {
+        if (String(existing.shiftName || "").trim().toLowerCase() === trimmedName) {
+          const dupErr = new Error("Shift name already exists in this branch");
+          dupErr.statusCode = 409;
+          throw dupErr;
+        }
+        if (checkTimeOverlap(start_time, end_time, existing.startTime, existing.endTime)) {
+          const overlapErr = new Error(
+            `Time overlap with "${existing.shiftName}" (${formatShiftTime12Hr(existing.startTime)} - ${formatShiftTime12Hr(existing.endTime)})`
+          );
+          overlapErr.statusCode = 400;
+          throw overlapErr;
+        }
+      }
+
+      return mongoClient.shift.create({
+        data: {
+          shiftName: String(shift_name).trim(),
+          startTime: start_time,
+          endTime: end_time,
+          branchId: req.user.branchId,
+        },
+      });
     });
 
     cache.invalidateBranch(req.user.branchId);
@@ -95,6 +186,12 @@ const createShift = async (req, res) => {
       data: formatShift(newShift),
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
     if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -212,41 +309,62 @@ const updateShift = async (req, res) => {
       });
     }
 
-    const shiftId = parseInt(id);
-
-    const existingShift = await mongoClient.shift.findFirst({
-      where: { id: shiftId, branchId: req.user.branchId },
-    });
-
-    if (!existingShift) {
-      return res.status(404).json({
+    const startMins = parseShiftMinutes(start_time);
+    const endMins = parseShiftMinutes(end_time);
+    if (startMins === null || endMins === null) {
+      return res.status(400).json({
         success: false,
-        message: "Shift not found",
+        message: "Invalid start_time or end_time format",
+      });
+    }
+    if (startMins === endMins) {
+      return res.status(400).json({
+        success: false,
+        message: "Start time and end time cannot be the same",
       });
     }
 
-    // Check overlap with other active shifts (same branch, excluding itself)
-    const otherShifts = await mongoClient.shift.findMany({
-      where: { isActive: true, id: { not: shiftId }, branchId: req.user.branchId },
-    });
-    for (const other of otherShifts) {
-      if (checkTimeOverlap(start_time, end_time, other.startTime, other.endTime)) {
-        return res.status(400).json({
-          success: false,
-          message: `Time overlap with "${other.shiftName}" (${other.startTime.slice(0, 5)} - ${other.endTime.slice(0, 5)})`,
-        });
-      }
-    }
+    const shiftId = parseInt(id);
 
-    const updatedShift = await mongoClient.shift.update({
-      where: { id: shiftId },
-      data: {
-        shiftName: shift_name,
-        startTime: start_time,
-        endTime: end_time,
-        isActive: is_active !== undefined ? Boolean(is_active) : existingShift.isActive,
-        updatedAt: new Date(),
-      },
+    const updatedShift = await withBranchShiftLock(req.user.branchId, async () => {
+      const existingShift = await mongoClient.shift.findFirst({
+        where: { id: shiftId, branchId: req.user.branchId },
+      });
+
+      if (!existingShift) {
+        const notFoundErr = new Error("Shift not found");
+        notFoundErr.statusCode = 404;
+        throw notFoundErr;
+      }
+
+      const willBeActive = is_active !== undefined ? Boolean(is_active) : existingShift.isActive;
+
+      // Check overlap with other active shifts (same branch, excluding itself)
+      if (willBeActive) {
+        const otherShifts = await mongoClient.shift.findMany({
+          where: { isActive: true, id: { not: shiftId }, branchId: req.user.branchId },
+        });
+        for (const other of otherShifts) {
+          if (checkTimeOverlap(start_time, end_time, other.startTime, other.endTime)) {
+            const overlapErr = new Error(
+              `Time overlap with "${other.shiftName}" (${formatShiftTime12Hr(other.startTime)} - ${formatShiftTime12Hr(other.endTime)})`
+            );
+            overlapErr.statusCode = 400;
+            throw overlapErr;
+          }
+        }
+      }
+
+      return mongoClient.shift.update({
+        where: { id: shiftId },
+        data: {
+          shiftName: String(shift_name).trim(),
+          startTime: start_time,
+          endTime: end_time,
+          isActive: is_active !== undefined ? Boolean(is_active) : existingShift.isActive,
+          updatedAt: new Date(),
+        },
+      });
     });
 
     cache.invalidateBranch(req.user.branchId);
@@ -257,6 +375,12 @@ const updateShift = async (req, res) => {
       data: formatShift(updatedShift),
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
     if (error.code === "P2002" || error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -277,4 +401,6 @@ module.exports = {
   createShift,
   updateShift,
   deleteShift,
+  checkTimeOverlap,
+  parseShiftMinutes,
 };

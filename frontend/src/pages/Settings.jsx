@@ -1174,7 +1174,7 @@ const Settings = () => {
                             </span>
                           )}
                         </td>
-                        <td style={{ padding: "10px", color: textSecondary }}>{member.lastLogin ? new Date(member.lastLogin).toLocaleString() : "Never"}</td>
+                        <td style={{ padding: "10px", color: textSecondary }}>{member.lastLogin ? new Date(member.lastLogin).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }) : "Never"}</td>
                         <td style={{ padding: "10px", textAlign: "right", display: "flex", gap: "10px", justifyContent: "flex-end" }}>
                           <button
                             type="button"
