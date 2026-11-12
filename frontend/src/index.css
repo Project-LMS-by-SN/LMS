@@ -490,6 +490,10 @@ body.dark .main-content::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(135deg, #ef4444, #dc2626);
 }
 
+.rose {
+  background: linear-gradient(135deg, #f43f5e, #e11d48);
+}
+
 .page {
   padding: 24px 32px;
 }

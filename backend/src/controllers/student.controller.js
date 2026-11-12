@@ -3,9 +3,29 @@ const mongoClient = require("../config/mongoClient");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const emailFrom = process.env.EMAIL_FROM || "noreply@dashurl.in";
-const { formatDateStr, formatDateTimeStr, parsePaymentDate, generateInvoiceNo } = require("../utils/format");
-const { clearStatsCache } = require("./dashboard.controller");
+const {
+  formatDateStr,
+  formatDateTimeStr,
+  parsePaymentDate,
+  generateInvoiceNo,
+  getISTTimeParts,
+  addDaysToYmd,
+} = require("../utils/format");
+const clearStatsCache = () => {
+  try {
+    const dashboardController = require("./dashboard.controller");
+    if (typeof dashboardController?.clearStatsCache === "function") {
+      dashboardController.clearStatsCache();
+    }
+  } catch (e) {}
+};
 const cache = require("../utils/cache");
+const { evaluateStudentLifecycle } = require("../utils/studentStatus");
+const {
+  releaseStudentSeats,
+  reconcileInactiveStudentSeats,
+  attemptSeatRecoveryOnReactivation,
+} = require("../utils/seatLifecycle");
 
 const formatStudent = (s) => ({
   id: s.id,
@@ -47,21 +67,26 @@ const logAction = async (action, tableName, recordId, oldValues, newValues, user
 const lastAutoSuspendRun = new Map();
 const AUTO_SUSPEND_INTERVAL_MS = 5 * 60 * 1000;
 
-const autoSuspendExpiredStudents = async (branchId) => {
+const resetAutoSuspendThrottle = (branchId) => {
+  if (branchId === undefined) {
+    lastAutoSuspendRun.clear();
+  } else {
+    lastAutoSuspendRun.delete(branchId || "all");
+  }
+};
+
+const autoSuspendExpiredStudents = async (branchId, { force = false } = {}) => {
   try {
     const key = branchId || "all";
-    const now = Date.now();
+    const nowMs = Date.now();
     const lastRun = lastAutoSuspendRun.get(key) || 0;
-    if (now - lastRun < AUTO_SUSPEND_INTERVAL_MS) return;
-    lastAutoSuspendRun.set(key, now);
+    if (!force && nowMs - lastRun < AUTO_SUSPEND_INTERVAL_MS) return;
+    lastAutoSuspendRun.set(key, nowMs);
 
-    const nowDate = new Date();
-    const sevenDaysAgo = new Date(nowDate.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const twentyDaysAgo = new Date(nowDate.getTime() - 20 * 24 * 60 * 60 * 1000);
-
+    const now = new Date();
     const students = await mongoClient.student.findMany({
       where: {
-        accountStatus: { in: ["ACTIVE", "SUSPENDED"] },
+        accountStatus: { in: ["ACTIVE", "SUSPENDED", "INACTIVE"] },
         deletedAt: null,
         ...(branchId ? { branchId } : {}),
       },
@@ -76,59 +101,95 @@ const autoSuspendExpiredStudents = async (branchId) => {
 
     const studentsToSuspend = [];
     const studentsToInactive = [];
+    const studentsToActivate = [];
 
     for (const student of students) {
-      const validity = student.validities && student.validities.length > 0 ? student.validities[student.validities.length - 1] : null;
-      if (!validity) {
-        if (student.admissionDate < twentyDaysAgo) {
-          studentsToInactive.push(student.id);
-        } else if (student.admissionDate < sevenDaysAgo) {
-          studentsToSuspend.push(student.id);
-        }
-      } else {
-        const totalAmount = Number(validity.totalAmount || 0);
-        let totalPaid = 0;
-        if (validity.payments) {
-          validity.payments.forEach((p) => {
-            totalPaid += Number(p.amountReceived || 0);
+      const lifecycle = evaluateStudentLifecycle(student, now);
+      const targetStatus = lifecycle.targetAccountStatus;
+
+      if (targetStatus === "INACTIVE" && student.accountStatus !== "INACTIVE") {
+        studentsToInactive.push({
+          id: student.id,
+          from: student.accountStatus,
+          branchId: student.branchId || branchId || 1,
+        });
+      } else if (targetStatus === "SUSPENDED" && student.accountStatus !== "SUSPENDED") {
+        studentsToSuspend.push({
+          id: student.id,
+          from: student.accountStatus,
+          branchId: student.branchId || branchId || 1,
+        });
+      } else if (
+        targetStatus === "ACTIVE" &&
+        (student.accountStatus === "SUSPENDED" || student.accountStatus === "INACTIVE")
+      ) {
+        studentsToActivate.push({
+          id: student.id,
+          from: student.accountStatus,
+          branchId: student.branchId || branchId || 1,
+          validity:
+            student.validities && student.validities.length > 0
+              ? student.validities[student.validities.length - 1]
+              : null,
+        });
+      }
+    }
+
+    if (studentsToActivate.length > 0) {
+      await mongoClient.student.updateMany({
+        where: { id: { in: studentsToActivate.map((s) => s.id) } },
+        data: { accountStatus: "ACTIVE", updatedAt: now },
+      });
+      for (const s of studentsToActivate) {
+        if (s.from === "INACTIVE") {
+          await attemptSeatRecoveryOnReactivation({
+            client: mongoClient,
+            validity: s.validity,
+            studentId: s.id,
+            previousStatus: s.from,
+            newStatus: "ACTIVE",
+            branchId: s.branchId,
           });
         }
-        const dueAmount = totalAmount - totalPaid;
-
-        const endDate = new Date(validity.endDate);
-        const startDate = new Date(validity.startDate);
-        const isExpired = endDate < now;
-        const hasDue = dueAmount > 0;
-
-        if (hasDue || isExpired) {
-          const refDate = isExpired ? endDate : startDate;
-          if (refDate < twentyDaysAgo) {
-            studentsToInactive.push(student.id);
-          } else if (refDate < sevenDaysAgo) {
-            studentsToSuspend.push(student.id);
-          }
-        }
+        await logAction("AUTO_REACTIVATE_STUDENT", "students", s.id, { accountStatus: s.from }, { accountStatus: "ACTIVE" }, null, s.branchId);
       }
     }
 
     if (studentsToSuspend.length > 0) {
       await mongoClient.student.updateMany({
-        where: { id: { in: studentsToSuspend } },
-        data: { accountStatus: "SUSPENDED" },
+        where: { id: { in: studentsToSuspend.map((s) => s.id) } },
+        data: { accountStatus: "SUSPENDED", updatedAt: now },
       });
-      for (const id of studentsToSuspend) {
-        await logAction("AUTO_SUSPEND_STUDENT", "students", id, { accountStatus: "ACTIVE" }, { accountStatus: "SUSPENDED" }, null);
+      for (const s of studentsToSuspend) {
+        await logAction("AUTO_SUSPEND_STUDENT", "students", s.id, { accountStatus: s.from }, { accountStatus: "SUSPENDED" }, null, s.branchId);
       }
     }
 
     if (studentsToInactive.length > 0) {
+      const inactiveIds = studentsToInactive.map((s) => s.id);
+      const { releasedCount } = await releaseStudentSeats(inactiveIds);
       await mongoClient.student.updateMany({
-        where: { id: { in: studentsToInactive } },
-        data: { accountStatus: "INACTIVE" },
+        where: { id: { in: inactiveIds } },
+        data: { accountStatus: "INACTIVE", updatedAt: now },
       });
-      for (const id of studentsToInactive) {
-        await logAction("AUTO_INACTIVE_STUDENT", "students", id, { accountStatus: "SUSPENDED" }, { accountStatus: "INACTIVE" }, null);
+      for (const s of studentsToInactive) {
+        await logAction(
+          "AUTO_INACTIVE_STUDENT",
+          "students",
+          s.id,
+          { accountStatus: s.from },
+          { accountStatus: "INACTIVE", seatsReleased: releasedCount > 0 },
+          null,
+          s.branchId
+        );
       }
+    }
+
+    // Reconcile any legacy INACTIVE or DISABLED records that still have lingering non-null seatId
+    const reconciled = await reconcileInactiveStudentSeats(branchId);
+    if (reconciled > 0) {
+      cache.invalidateBranch(branchId || 1);
+      clearStatsCache();
     }
   } catch (err) {
     console.error("Auto suspend/inactive error:", err);
@@ -218,6 +279,7 @@ const getStudents = async (req, res) => {
       }
 
       const dueAmount = totalAmount - totalPaid;
+      const lifecycle = evaluateStudentLifecycle(s);
 
       return {
         id: s.id,
@@ -233,8 +295,17 @@ const getStudents = async (req, res) => {
         admission_date: formatDateStr(s.admissionDate),
         profile_photo_url: s.profilePhotoUrl,
         account_status: s.accountStatus,
+        derived_status: lifecycle.derivedStatus,
+        days_overdue: lifecycle.daysOverdue,
+        days_remaining: lifecycle.daysRemaining,
         access_type: validity ? validity.accessType : null,
         seat_number: seatNumber,
+        seat_reassignment_needed: Boolean(
+          s.accountStatus === "ACTIVE" &&
+          validity &&
+          validity.accessType === "RESERVED" &&
+          !seatNumber
+        ),
         shift_name: shiftName,
         plan_name: planName,
         end_date: endDate,
@@ -414,8 +485,8 @@ const createStudent = async (req, res) => {
       }
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayYmd = getISTTimeParts().ymd;
+    const today = new Date(`${todayYmd}T00:00:00+05:30`);
 
     const newStudent = await mongoClient.student.create({
       data: {
@@ -445,7 +516,7 @@ const createStudent = async (req, res) => {
     }
 
     // Audit Log
-    await logAction("CREATE_STUDENT", "students", newStudent.id, null, newStudent, req.user ? req.user.id : null);
+    await logAction("CREATE_STUDENT", "students", newStudent.id, null, newStudent, req.user ? req.user.id : null, branchId);
 
     // Send email notifications if created by a STAFF member
     if (req.user && req.user.role === "STAFF") {
@@ -541,7 +612,10 @@ const createStudent = async (req, res) => {
       } catch (e) {}
     }
 
-    try { clearStatsCache(); } catch (e) {}
+    try {
+      clearStatsCache();
+      cache.invalidateBranch(branchId);
+    } catch (e) {}
 
     res.status(201).json({
       success: true,
@@ -641,6 +715,61 @@ const updateStudent = async (req, res) => {
       }
     }
 
+    let nextAccountStatus = account_status !== undefined ? account_status.toUpperCase() : existing.accountStatus;
+    const branchIdResolved = existing.branchId || req.user.branchId;
+
+    if (
+      (existing.accountStatus === "SUSPENDED" || existing.accountStatus === "INACTIVE") &&
+      nextAccountStatus === "ACTIVE"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `${
+          existing.accountStatus === "SUSPENDED" ? "Suspended" : "Inactive"
+        } members can only be activated after clearing pending fees in Collect Fee.`,
+      });
+    }
+
+    let statusNotice = null;
+    if (existing.accountStatus === "DISABLED" && nextAccountStatus === "ACTIVE") {
+      if (
+        mongoClient.studentValidity &&
+        typeof mongoClient.studentValidity.findMany === "function"
+      ) {
+        try {
+          const validities = await mongoClient.studentValidity.findMany({
+            where: { studentId },
+            include: { payments: true },
+            orderBy: { id: "asc" },
+          });
+          if (Array.isArray(validities) && validities.length > 0) {
+            const latestVal = validities[validities.length - 1];
+            const hasCompleteMeta =
+              latestVal &&
+              (latestVal.endDate !== undefined || latestVal.startDate !== undefined) &&
+              Array.isArray(latestVal.payments);
+            if (hasCompleteMeta) {
+              const lifecycle = evaluateStudentLifecycle(
+                { ...existing, accountStatus: "ACTIVE", validities },
+                new Date()
+              );
+              if (lifecycle.targetAccountStatus === "SUSPENDED" || lifecycle.targetAccountStatus === "INACTIVE") {
+                nextAccountStatus = lifecycle.targetAccountStatus;
+                statusNotice =
+                  lifecycle.targetAccountStatus === "SUSPENDED"
+                    ? "Member moved from Disabled to Suspended because pending fees are overdue. Clear dues in Collect Fee to activate."
+                    : "Member moved from Disabled to Inactive because fees are overdue (>20 days). Renew fee plan in Collect Fee to activate.";
+              }
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    if ((nextAccountStatus === "DISABLED" || nextAccountStatus === "INACTIVE") && existing.accountStatus !== nextAccountStatus) {
+      await releaseStudentSeats([studentId]);
+    }
+
     const updated = await mongoClient.student.update({
       where: { id: studentId },
       data: {
@@ -654,21 +783,50 @@ const updateStudent = async (req, res) => {
         address: address !== undefined ? address : existing.address,
         aadharNumber: aadhar_number !== undefined ? aadhar_number : existing.aadharNumber,
         admissionDate: admission_date !== undefined ? (admission_date ? new Date(admission_date) : existing.admissionDate) : existing.admissionDate,
-        accountStatus: account_status !== undefined ? account_status.toUpperCase() : existing.accountStatus,
+        accountStatus: nextAccountStatus,
         profilePhotoUrl: profile_photo_url !== undefined ? profile_photo_url : existing.profilePhotoUrl,
         updatedAt: new Date(),
       },
     });
 
-    // Audit Log
-    await logAction("UPDATE_STUDENT", "students", studentId, existing, updated, req.user ? req.user.id : null);
+    let seatRecovery = {
+      status: "NONE",
+      seat_reassignment_required: false,
+      restored_seat_number: null,
+      previous_seat_number: null,
+      seat_prompt: null,
+    };
+    if (
+      (existing.accountStatus === "INACTIVE" || existing.accountStatus === "DISABLED") &&
+      nextAccountStatus === "ACTIVE"
+    ) {
+      seatRecovery = await attemptSeatRecoveryOnReactivation({
+        client: mongoClient,
+        studentId,
+        previousStatus: existing.accountStatus,
+        newStatus: "ACTIVE",
+        branchId: branchIdResolved,
+      });
+    }
 
-    try { clearStatsCache(); } catch (e) {}
+    // Audit Log
+    await logAction("UPDATE_STUDENT", "students", studentId, existing, updated, req.user ? req.user.id : null, branchIdResolved);
+
+    try {
+      clearStatsCache();
+      cache.invalidateBranch(existing.branchId || (req.user ? req.user.branchId : 1));
+    } catch (e) {}
 
     res.json({
       success: true,
-      message: "Student updated successfully",
-      data: formatStudent(updated),
+      message: statusNotice || seatRecovery.seat_prompt || "Student updated successfully",
+      data: {
+        ...formatStudent(updated),
+        seat_reassignment_required: seatRecovery.seat_reassignment_required,
+        restored_seat_number: seatRecovery.restored_seat_number,
+        previous_seat_number: seatRecovery.previous_seat_number,
+        seat_prompt: seatRecovery.seat_prompt,
+      },
     });
   } catch (error) {
     if (error.code === "P2002" || error.code === 11000) {
@@ -722,11 +880,16 @@ const deleteStudent = async (req, res) => {
     // Release any active seat shift assignments
     await mongoClient.studentShiftAssignment.updateMany({
       where: { validity: { studentId: studentId }, assignmentStatus: "ACTIVE" },
-      data: { assignmentStatus: "ENDED" },
+      data: {
+        assignmentStatus: "ENDED",
+        seatId: null,
+        previousSeatId: null,
+        seatReleasedAt: new Date(),
+      },
     });
 
     // Audit Log
-    await logAction("DELETE_STUDENT", "students", studentId, existing, deleted, req.user ? req.user.id : null);
+    await logAction("DELETE_STUDENT", "students", studentId, existing, deleted, req.user ? req.user.id : null, existing.branchId || req.user.branchId);
 
     res.json({
       success: true,
@@ -884,6 +1047,7 @@ const getStudentProfile = async (req, res) => {
       where: { studentId: studentId },
       include: {
         feePlan: true,
+        payments: true,
       },
       orderBy: { id: "desc" },
     });
@@ -895,6 +1059,7 @@ const getStudentProfile = async (req, res) => {
         include: {
           shift: true,
           seat: true,
+          previousSeat: true,
         },
         orderBy: { shift: { startTime: "asc" } },
       });
@@ -908,6 +1073,8 @@ const getStudentProfile = async (req, res) => {
           end_time: a.shift.endTime ? a.shift.endTime.substring(0, 5) : null,
           seat_id: a.seatId,
           seat_number: a.seat ? a.seat.seatNumber : null,
+          previous_seat_id: a.previousSeatId || null,
+          previous_seat_number: a.previousSeat ? a.previousSeat.seatNumber : null,
           floor: a.seat ? a.seat.floor : null,
           room: a.seat ? a.seat.room : null,
           assignment_status: a.assignmentStatus,
@@ -985,10 +1152,25 @@ const getStudentProfile = async (req, res) => {
       }));
     }
 
+    const profileLifecycle = evaluateStudentLifecycle({
+      ...student,
+      validities: latestValidity ? [latestValidity] : [],
+    });
+    const hasAssignedSeat = shiftAssignments.some((a) => Boolean(a.seat_number || a.seat_id));
+
     res.json({
       success: true,
       data: {
         ...formatStudent(student),
+        derived_status: profileLifecycle.derivedStatus,
+        days_overdue: profileLifecycle.daysOverdue,
+        days_remaining: profileLifecycle.daysRemaining,
+        seat_reassignment_needed: Boolean(
+          student.accountStatus === "ACTIVE" &&
+          latestValidity &&
+          latestValidity.accessType === "RESERVED" &&
+          !hasAssignedSeat
+        ),
         validity: formattedValidity,
         shift_assignments: shiftAssignments,
         shift_assignment: shiftAssignments.length > 0 ? shiftAssignments[0] : null,
@@ -1036,9 +1218,15 @@ const updateStudentDetails = async (req, res) => {
       ? [...new Set(shift_ids.map(Number).filter(Boolean))]
       : validity.assignments.map(a => a.shiftId);
 
-    const finalSeatId = (seat_id !== undefined)
-      ? (seat_id ? parseInt(seat_id) : null)
-      : (validity.assignments.find(a => a.seatId !== null)?.seatId || null);
+    const isReserved = (access_type !== undefined)
+      ? (access_type.toUpperCase() === "RESERVED")
+      : (validity.accessType === "RESERVED");
+
+    const finalSeatId = !isReserved
+      ? null
+      : (seat_id !== undefined
+        ? (seat_id ? parseInt(seat_id) : null)
+        : (validity.assignments.find(a => a.seatId !== null)?.seatId || null));
 
     // Disabled seats must not be allocatable
     if (finalSeatId) {
@@ -1053,10 +1241,6 @@ const updateStudentDetails = async (req, res) => {
       }
     }
 
-    const isReserved = (access_type !== undefined)
-      ? (access_type.toUpperCase() === "RESERVED")
-      : (validity.accessType === "RESERVED");
-
     if (isReserved && finalSeatId && finalShiftIds.length > 0) {
       const conflict = await mongoClient.studentShiftAssignment.findFirst({
         where: {
@@ -1066,6 +1250,8 @@ const updateStudentDetails = async (req, res) => {
           validity: {
             student: {
               branchId: req.user.branchId,
+              deletedAt: null,
+              accountStatus: { in: ["ACTIVE", "SUSPENDED"] },
               id: { not: studentId },
             },
           }
@@ -1125,7 +1311,7 @@ const updateStudentDetails = async (req, res) => {
         if (finalSeatId !== undefined) {
           await mongoClient.studentShiftAssignment.update({
             where: { id: assignment.id },
-            data: { seatId: finalSeatId },
+            data: { seatId: finalSeatId, previousSeatId: null, seatReleasedAt: null },
           });
         }
       }
@@ -1136,18 +1322,32 @@ const updateStudentDetails = async (req, res) => {
             validityId: validity.id,
             shiftId: shiftId,
             seatId: finalSeatId !== undefined ? finalSeatId : null,
+            previousSeatId: null,
+            seatReleasedAt: null,
           },
         });
       }
-    } else if (shift_ids === undefined && seat_id !== undefined) {
+    } else if (shift_ids === undefined && (seat_id !== undefined || !isReserved)) {
       const activeAssignments = validity.assignments.filter(a => a.assignmentStatus === "ACTIVE");
       for (const assignment of activeAssignments) {
+        if (!isReserved && assignment.seatId === null && assignment.previousSeatId === null && seat_id === undefined) {
+          continue;
+        }
         await mongoClient.studentShiftAssignment.update({
           where: { id: assignment.id },
-          data: { seatId: seat_id ? parseInt(seat_id) : null },
+          data: {
+            seatId: isReserved ? (seat_id ? parseInt(seat_id) : null) : null,
+            previousSeatId: null,
+            seatReleasedAt: null,
+          },
         });
       }
     }
+
+    try {
+      clearStatsCache();
+      cache.invalidateBranch(req.user ? req.user.branchId : 1);
+    } catch (e) {}
 
     res.json({ success: true, message: "Student details updated successfully" });
   } catch (error) {
@@ -1193,6 +1393,13 @@ const getShiftSeats = async (req, res) => {
         shiftId: parseInt(shiftId),
         assignmentStatus: "ACTIVE",
         seatId: { not: null },
+        validity: {
+          student: {
+            deletedAt: null,
+            branchId: req.user.branchId,
+            accountStatus: { in: ["ACTIVE", "SUSPENDED"] },
+          },
+        },
       },
       select: { seatId: true },
     });
@@ -1301,6 +1508,7 @@ const admitStudent = async (req, res) => {
             student: {
               branchId: req.user ? req.user.branchId : branchId,
               deletedAt: null,
+              accountStatus: { in: ["ACTIVE", "SUSPENDED"] },
             },
           },
         },
@@ -1357,12 +1565,12 @@ const admitStudent = async (req, res) => {
       }
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const startDateObj = today;
-    const endDateObj = new Date(startDateObj);
-    endDateObj.setDate(startDateObj.getDate() + (feePlan.durationDays - 1));
+    const todayYmd = getISTTimeParts().ymd;
+    const startDateObj = new Date(`${todayYmd}T00:00:00+05:30`);
+    const durationDays = Math.max(1, Number(feePlan.durationDays || 30));
+    const endYmd = addDaysToYmd(todayYmd, durationDays - 1);
+    const endDateObj = new Date(`${endYmd}T23:59:59.999+05:30`);
+    const today = startDateObj;
 
     const finalAmount = custom_amount !== undefined && custom_amount !== null && custom_amount !== "" ? parseFloat(custom_amount) : feePlan.amount;
 
@@ -1419,6 +1627,13 @@ const admitStudent = async (req, res) => {
               shiftId: shId,
               seatId: stId,
               assignmentStatus: "ACTIVE",
+              validity: {
+                student: {
+                  deletedAt: null,
+                  branchId: req.user ? req.user.branchId : branchId,
+                  accountStatus: { in: ["ACTIVE", "SUSPENDED"] },
+                },
+              },
             },
           });
 
@@ -1486,7 +1701,10 @@ const admitStudent = async (req, res) => {
       console.log("Email sending error:", e.message);
     }
 
-    try { clearStatsCache(); } catch (e) {}
+    try {
+      clearStatsCache();
+      cache.invalidateBranch(branchId);
+    } catch (e) {}
 
     res.status(201).json({
       success: true,
@@ -1541,4 +1759,5 @@ module.exports = {
   getAllFeePlans,
   getShiftSeats,
   autoSuspendExpiredStudents,
+  resetAutoSuspendThrottle,
 };

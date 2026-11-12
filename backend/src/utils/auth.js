@@ -100,9 +100,32 @@ const verifyToken = (token) => {
   return payload;
 };
 
+const hashOtp = (userId, otp) => {
+  return crypto
+    .createHmac("sha256", JWT_SECRET)
+    .update(`otp:${userId}:${String(otp).trim()}`)
+    .digest("hex");
+};
+
+const verifyOtpHash = (userId, otp, storedHash) => {
+  if (!storedHash || !otp) return false;
+  const computed = hashOtp(userId, otp);
+  const a = Buffer.from(computed, "hex");
+  const b = Buffer.from(String(storedHash), "hex");
+  if (a.length !== b.length || a.length === 0) return false;
+  return crypto.timingSafeEqual(a, b);
+};
+
+const hashResetToken = (token) => {
+  return crypto.createHash("sha256").update(String(token)).digest("hex");
+};
+
 module.exports = {
   hashPassword,
   comparePassword,
   signToken,
   verifyToken,
+  hashOtp,
+  verifyOtpHash,
+  hashResetToken,
 };

@@ -1,6 +1,16 @@
 const mongoClient = require("../config/mongoClient");
 const { autoSuspendExpiredStudents } = require("./student.controller");
-const { formatDateStr, formatDateTimeStr } = require("../utils/format");
+const { formatDateStr, formatDateTimeStr, getISTDayBounds, addDaysToYmd } = require("../utils/format");
+const {
+  DERIVED_STATUS,
+  diffDaysBetweenYmd,
+  evaluateStudentLifecycle,
+} = require("../utils/studentStatus");
+
+const isStudentExpiredGrace = (student, now = new Date()) => {
+  if (!student || student.accountStatus !== "ACTIVE") return false;
+  return evaluateStudentLifecycle(student, now).derivedStatus === DERIVED_STATUS.EXPIRED_GRACE;
+};
 
 const parseSeatNumber = (seatNumber) => {
   const match = seatNumber.match(/^([A-Za-z]+)(\d+)$/);
@@ -24,27 +34,17 @@ const getDashboardStats = async (req, res) => {
     }
 
     await autoSuspendExpiredStudents(req.user.branchId);
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-
-    const next7DaysObj = new Date();
-    next7DaysObj.setDate(next7DaysObj.getDate() + 7);
-    next7DaysObj.setHours(23, 59, 59, 999);
-
-    const sevenDaysAgo = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const twentyDaysAgo = new Date(todayStart.getTime() - 20 * 24 * 60 * 60 * 1000);
-    const fifteenDaysAgo = new Date(todayStart.getTime() - 15 * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const { start: todayStart, end: todayEnd, ymd: todayYmd } = getISTDayBounds(now);
+    const tenDaysAgoYmd = addDaysToYmd(todayYmd, -10);
+    const twentyDaysAgoYmd = addDaysToYmd(todayYmd, -20);
 
     const [
       totalStudents,
       activeStudents,
       suspendedStudentsCount,
       inactiveMembersCount,
-      activeValidities,
-      expiringSoon,
+      disabledMembersCount,
       totalPayments,
       totalRevenueAgg,
       todayPresentRecords,
@@ -58,19 +58,8 @@ const getDashboardStats = async (req, res) => {
       mongoClient.student.count({ where: { deletedAt: null, branchId } }),
       mongoClient.student.count({ where: { accountStatus: "ACTIVE", deletedAt: null, branchId } }),
       mongoClient.student.count({ where: { accountStatus: "SUSPENDED", deletedAt: null, branchId } }),
-      mongoClient.student.count({ where: { accountStatus: { in: ["INACTIVE", "DISABLED"] }, deletedAt: null, branchId } }),
-      mongoClient.studentValidity.count({
-        where: {
-          endDate: { gte: todayStart },
-          student: { deletedAt: null, accountStatus: "ACTIVE", branchId },
-        },
-      }),
-      mongoClient.studentValidity.count({
-        where: {
-          endDate: { gte: todayStart, lte: next7DaysObj },
-          student: { deletedAt: null, accountStatus: "ACTIVE", branchId },
-        },
-      }),
+      mongoClient.student.count({ where: { accountStatus: "INACTIVE", deletedAt: null, branchId } }),
+      mongoClient.student.count({ where: { accountStatus: "DISABLED", deletedAt: null, branchId } }),
       mongoClient.payment.count({
         where: {
           validity: { student: { branchId } },
@@ -113,7 +102,11 @@ const getDashboardStats = async (req, res) => {
           assignmentStatus: "ACTIVE",
           validity: {
             accessType: "RESERVED",
-            student: { deletedAt: null, branchId },
+            student: {
+              deletedAt: null,
+              branchId,
+              accountStatus: { in: ["ACTIVE", "SUSPENDED"] },
+            },
           },
           seatId: { not: null },
         },
@@ -146,26 +139,64 @@ const getDashboardStats = async (req, res) => {
     );
     const todayAbsent = absentStudentIds.size;
 
-    let inactiveMembers = 0;
+    const expiredStudentsList = [];
     let unpaidStudents = 0;
+    let activeValidities = 0;
+    let expiringSoon = 0;
 
     allStudentsWithValidities.forEach((student) => {
-      student.validities.forEach((validity) => {
-        const totalPaid = validity.payments.reduce((sum, p) => sum + Number(p.amountReceived || 0), 0);
-        const dueAmount = Number(validity.totalAmount) - totalPaid;
+      const validities = student.validities || [];
+      const latestValidity = validities.length > 0 ? validities[validities.length - 1] : null;
+      if (!latestValidity) return;
 
-        if (dueAmount > 0) {
-          const planExpiry = new Date(validity.endDate);
-          planExpiry.setHours(0, 0, 0, 0);
+      const lifecycle = evaluateStudentLifecycle(student, now);
+      const dueAmount = lifecycle.dueAmount;
+      const endYmd = lifecycle.endYmd;
+      const effectiveStartYmd = formatDateStr(latestValidity.lastRenewedAt || latestValidity.startDate);
 
-          if (planExpiry < fifteenDaysAgo) {
-            inactiveMembers++;
-          } else if (planExpiry < todayStart) {
-            unpaidStudents++;
-          }
-        }
-      });
+      if (endYmd && !lifecycle.isExpired) {
+        activeValidities++;
+      }
+
+      if (lifecycle.derivedStatus === DERIVED_STATUS.EXPIRING_SOON) {
+        expiringSoon++;
+      }
+
+      if (lifecycle.derivedStatus === DERIVED_STATUS.EXPIRED_GRACE) {
+        expiredStudentsList.push({
+          id: student.id,
+          student_code: student.studentCode,
+          reg_no: student.regNo,
+          full_name: student.fullName,
+          mobile: student.mobile,
+          email: student.email,
+          admission_date: formatDateStr(student.admissionDate),
+          account_status: student.accountStatus,
+          derived_status: lifecycle.derivedStatus,
+          access_type: latestValidity.accessType || null,
+          plan_name: latestValidity.feePlan?.planName || null,
+          end_date: endYmd,
+          days_overdue: lifecycle.daysOverdue,
+          due_amount: dueAmount,
+        });
+      }
+
+      if (dueAmount > 0 && endYmd && endYmd < todayYmd && endYmd >= twentyDaysAgoYmd) {
+        unpaidStudents++;
+      } else if (
+        dueAmount > 0 &&
+        (!endYmd || endYmd >= todayYmd) &&
+        effectiveStartYmd &&
+        effectiveStartYmd < todayYmd &&
+        effectiveStartYmd >= tenDaysAgoYmd
+      ) {
+        unpaidStudents++;
+      }
     });
+
+    expiredStudentsList.sort(
+      (a, b) => (b.days_overdue - a.days_overdue) || (a.full_name || "").localeCompare(b.full_name || "")
+    );
 
     const totalRevenue = totalRevenueAgg._sum.amountReceived
       ? Number(totalRevenueAgg._sum.amountReceived)
@@ -179,9 +210,12 @@ const getDashboardStats = async (req, res) => {
       total_students: totalStudents,
       active_students: activeStudents,
       suspended_students: suspendedStudentsCount,
+      expired_students: expiredStudentsList.length,
+      expired_students_list: expiredStudentsList,
       unpaid_students: unpaidStudents,
       active_validities: activeValidities,
       inactive_members: inactiveMembersCount,
+      disabled_members: disabledMembersCount,
       expiring_soon: expiringSoon,
       total_payments: totalPayments,
       total_revenue: totalRevenue,
@@ -319,7 +353,11 @@ const getSeatAvailability = async (req, res) => {
           assignmentStatus: "ACTIVE",
           validity: {
             accessType: "RESERVED",
-            student: { deletedAt: null, branchId: req.user.branchId },
+            student: {
+              deletedAt: null,
+              branchId: req.user.branchId,
+              accountStatus: { in: ["ACTIVE", "SUSPENDED"] },
+            },
           },
           seatId: { not: null },
         },
@@ -504,8 +542,10 @@ const getNotifications = async (req, res) => {
       student_code: s.studentCode,
       mobile: s.mobile || null,
       message: s.accountStatus === "SUSPENDED"
-        ? `Student ${s.fullName} (${s.studentCode}) has unpaid dues (7+ days). Marked as SUSPENDED.`
-        : `Student ${s.fullName} (${s.studentCode}) moved to Inactive section (unpaid > 20 days).`,
+        ? `Student ${s.fullName} (${s.studentCode}) has unpaid dues (11–20 days overdue). Marked as SUSPENDED.`
+        : s.accountStatus === "DISABLED"
+          ? `Student ${s.fullName} (${s.studentCode}) disabled manually by admin (seat unassigned).`
+          : `Student ${s.fullName} (${s.studentCode}) moved to Inactive (unpaid > 20 days, seat unassigned).`,
       created_at: s.updatedAt ? s.updatedAt.toISOString() : new Date().toISOString(),
     }));
 
@@ -560,33 +600,25 @@ const getStudentsByMetric = async (req, res) => {
     const { metric } = req.query;
     await autoSuspendExpiredStudents(req.user.branchId);
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-
-    const next7DaysObj = new Date();
-    next7DaysObj.setDate(next7DaysObj.getDate() + 7);
-    next7DaysObj.setHours(23, 59, 59, 999);
-
-    const fifteenDaysAgo = new Date();
-    fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
-    fifteenDaysAgo.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const { start: todayStart, end: todayEnd } = getISTDayBounds(now);
 
     const branchId = req.user.branchId;
     let students = [];
 
+    const validityMetricInclude = {
+      validities: {
+        include: {
+          feePlan: true,
+          payments: true,
+        },
+      },
+    };
+
     if (metric === "total_students") {
       students = await mongoClient.student.findMany({
         where: { deletedAt: null, branchId },
-        include: {
-          validities: {
-            select: {
-              accessType: true,
-            },
-          },
-        },
+        include: validityMetricInclude,
         orderBy: { fullName: "asc" },
       });
     } else if (metric === "active_students") {
@@ -596,57 +628,51 @@ const getStudentsByMetric = async (req, res) => {
           deletedAt: null,
           branchId,
         },
-        include: {
-          validities: {
-            select: {
-              accessType: true,
-            },
-          },
-        },
+        include: validityMetricInclude,
         orderBy: { fullName: "asc" },
       });
+    } else if (metric === "expired") {
+      const activeWithValidities = await mongoClient.student.findMany({
+        where: {
+          accountStatus: "ACTIVE",
+          deletedAt: null,
+          branchId,
+        },
+        include: validityMetricInclude,
+        orderBy: { fullName: "asc" },
+      });
+      students = activeWithValidities.filter((s) =>
+        isStudentExpiredGrace(s, now)
+      );
     } else if (metric === "inactive") {
       students = await mongoClient.student.findMany({
-        where: { accountStatus: { in: ["INACTIVE", "DISABLED"] }, deletedAt: null, branchId },
-        include: {
-          validities: {
-            select: {
-              accessType: true,
-            },
-          },
-        },
+        where: { accountStatus: "INACTIVE", deletedAt: null, branchId },
+        include: validityMetricInclude,
+        orderBy: { fullName: "asc" },
+      });
+    } else if (metric === "disabled") {
+      students = await mongoClient.student.findMany({
+        where: { accountStatus: "DISABLED", deletedAt: null, branchId },
+        include: validityMetricInclude,
         orderBy: { fullName: "asc" },
       });
     } else if (metric === "expiring_soon") {
-      const validities = await mongoClient.studentValidity.findMany({
+      const activeWithValidities = await mongoClient.student.findMany({
         where: {
-          endDate: { gte: todayStart, lte: next7DaysObj },
-          student: { deletedAt: null, accountStatus: "ACTIVE", branchId },
+          accountStatus: "ACTIVE",
+          deletedAt: null,
+          branchId,
         },
-        include: {
-          student: {
-            include: {
-              validities: {
-                select: {
-                  accessType: true,
-                },
-              },
-            },
-          },
-        },
-        orderBy: { student: { fullName: "asc" } },
+        include: validityMetricInclude,
+        orderBy: { fullName: "asc" },
       });
-      students = validities.map((v) => v.student).filter(Boolean);
+      students = activeWithValidities.filter(
+        (s) => evaluateStudentLifecycle(s, now).derivedStatus === DERIVED_STATUS.EXPIRING_SOON
+      );
     } else if (metric === "suspended" || metric === "unpaid") {
       students = await mongoClient.student.findMany({
         where: { accountStatus: "SUSPENDED", deletedAt: null, branchId },
-        include: {
-          validities: {
-            select: {
-              accessType: true,
-            },
-          },
-        },
+        include: validityMetricInclude,
         orderBy: { fullName: "asc" },
       });
     } else if (metric === "today_present") {
@@ -669,13 +695,7 @@ const getStudentsByMetric = async (req, res) => {
               validity: {
                 include: {
                   student: {
-                    include: {
-                      validities: {
-                        select: {
-                          accessType: true,
-                        },
-                      },
-                    },
+                    include: validityMetricInclude,
                   },
                 },
               },
@@ -701,22 +721,32 @@ const getStudentsByMetric = async (req, res) => {
       });
     }
 
-    const formattedStudents = students.map((s) => ({
-      id: s.id,
-      student_code: s.studentCode,
-      reg_no: s.regNo,
-      full_name: s.fullName,
-      email: s.email,
-      mobile: s.mobile,
-      gender: s.gender,
-      dob: formatDateStr(s.dob),
-      address: s.address,
-      aadhar_number: s.aadharNumber,
-      admission_date: formatDateStr(s.admissionDate),
-      profile_photo_url: s.profilePhotoUrl,
-      account_status: s.accountStatus,
-      access_type: s.validities && s.validities.length > 0 ? s.validities[s.validities.length - 1].accessType : null,
-    }));
+    const formattedStudents = students.map((s) => {
+      const latestVal = s.validities && s.validities.length > 0 ? s.validities[s.validities.length - 1] : null;
+      const lifecycle = evaluateStudentLifecycle(s, now);
+      return {
+        id: s.id,
+        student_code: s.studentCode,
+        reg_no: s.regNo,
+        full_name: s.fullName,
+        email: s.email,
+        mobile: s.mobile,
+        gender: s.gender,
+        dob: formatDateStr(s.dob),
+        address: s.address,
+        aadhar_number: s.aadharNumber,
+        admission_date: formatDateStr(s.admissionDate),
+        profile_photo_url: s.profilePhotoUrl,
+        account_status: s.accountStatus,
+        derived_status: lifecycle.derivedStatus,
+        access_type: latestVal ? latestVal.accessType : null,
+        plan_name: latestVal?.feePlan?.planName || null,
+        end_date: lifecycle.endYmd,
+        days_remaining: lifecycle.daysRemaining,
+        days_overdue: lifecycle.daysOverdue,
+        due_amount: lifecycle.dueAmount,
+      };
+    });
 
     res.json({
       success: true,

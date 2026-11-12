@@ -4,11 +4,20 @@ const path = require("path");
 const crypto = require("crypto");
 const mongoClient = require("../config/mongoClient");
 const authUtil = require("../utils/auth");
+const cache = require("../utils/cache");
 const { generateUniqueLibraryCode, ensureAllBranchesHaveCode } = require("../utils/libraryCode");
 const { generateSecureToken, ensureAllBranchesHaveTokens } = require("../utils/branchTokens");
 const { Resend } = require("resend");
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-const emailFrom = process.env.EMAIL_FROM || "noreply@dashurl.in";
+let resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+let resendOverride;
+const getResendClient = () => {
+  if (resendOverride !== undefined) return resendOverride;
+  if (!resend && process.env.RESEND_API_KEY) {
+    resend = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resend;
+};
+const getEmailFrom = () => process.env.EMAIL_FROM || "noreply@dashurl.in";
 
 // Parse owner configuration from owner_emails.csv or .env fallback
 const getOwnerEmails = () => {
@@ -1445,102 +1454,353 @@ exports.deleteStaff = async (req, res) => {
 
 exports.seedAdminUser = seedAdminUser;
 
+// Escape plain text before interpolating into HTML email templates
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
 // POST /api/users/forgot-password
+// Sends a 6-digit OTP to an active user (or provisions a first-time whitelisted owner for Set Password)
 exports.forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, message: "Email is required" });
+    const rawEmail = req.body?.email;
+    if (!rawEmail || !String(rawEmail).trim()) {
+      return res.status(400).json({ success: false, message: "Email address is required" });
     }
 
-    const user = await mongoClient.user.findFirst({
-      where: { email: email.toLowerCase().trim(), deletedAt: null, isActive: true }
-    });
-
-    // Always return 200 to avoid user enumeration
-    if (!user) {
-      return res.json({ success: true, message: "If this email exists, a reset link has been sent." });
+    const cleanEmail = String(rawEmail).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return res.status(400).json({ success: false, message: "Please enter a valid email address" });
     }
 
-    // Generate a secure random token
-    const token = crypto.randomBytes(32).toString("hex");
-    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    await mongoClient.user.update({
-      where: { id: user.id },
-      data: { passwordResetToken: token, passwordResetExpiry: expiry }
+    let user = await mongoClient.user.findFirst({
+      where: { email: cleanEmail, deletedAt: null },
     });
 
-    const appUrl = process.env.APP_URL || "http://localhost:5173";
-    const resetLink = `${appUrl}/reset-password?token=${token}`;
+    const isWhitelistedOwner = !user && getOwnerEmails().includes(cleanEmail);
 
-    if (!resend) {
+    // Avoid user enumeration for unknown or inactive emails
+    if ((!user && !isWhitelistedOwner) || (user && !user.isActive)) {
+      return res.json({
+        success: true,
+        message: "If an account exists with this email, a 6-digit OTP has been sent.",
+      });
+    }
+
+    const resendClient = getResendClient();
+    if (!resendClient) {
       console.warn("⚠️ Resend client not initialized. Set RESEND_API_KEY in .env.");
       return res.status(500).json({ success: false, message: "Email service is not configured on the server." });
     }
 
-    await resend.emails.send({
-      from: emailFrom,
-      to: user.email,
-      subject: "Password Reset Request",
-      html: `
+    // Provision authorized first-time Owner (Set Password flow) only after confirming email service is ready
+    if (!user && isWhitelistedOwner) {
+      const staleDeletedOwner = await mongoClient.user.findFirst({
+        where: { email: cleanEmail, deletedAt: { not: null } },
+      });
+      if (staleDeletedOwner) {
+        await mongoClient.user.update({
+          where: { id: staleDeletedOwner.id },
+          data: { email: `deleted_${Date.now()}_${staleDeletedOwner.email}` },
+        }).catch(() => {});
+      }
+
+      await seedAdminUser();
+
+      const baseBranchName = `Branch - ${cleanEmail}`;
+      const existingBranchName = await mongoClient.branch.findFirst({
+        where: { name: baseBranchName },
+      });
+      const initialBranchName = existingBranchName ? `${baseBranchName} (${Date.now()})` : baseBranchName;
+      const newLibraryCode = await generateUniqueLibraryCode(initialBranchName, null, mongoClient);
+      const newBranch = await mongoClient.branch.create({
+        data: {
+          code: newLibraryCode,
+          name: initialBranchName,
+          address: "Default Address",
+          isActive: true,
+        },
+      });
+
+      user = await mongoClient.user.create({
+        data: {
+          name: "Owner",
+          email: cleanEmail,
+          passwordHash: authUtil.hashPassword(getDefaultOwnerPassword()),
+          role: "OWNER",
+          isActive: true,
+          mustChangePassword: true,
+          branchId: newBranch.id,
+          isLoggedIn: false,
+          subscriptionTier: "FREE",
+        },
+      });
+
+      await mongoClient.securityEvent.create({
+        data: {
+          eventType: "OWNER_SET_PASSWORD_INIT",
+          email: cleanEmail,
+          userId: user.id,
+          ipAddress: getClientIp(req),
+          userAgent: req.headers["user-agent"] || "",
+        },
+      }).catch(() => {});
+    }
+
+    // Generate cryptographically secure 6-digit OTP valid for 10 minutes
+    const otp = String(crypto.randomInt(100000, 1000000));
+    const otpHash = authUtil.hashOtp(user.id, otp);
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+    await mongoClient.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetOtpHash: otpHash,
+        passwordResetOtpExpiry: otpExpiry,
+        passwordResetOtpAttempts: 0,
+        passwordResetToken: null,
+        passwordResetExpiry: null,
+      },
+    });
+
+    const safeName = escapeHtml(user.name || "User");
+    let emailResponse;
+    try {
+      emailResponse = await resendClient.emails.send({
+        from: getEmailFrom(),
+        to: user.email,
+        subject: "Your 6-Digit Password Verification OTP",
+        html: `
         <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #f8fafc; padding: 32px; border-radius: 12px;">
           <div style="text-align: center; margin-bottom: 24px;">
             <div style="width: 52px; height: 52px; background: linear-gradient(135deg, #3b82f6, #2563eb); border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: 24px;">📚</div>
             <h2 style="color: #1e293b; margin: 12px 0 4px;">Library Management System</h2>
-            <p style="color: #64748b; margin: 0; font-size: 14px;">Password Reset</p>
+            <p style="color: #64748b; margin: 0; font-size: 14px;">Set / Reset Password OTP</p>
           </div>
-          <div style="background: white; border-radius: 8px; padding: 24px; border: 1px solid #e2e8f0;">
-            <p style="color: #1e293b; margin: 0 0 16px;">Hi <strong>${user.name}</strong>,</p>
-            <p style="color: #475569; margin: 0 0 24px;">We received a request to reset your password. Click the button below to reset it. This link expires in <strong>10 minutes</strong>.</p>
-            <div style="text-align: center; margin-bottom: 24px;">
-              <a href="${resetLink}" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; display: inline-block;">
-                Reset My Password
-              </a>
+          <div style="background: white; border-radius: 10px; padding: 24px; border: 1px solid #e2e8f0;">
+            <p style="color: #1e293b; margin: 0 0 12px;">Hi <strong>${safeName}</strong>,</p>
+            <p style="color: #475569; margin: 0 0 20px; line-height: 1.5;">
+              Use the 6-digit verification code below to set or reset your password. This OTP is valid for <strong>10 minutes</strong>.
+            </p>
+            <div style="text-align: center; margin: 24px 0;">
+              <div style="display: inline-block; background: #eff6ff; border: 2px dashed #3b82f6; border-radius: 10px; padding: 14px 28px;">
+                <span style="font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #1d4ed8; font-family: monospace;">${otp}</span>
+              </div>
             </div>
-            <p style="color: #94a3b8; font-size: 12px; margin: 0;">If you did not request this, you can safely ignore this email. Your password will not be changed.</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0; line-height: 1.5;">
+              Do not share this OTP with anyone. If you did not request a password change, you can safely ignore this email.
+            </p>
           </div>
           <p style="color: #cbd5e1; font-size: 11px; text-align: center; margin-top: 16px;">Library Management System · Admin Portal</p>
         </div>
-      `
-    });
+      `,
+      });
+    } catch (sendErr) {
+      await mongoClient.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetOtpHash: null,
+          passwordResetOtpExpiry: null,
+          passwordResetOtpAttempts: 0,
+        },
+      }).catch(() => {});
+      throw sendErr;
+    }
 
-    return res.json({ success: true, message: "If this email exists, a reset link has been sent." });
+    if (emailResponse && emailResponse.error) {
+      console.error("Resend OTP delivery error:", emailResponse.error);
+      await mongoClient.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetOtpHash: null,
+          passwordResetOtpExpiry: null,
+          passwordResetOtpAttempts: 0,
+        },
+      }).catch(() => {});
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send OTP email. Please verify your email or try again later.",
+      });
+    }
+
+    await mongoClient.securityEvent.create({
+      data: {
+        eventType: "PASSWORD_OTP_SENT",
+        email: user.email,
+        userId: user.id,
+        ipAddress: getClientIp(req),
+        userAgent: req.headers["user-agent"] || "",
+      },
+    }).catch(() => {});
+
+    return res.json({
+      success: true,
+      message: "If an account exists with this email, a 6-digit OTP has been sent.",
+    });
   } catch (error) {
     console.error("Forgot password error:", error);
-    return res.status(500).json({ success: false, message: "Failed to send reset email." });
+    return res.status(500).json({ success: false, message: "Failed to send verification OTP." });
   }
 };
 
-// GET /api/users/reset-password?token=...
-exports.resetPassword = async (req, res) => {
+// POST /api/users/verify-reset-otp
+exports.verifyResetOtp = async (req, res) => {
   try {
-    const token = req.query.token || req.body?.token;
-    if (!token) {
-      return res.status(400).json({ success: false, message: "Reset token is required." });
+    const rawEmail = req.body?.email;
+    const rawOtp = req.body?.otp;
+
+    if (!rawEmail || !String(rawEmail).trim()) {
+      return res.status(400).json({ success: false, message: "Email address is required." });
+    }
+
+    const cleanEmail = String(rawEmail).trim().toLowerCase();
+    const cleanOtp = String(rawOtp || "").replace(/\s+/g, "");
+
+    if (!/^\d{6}$/.test(cleanOtp)) {
+      return res.status(400).json({ success: false, message: "Please enter a valid 6-digit OTP." });
     }
 
     const user = await mongoClient.user.findFirst({
+      where: { email: cleanEmail, deletedAt: null, isActive: true },
+    });
+
+    if (!user || !user.passwordResetOtpHash || !user.passwordResetOtpExpiry) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP. Please request a new one." });
+    }
+
+    if (new Date(user.passwordResetOtpExpiry) <= new Date()) {
+      await mongoClient.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetOtpHash: null,
+          passwordResetOtpExpiry: null,
+          passwordResetOtpAttempts: 0,
+        },
+      }).catch(() => {});
+      return res.status(400).json({ success: false, message: "OTP has expired. Please request a new 6-digit OTP." });
+    }
+
+    const currentAttempts = user.passwordResetOtpAttempts || 0;
+    if (currentAttempts >= 5) {
+      await mongoClient.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetOtpHash: null,
+          passwordResetOtpExpiry: null,
+          passwordResetOtpAttempts: 0,
+        },
+      }).catch(() => {});
+      return res.status(429).json({
+        success: false,
+        message: "Too many incorrect OTP attempts. Please request a new 6-digit OTP.",
+      });
+    }
+
+    const isMatch = authUtil.verifyOtpHash(user.id, cleanOtp, user.passwordResetOtpHash);
+    if (!isMatch) {
+      const nextAttempts = currentAttempts + 1;
+      const exhausted = nextAttempts >= 5;
+      await mongoClient.user.update({
+        where: { id: user.id },
+        data: exhausted
+          ? {
+              passwordResetOtpHash: null,
+              passwordResetOtpExpiry: null,
+              passwordResetOtpAttempts: 0,
+            }
+          : { passwordResetOtpAttempts: nextAttempts },
+      }).catch(() => {});
+
+      const remaining = Math.max(0, 5 - nextAttempts);
+      return res.status(exhausted ? 429 : 400).json({
+        success: false,
+        message: exhausted
+          ? "Too many incorrect OTP attempts. Please request a new 6-digit OTP."
+          : `Invalid 6-digit OTP. ${remaining} attempt(s) remaining.`,
+      });
+    }
+
+    // Consume OTP and mint short-lived single-use reset token for the New Password screen
+    const rawResetToken = crypto.randomBytes(32).toString("hex");
+    const resetTokenHash = authUtil.hashResetToken(rawResetToken);
+    const resetExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    await mongoClient.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetToken: resetTokenHash,
+        passwordResetExpiry: resetExpiry,
+        passwordResetOtpHash: null,
+        passwordResetOtpExpiry: null,
+        passwordResetOtpAttempts: 0,
+      },
+    });
+
+    await mongoClient.securityEvent.create({
+      data: {
+        eventType: "PASSWORD_OTP_VERIFIED",
+        email: user.email,
+        userId: user.id,
+        ipAddress: getClientIp(req),
+        userAgent: req.headers["user-agent"] || "",
+      },
+    }).catch(() => {});
+
+    return res.json({
+      success: true,
+      message: "OTP verified successfully. You can now set your new password.",
+      resetToken: rawResetToken,
+      email: user.email,
+    });
+  } catch (error) {
+    console.error("Verify reset OTP error:", error);
+    return res.status(500).json({ success: false, message: "Failed to verify OTP." });
+  }
+};
+
+// GET /api/users/reset-password?token=...  |  POST /api/users/reset-password
+exports.resetPassword = async (req, res) => {
+  try {
+    const token = req.query.token || req.body?.token;
+    if (!token || !String(token).trim()) {
+      return res.status(400).json({ success: false, message: "Reset token is required." });
+    }
+
+    const tokenHash = authUtil.hashResetToken(String(token).trim());
+
+    const user = await mongoClient.user.findFirst({
       where: {
-        passwordResetToken: token,
+        passwordResetToken: tokenHash,
         passwordResetExpiry: { gt: new Date() },
         deletedAt: null,
-        isActive: true
-      }
+        isActive: true,
+      },
     });
 
     if (!user) {
-      return res.status(400).json({ success: false, message: "This reset link is invalid or has expired." });
+      return res.status(400).json({
+        success: false,
+        message: "This password reset session is invalid or has expired.",
+      });
     }
 
-    // If GET request, only validate token without modifying state
+    // If GET request, only validate reset token without modifying state
     if (req.method === "GET") {
-      return res.json({ success: true, message: "Reset token is valid.", valid: true });
+      return res.json({
+        success: true,
+        message: "Reset session is valid.",
+        valid: true,
+        email: user.email,
+      });
     }
 
     // POST request: Requires user to supply their new password
-    const newPassword = (req.body?.password || "").trim();
-    if (!newPassword || newPassword.length < 8) {
+    const newPassword = typeof req.body?.password === "string" ? req.body.password : "";
+    if (!newPassword.trim() || newPassword.length < 8) {
       return res.status(400).json({ success: false, message: "New password must be at least 8 characters long." });
     }
     if (!/\d/.test(newPassword)) {
@@ -1554,17 +1814,39 @@ exports.resetPassword = async (req, res) => {
       data: {
         passwordHash: hashedPassword,
         mustChangePassword: false,
+        passwordChangedAt: new Date(),
         passwordResetToken: null,
         passwordResetExpiry: null,
+        passwordResetOtpHash: null,
+        passwordResetOtpExpiry: null,
+        passwordResetOtpAttempts: 0,
         failedLoginAttempts: 0,
         lockedUntil: null,
-        updatedAt: new Date()
-      }
+        isLoggedIn: false,
+        updatedAt: new Date(),
+      },
     });
+
+    await mongoClient.userSession.updateMany({
+      where: { userId: user.id, isActive: true },
+      data: { isActive: false },
+    }).catch(() => {});
+
+    cache.invalidateUser(user.id);
+
+    await mongoClient.securityEvent.create({
+      data: {
+        eventType: "PASSWORD_RESET_SUCCESS",
+        email: user.email,
+        userId: user.id,
+        ipAddress: getClientIp(req),
+        userAgent: req.headers["user-agent"] || "",
+      },
+    }).catch(() => {});
 
     return res.json({
       success: true,
-      message: "Password has been successfully updated. You can now log in with your new password."
+      message: "Password has been successfully updated. You can now log in with your new password.",
     });
   } catch (error) {
     console.error("Reset password error:", error);
@@ -1616,4 +1898,8 @@ exports.changeStaffPassword = async (req, res) => {
     console.error("Change staff password error:", error);
     return res.status(500).json({ success: false, message: "Failed to update staff password" });
   }
+};
+
+exports._setResendClientForTest = (client) => {
+  resendOverride = client;
 };

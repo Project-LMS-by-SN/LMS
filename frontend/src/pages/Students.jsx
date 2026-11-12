@@ -1,11 +1,21 @@
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { FaSearch, FaUserCircle, FaTimes, FaTrash, FaCreditCard, FaChair, FaClock, FaCalendarAlt, FaArrowLeft, FaEdit, FaComments, FaPaperPlane, FaWhatsapp, FaCheckCircle, FaTimesCircle, FaDownload } from "react-icons/fa";
-import { generateStudentInvoicePdf, sendInvoiceOnWhatsApp } from "../utils/studentInvoicePdf";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { FaSearch, FaTimes, FaTrash, FaCreditCard, FaClock, FaCalendarAlt, FaArrowLeft, FaEdit, FaWhatsapp, FaCheckCircle, FaTimesCircle, FaDownload } from "react-icons/fa";
+import { SiGmail } from "react-icons/si";
+import { generateStudentInvoicePdf, sendInvoiceOnWhatsApp, sendInvoiceOnGmail } from "../utils/studentInvoicePdf";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
+import {
+  VALID_STATUS_FILTERS,
+  canManuallyActivateMember,
+  getExpirySubText,
+  getGraceExpiredInfo,
+  getStudentStatus,
+  getStatusCounts as computeStatusCounts,
+  filterStudentsList,
+} from "../utils/studentStatus";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -63,7 +73,8 @@ const getSeatColorForEdit = (seat, selectedShiftIds, selectedSeatId, profileData
 
 const Students = () => {
   const { darkMode, timeFormat } = useTheme();
-  
+  const queryClient = useQueryClient();
+
   const formatReadableDate = (dateStr) => {
     if (!dateStr) return "—";
     const date = new Date(dateStr);
@@ -75,53 +86,12 @@ const Students = () => {
     return `${day} ${month} ${year}`;
   };
 
-  const getExpirySubText = (dateStr) => {
-    if (!dateStr) return null;
-    const expiry = new Date(dateStr);
-    expiry.setHours(0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const diffTime = expiry.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) {
-      const positiveDays = Math.abs(diffDays);
-      return { text: `Expired ${positiveDays}d ago`, isExpired: true };
-    } else if (diffDays === 0) {
-      return { text: "Expires today", isWarning: true };
-    } else {
-      return { text: `${diffDays}d left`, isExpired: false };
-    }
-  };
-
-  const handleToggleStudentStatus = async (student) => {
-    const newStatus = student.account_status === "ACTIVE" ? "DISABLED" : "ACTIVE";
-    const confirmMsg = newStatus === "DISABLED"
-      ? `Are you sure you want to disable ${student.full_name}?`
-      : `Are you sure you want to activate ${student.full_name}?`;
-    if (!window.confirm(confirmMsg)) return;
-
-    try {
-      await api.put(`/students/${student.id}`, { account_status: newStatus });
-      alert(`Student successfully ${newStatus === "DISABLED" ? "disabled" : "activated"}`);
-      fetchStudents();
-    } catch (error) {
-      alert(error.response?.data?.message || "Failed to update status");
-    }
-  };
-
-  const isSeatOccupiedInEdit = (seat) => {
-    const shiftIds = (editForm.shift_ids || []).map(Number);
-    if (!shiftIds.length) return false;
-    const occupiedShifts = seat.occupied_shifts || [];
-    return occupiedShifts.some(os =>
-      shiftIds.includes(Number(os.shift_id)) &&
-      String(os.student_code) !== String(profileData?.student_code)
-    );
-  };
-
   const [currentViewYear, setCurrentViewYear] = useState(new Date().getFullYear());
   const [currentViewMonth, setCurrentViewMonth] = useState(new Date().getMonth());
-  const loggedInUser = JSON.parse(localStorage.getItem("lms_user") || "{}");
+  const loggedInUser = (() => {
+    try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); }
+    catch { return {}; }
+  })();
   const isOwner = loggedInUser.role === "OWNER";
   const { data: students = [], isLoading, refetch: fetchStudents } = useQuery({
     queryKey: ['studentsList'],
@@ -144,10 +114,38 @@ const Students = () => {
   const studentCodeParam = searchParams.get("student_code") || searchParams.get("studentCode");
   const studentIdParam = searchParams.get("student_id") || searchParams.get("id");
   const searchParam = searchParams.get("search");
+  const statusParamRaw = (searchParams.get("status") || "").toLowerCase();
+  const statusParam = VALID_STATUS_FILTERS.includes(statusParamRaw) ? statusParamRaw : "";
 
   const [searchQuery, setSearchQuery] = useState(searchParam || "");
+  const [prevSearchParam, setPrevSearchParam] = useState(searchParam);
+  if (searchParam !== prevSearchParam) {
+    setPrevSearchParam(searchParam);
+    if (searchParam) {
+      setSearchQuery(searchParam);
+    }
+  }
   const [accessTypeFilter, setAccessTypeFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(statusParam || "all");
+  const [prevStatusParam, setPrevStatusParam] = useState(statusParam);
+  if (statusParam !== prevStatusParam) {
+    setPrevStatusParam(statusParam);
+    if (statusParam) {
+      setStatusFilter(statusParam);
+    }
+  }
+  const handleStatusFilterChange = (nextStatus) => {
+    setStatusFilter(nextStatus);
+    if (searchParams.get("status")) {
+      const nextParams = new URLSearchParams(searchParams);
+      if (nextStatus === "all") {
+        nextParams.delete("status");
+      } else {
+        nextParams.set("status", nextStatus);
+      }
+      setSearchParams(nextParams, { replace: true });
+    }
+  };
   const [profileLoading, setProfileLoading] = useState(false);
   const [editingStudent, setEditingStudent] = useState(false);
   const [editTab, setEditTab] = useState("personal");
@@ -174,38 +172,87 @@ const Students = () => {
     return name.slice(0, 2).toUpperCase();
   };
 
-  useEffect(() => {
-    if (searchParam) {
-      setSearchQuery(searchParam);
+  const closeProfile = useCallback(() => {
+    setSelectedStudent(null);
+    setProfileData(null);
+    if (searchParams.get("student_code") || searchParams.get("studentCode") || searchParams.get("student_id") || searchParams.get("id")) {
+      setSearchParams({}, { replace: true });
     }
-  }, [searchParam]);
+  }, [searchParams, setSearchParams]);
+
+  const openProfile = useCallback(async (student) => {
+    setSelectedStudent(student);
+    setProfileData(null);
+    setProfileLoading(true);
+    setCurrentViewYear(new Date().getFullYear());
+    setCurrentViewMonth(new Date().getMonth());
+    setProfileTab("payment");
+    setChatInput("");
+    setChatTemplate("expiry_reminder");
+    try {
+      const res = await api.get(`/students/${student.id}/profile`);
+      setProfileData(res.data.data);
+    } catch (error) {
+      console.log("Profile fetch error:", error);
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
+
+  const handleToggleStudentStatus = async (student) => {
+    const newStatus = canManuallyActivateMember(student) ? "ACTIVE" : "DISABLED";
+    const confirmMsg = newStatus === "DISABLED"
+      ? `Are you sure you want to disable ${student.full_name}? Their assigned seat will be released.`
+      : `Are you sure you want to activate ${student.full_name}?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const res = await api.put(`/students/${student.id}`, { account_status: newStatus });
+      const resData = res.data?.data;
+      if (newStatus === "ACTIVE" && resData?.account_status && resData.account_status !== "ACTIVE") {
+        alert(res.data?.message || `Member status updated to ${resData.account_status}. Collect fees to activate to Active.`);
+      } else if (newStatus === "ACTIVE" && resData?.seat_reassignment_required) {
+        alert(resData.seat_prompt || "Seat was reassigned. Please allocate a new seat.");
+        openProfile({ ...student, account_status: "ACTIVE" });
+      } else if (newStatus === "ACTIVE" && resData?.restored_seat_number) {
+        alert(`Student activated and Seat ${resData.restored_seat_number} restored.`);
+      } else {
+        alert(`Student successfully ${newStatus === "DISABLED" ? "disabled (seat unassigned)" : "activated"}`);
+      }
+      fetchStudents();
+      queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to update status");
+    }
+  };
 
   useEffect(() => {
     if (studentCodeParam || studentIdParam) {
       fetchStudents();
     }
-  }, [studentCodeParam, studentIdParam]);
+  }, [studentCodeParam, studentIdParam, fetchStudents]);
 
   useEffect(() => {
     if (students && students.length > 0 && !selectedStudent) {
+      let target = null;
       if (studentCodeParam) {
-        const found = students.find(
+        target = students.find(
           s => String(s.student_code || "").trim().toLowerCase() === String(studentCodeParam).trim().toLowerCase()
-        );
-        if (found) {
-          openProfile(found);
-          return;
-        }
+        ) || null;
+      } else if (studentIdParam) {
+        target = students.find(s => String(s.id) === String(studentIdParam)) || null;
       }
-      if (studentIdParam) {
-        const found = students.find(s => String(s.id) === String(studentIdParam));
-        if (found) {
-          openProfile(found);
-          return;
-        }
+      if (target) {
+        let active = true;
+        Promise.resolve().then(() => {
+          if (active) openProfile(target);
+        });
+        return () => {
+          active = false;
+        };
       }
     }
-  }, [students, studentCodeParam, studentIdParam, selectedStudent]);
+  }, [students, studentCodeParam, studentIdParam, selectedStudent, openProfile]);
 
   useEffect(() => {
     const handleReset = () => {
@@ -224,26 +271,7 @@ const Students = () => {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [selectedStudent]);
-
-  const openProfile = async (student) => {
-    setSelectedStudent(student);
-    setProfileData(null);
-    setProfileLoading(true);
-    setCurrentViewYear(new Date().getFullYear());
-    setCurrentViewMonth(new Date().getMonth());
-    setProfileTab("payment");
-    setChatInput("");
-    setChatTemplate("expiry_reminder");
-    try {
-      const res = await api.get(`/students/${student.id}/profile`);
-      setProfileData(res.data.data);
-    } catch (error) {
-      console.log("Profile fetch error:", error);
-    } finally {
-      setProfileLoading(false);
-    }
-  };
+  }, [selectedStudent, closeProfile]);
 
   const formatDate = (d) => {
     if (!d) return "";
@@ -315,14 +343,6 @@ const Students = () => {
     setQuickMsgStudent(null);
   };
 
-  const closeProfile = () => {
-    setSelectedStudent(null);
-    setProfileData(null);
-    if (searchParams.get("student_code") || searchParams.get("studentCode") || searchParams.get("student_id") || searchParams.get("id")) {
-      setSearchParams({}, { replace: true });
-    }
-  };
-
   const handleDeleteAdmission = async () => {
     const confirmDelete = window.confirm(
       "Are you sure you want to delete this admission? This will soft-delete the student. Payments and attendance data will be preserved."
@@ -333,26 +353,34 @@ const Students = () => {
       alert("Admission deleted successfully");
       closeProfile();
       fetchStudents();
+      queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
     } catch (error) {
       alert(error.response?.data?.message || "Failed to delete admission");
     }
   };
 
   const handleToggleStatus = async () => {
-    const newStatus = profileData.account_status === "ACTIVE" ? "DISABLED" : "ACTIVE";
+    const newStatus = canManuallyActivateMember(profileData) ? "ACTIVE" : "DISABLED";
     const confirmMsg = newStatus === "DISABLED"
-      ? "Are you sure you want to disable this member?"
+      ? "Are you sure you want to disable this member? Their assigned seat will be unassigned."
       : "Are you sure you want to activate this member?";
     if (!window.confirm(confirmMsg)) return;
 
     try {
-      await api.put(`/students/${selectedStudent.id}`, { account_status: newStatus });
-      alert(`Student successfully ${newStatus === "DISABLED" ? "disabled" : "activated"}`);
-      setProfileData(prev => ({
-        ...prev,
-        account_status: newStatus
-      }));
+      const res = await api.put(`/students/${selectedStudent.id}`, { account_status: newStatus });
+      const resData = res.data?.data;
+      await openProfile(selectedStudent);
+      if (newStatus === "ACTIVE" && resData?.account_status && resData.account_status !== "ACTIVE") {
+        alert(res.data?.message || `Member status updated to ${resData.account_status}. Collect fees to activate to Active.`);
+      } else if (newStatus === "ACTIVE" && resData?.seat_reassignment_required) {
+        alert(resData.seat_prompt || "Seat was reassigned. Please allocate a new seat.");
+      } else if (newStatus === "ACTIVE" && resData?.restored_seat_number) {
+        alert(`Student activated and Seat ${resData.restored_seat_number} restored.`);
+      } else {
+        alert(`Student successfully ${newStatus === "DISABLED" ? "disabled (seat unassigned)" : "activated"}`);
+      }
       fetchStudents();
+      queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
     } catch (error) {
       alert(error.response?.data?.message || "Failed to update status");
     }
@@ -362,7 +390,7 @@ const Students = () => {
     setEditForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const openEditForm = async () => {
+  const openEditForm = async (initialTab = "personal") => {
     try {
       const [shiftsRes, plansRes, seatsRes] = await Promise.all([
         api.get("/students/shifts"),
@@ -398,7 +426,6 @@ const Students = () => {
 
       setEditFloor(initialFloor);
       setEditRoom(initialRoom);
-      const currentShiftId = currentAssignment?.shift_id || "";
 
       setEditForm({
         full_name: profileData.full_name || "",
@@ -421,12 +448,7 @@ const Students = () => {
       console.error("Failed to load edit data:", err);
     }
     setEditingStudent(true);
-    setEditTab("personal");
-  };
-
-  const handleShiftChange = (shiftId) => {
-    handleEditChange("shift_id", shiftId);
-    handleEditChange("seat_id", "");
+    setEditTab(typeof initialTab === "string" ? initialTab : "personal");
   };
 
   const handleSaveEdit = async () => {
@@ -453,6 +475,7 @@ const Students = () => {
       openProfile(selectedStudent);
       setEditingStudent(false);
       fetchStudents();
+      queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
     } catch (error) {
       alert(error.response?.data?.message || "Failed to update profile");
     } finally {
@@ -460,125 +483,13 @@ const Students = () => {
     }
   };
 
-  const getStudentStatus = (student) => {
-    const acc = (student.account_status || "").toUpperCase();
-    if (acc === "DISABLED" || acc === "INACTIVE") {
-      return "inactive";
-    }
-    if (acc === "SUSPENDED") {
-      return "suspended";
-    }
+  const getStatusCounts = () => computeStatusCounts(students, accessTypeFilter);
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-    const twentyDaysAgo = new Date(today);
-    twentyDaysAgo.setDate(twentyDaysAgo.getDate() - 20);
-
-    if (!student.end_date) {
-      if (!student.admission_date) return "inactive";
-      const admissionDate = new Date(student.admission_date);
-      if (isNaN(admissionDate.getTime())) return "inactive";
-      admissionDate.setHours(0, 0, 0, 0);
-      if (admissionDate < twentyDaysAgo) return "inactive";
-      if (admissionDate < sevenDaysAgo) return "suspended";
-      return "active";
-    }
-
-    const endDate = new Date(student.end_date);
-    if (isNaN(endDate.getTime())) return "inactive";
-    endDate.setHours(0, 0, 0, 0);
-    const next7Days = new Date(today);
-    next7Days.setDate(next7Days.getDate() + 7);
-
-    if (endDate < twentyDaysAgo) return "inactive";
-    if (endDate < sevenDaysAgo || endDate < today) return "suspended";
-    if (endDate <= next7Days) return "expiring_soon";
-    return "active";
-  };
-
-  const getStatusCounts = () => {
-    const base = students.filter(s => {
-      if (accessTypeFilter === "RESERVED") return s.access_type === "RESERVED";
-      if (accessTypeFilter === "UNRESERVED") return s.access_type === "UNRESERVED";
-      return true;
-    });
-    return {
-      all: base.length,
-      active: base.filter(s => {
-        const acc = (s.account_status || "").toUpperCase();
-        if (acc === "SUSPENDED" || acc === "INACTIVE" || acc === "DISABLED") return false;
-        const st = getStudentStatus(s);
-        if (st === "suspended" || st === "inactive") return false;
-        return st === "active" || st === "expiring_soon";
-      }).length,
-      expiring_soon: base.filter(s => getStudentStatus(s) === "expiring_soon").length,
-      inactive: base.filter(s => {
-        const acc = (s.account_status || "").toUpperCase();
-        if (acc === "INACTIVE" || acc === "DISABLED") return true;
-        return getStudentStatus(s) === "inactive";
-      }).length,
-      suspended: base.filter(s => {
-        const acc = (s.account_status || "").toUpperCase();
-        if (acc === "SUSPENDED") return true;
-        return getStudentStatus(s) === "suspended";
-      }).length,
-    };
-  };
-
-  const filteredStudents = students.filter(student => {
-    const matchesSearch =
-      student.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.reg_no?.includes(searchQuery) ||
-      student.mobile?.includes(searchQuery) ||
-      student.student_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.access_type?.toLowerCase().includes(searchQuery.toLowerCase());
-
-    if (accessTypeFilter === "RESERVED") {
-      if (student.access_type !== "RESERVED") return false;
-    }
-    if (accessTypeFilter === "UNRESERVED") {
-      if (student.access_type !== "UNRESERVED") return false;
-    }
-
-    if (!matchesSearch) return false;
-    // All students tab includes active, inactive, and suspended members
-    if (statusFilter === "all") return true;
-
-    // Active students tab includes all active members (including those expiring soon)
-    if (statusFilter === "active") {
-      const acc = (student.account_status || "").toUpperCase();
-      if (acc === "SUSPENDED" || acc === "INACTIVE" || acc === "DISABLED") return false;
-      const st = getStudentStatus(student);
-      if (st === "suspended" || st === "inactive") return false;
-      return st === "active" || st === "expiring_soon";
-    }
-
-    if (statusFilter === "suspended") {
-      const acc = (student.account_status || "").toUpperCase();
-      if (acc === "SUSPENDED") return true;
-      return getStudentStatus(student) === "suspended";
-    }
-
-    if (statusFilter === "inactive") {
-      const acc = (student.account_status || "").toUpperCase();
-      if (acc === "INACTIVE" || acc === "DISABLED") return true;
-      return getStudentStatus(student) === "inactive";
-    }
-
-    return getStudentStatus(student) === statusFilter;
+  const filteredStudents = filterStudentsList(students, {
+    searchQuery,
+    accessTypeFilter,
+    statusFilter,
   });
-
-  const getStatusBadge = (status) => {
-    const s = (status || "").toUpperCase();
-    if (s === "ACTIVE") return "status-badge";
-    if (s === "SUSPENDED") return "warning-badge";
-    if (s === "DISABLED" || s === "INACTIVE") return "danger-badge";
-    return "status-badge";
-  };
 
   const getStatusText = (status) => {
     const s = (status || "").toUpperCase();
@@ -678,27 +589,45 @@ const Students = () => {
                     <p style={{ margin: "4px 0", opacity: 0.8, fontSize: "14px", color: "#cbd5e1" }}>
                       Code: {profileData.student_code} | Reg No: {profileData.reg_no || "N/A"}
                     </p>
-                    <span
-                      className="status-badge"
-                      style={{
-                        background:
-                          profileData.account_status === "ACTIVE"
-                            ? "rgba(34,197,94,0.2)"
-                            : profileData.account_status === "SUSPENDED"
-                            ? "rgba(249,115,22,0.2)"
-                            : "rgba(239,68,68,0.2)",
-                        color:
-                          profileData.account_status === "ACTIVE"
-                            ? "#4ade80"
-                            : profileData.account_status === "SUSPENDED"
-                            ? "#fb923c"
-                            : "#fca5a5",
-                        display: "inline-block",
-                        marginTop: "8px",
-                      }}
-                    >
-                      {getStatusText(profileData.account_status)}
-                    </span>
+                    {(() => {
+                      const graceInfo = getGraceExpiredInfo(profileData);
+                      return (
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
+                          <span
+                            className="status-badge"
+                            style={{
+                              background:
+                                profileData.account_status === "ACTIVE"
+                                  ? "rgba(34,197,94,0.2)"
+                                  : profileData.account_status === "SUSPENDED"
+                                  ? "rgba(249,115,22,0.2)"
+                                  : "rgba(239,68,68,0.2)",
+                              color:
+                                profileData.account_status === "ACTIVE"
+                                  ? "#4ade80"
+                                  : profileData.account_status === "SUSPENDED"
+                                  ? "#fb923c"
+                                  : "#fca5a5",
+                              display: "inline-block",
+                            }}
+                          >
+                            {getStatusText(profileData.account_status)}
+                          </span>
+                          {graceInfo && (
+                            <span
+                              className="status-badge"
+                              style={{
+                                background: "rgba(244,63,94,0.22)",
+                                color: "#fda4af",
+                                display: "inline-block",
+                              }}
+                            >
+                              Grace Period ({graceInfo.daysOverdue}d overdue) · Attendance Allowed
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -740,6 +669,52 @@ const Students = () => {
 
 
 
+              {/* Floating / Seat Reassignment Prompt for Reactivated Reserved Members */}
+              {(profileData.seat_reassignment_needed || (
+                profileData.account_status === "ACTIVE" &&
+                profileData.validity?.access_type === "RESERVED" &&
+                profileData.shift_assignments?.length > 0 &&
+                !profileData.shift_assignments.some(sa => Boolean(sa.seat_number || sa.seat_id))
+              )) && (
+                <div style={{
+                  background: darkMode ? "rgba(245, 158, 11, 0.14)" : "#fffbeb",
+                  border: "1px solid #f59e0b",
+                  borderRadius: "12px",
+                  padding: "14px 18px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                }}>
+                  <div>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: darkMode ? "#fde68a" : "#92400e" }}>
+                      Seat was reassigned. Please allocate a new seat.
+                    </div>
+                    <div style={{ fontSize: "12px", color: darkMode ? "#fcd34d" : "#a16207", marginTop: "2px" }}>
+                      Member is Active with Floating / Unassigned seat status.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openEditForm("assignment")}
+                    style={{
+                      padding: "7px 14px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: "#d97706",
+                      color: "#ffffff",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Allocate Seat
+                  </button>
+                </div>
+              )}
+
               {/* Shift & Seat info */}
               {profileData.shift_assignments && profileData.shift_assignments.length > 0 && (() => {
                 const sortedAssignments = [...profileData.shift_assignments].sort((a, b) =>
@@ -776,10 +751,12 @@ const Students = () => {
                         </div>
                         <div className="profile-info-group" style={{ gridColumn: "span 2" }}>
                           <div className="profile-info-label">Seat Assignment</div>
-                          <div className="profile-info-value" style={{ color: textPrimary }}>
+                          <div className="profile-info-value" style={{ color: !sa.seat_number && profileData.validity?.access_type === "RESERVED" && profileData.account_status === "ACTIVE" ? "#d97706" : textPrimary }}>
                             {sa.seat_number 
                               ? `Seat ${sa.seat_number} (Floor ${sa.floor || 'N/A'}, Room ${sa.room || 'N/A'})` 
-                              : (profileData.validity?.access_type === "RESERVED" ? "No Seat Assigned" : "Unreserved")}
+                              : (profileData.validity?.access_type === "RESERVED"
+                                  ? (profileData.account_status === "ACTIVE" ? "Floating / Unassigned (Allocate a new seat)" : "Unassigned / Released")
+                                  : "Unreserved")}
                           </div>
                         </div>
                       </div>
@@ -789,7 +766,7 @@ const Students = () => {
               })()}
 
               {/* Action Buttons */}
-              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", alignItems: "center", flexWrap: "nowrap" }}>
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
                 <button
                   className="secondary-btn"
                   style={{
@@ -805,22 +782,31 @@ const Students = () => {
                 >
                   <FaEdit style={{ marginRight: "6px" }} /> Edit Profile
                 </button>
-                {isOwner && (
+                {isOwner && (() => {
+                  const showActivate = canManuallyActivateMember(profileData);
+                  return (
                   <>
                     <button
                       className="secondary-btn"
                       style={{
-                        background: profileData.account_status === "ACTIVE" ? "#fffbeb" : "#f0fdf4",
-                        color: profileData.account_status === "ACTIVE" ? "#d97706" : "#16a34a",
-                        borderColor: profileData.account_status === "ACTIVE" ? "#fef3c7" : "#dcfce7",
+                        background: showActivate ? "#f0fdf4" : "#fffbeb",
+                        color: showActivate ? "#16a34a" : "#d97706",
+                        borderColor: showActivate ? "#dcfce7" : "#fef3c7",
                         fontWeight: 600,
                         padding: "10px 16px",
                         borderRadius: "10px",
                         whiteSpace: "nowrap",
                       }}
+                      title={
+                        showActivate
+                          ? "Activate member"
+                          : profileData.account_status === "SUSPENDED" || profileData.account_status === "INACTIVE"
+                          ? "Suspended/Inactive members become Active only after clearing fees in Collect Fee. Click to disable member."
+                          : "Disable member"
+                      }
                       onClick={handleToggleStatus}
                     >
-                      {profileData.account_status === "ACTIVE" ? "Disable Member" : "Activate Member"}
+                      {showActivate ? "Activate Member" : "Disable Member"}
                     </button>
                     <button
                       className="secondary-btn"
@@ -838,7 +824,8 @@ const Students = () => {
                       <FaTrash style={{ marginRight: "6px" }} /> Delete Admission
                     </button>
                   </>
-                )}
+                  );
+                })()}
               </div>
             </div>
 
@@ -1206,11 +1193,12 @@ const Students = () => {
                                         end_date: profileData.validity?.end_date || null,
                                       }, loggedInUser)}
                                       title="Download PDF Invoice"
+                                      aria-label="Download PDF Invoice"
                                       style={{
                                         display: "inline-flex",
                                         alignItems: "center",
-                                        gap: "4px",
-                                        padding: "4px 8px",
+                                        justifyContent: "center",
+                                        padding: "5px 8px",
                                         borderRadius: "6px",
                                         border: "1px solid #3b82f6",
                                         background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
@@ -1230,7 +1218,7 @@ const Students = () => {
                                         e.currentTarget.style.color = "#2563eb";
                                       }}
                                     >
-                                      <FaDownload style={{ fontSize: "11px" }} /> PDF
+                                      <FaDownload style={{ fontSize: "12px" }} />
                                     </button>
                                     <button
                                       type="button"
@@ -1245,16 +1233,17 @@ const Students = () => {
                                         end_date: profileData.validity?.end_date || null,
                                       }, profileData.mobile, loggedInUser)}
                                       title="Send Invoice on WhatsApp"
+                                      aria-label="Send Invoice on WhatsApp"
                                       style={{
                                         display: "inline-flex",
                                         alignItems: "center",
-                                        gap: "4px",
-                                        padding: "4px 8px",
+                                        justifyContent: "center",
+                                        padding: "5px 8px",
                                         borderRadius: "6px",
                                         border: "1px solid #16a34a",
                                         background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
                                         color: "#16a34a",
-                                        fontSize: "12px",
+                                        fontSize: "13px",
                                         fontWeight: "600",
                                         cursor: "pointer",
                                         whiteSpace: "nowrap",
@@ -1269,7 +1258,47 @@ const Students = () => {
                                         e.currentTarget.style.color = "#16a34a";
                                       }}
                                     >
-                                      <FaWhatsapp style={{ fontSize: "12px" }} /> WhatsApp
+                                      <FaWhatsapp style={{ fontSize: "13px" }} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => sendInvoiceOnGmail({
+                                        ...p,
+                                        full_name: profileData.full_name,
+                                        student_code: profileData.student_code,
+                                        mobile: profileData.mobile,
+                                        email: profileData.email,
+                                        plan_name: profileData.validity?.plan_name || null,
+                                        start_date: profileData.validity?.start_date || null,
+                                        end_date: profileData.validity?.end_date || null,
+                                      }, profileData.email, loggedInUser)}
+                                      title="Send Invoice via Gmail"
+                                      aria-label="Send Invoice via Gmail"
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        padding: "5px 8px",
+                                        borderRadius: "6px",
+                                        border: "1px solid #ea4335",
+                                        background: darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2",
+                                        color: "#ea4335",
+                                        fontSize: "12px",
+                                        fontWeight: "600",
+                                        cursor: "pointer",
+                                        whiteSpace: "nowrap",
+                                        transition: "all 0.15s",
+                                      }}
+                                      onMouseOver={(e) => {
+                                        e.currentTarget.style.background = "#ea4335";
+                                        e.currentTarget.style.color = "#ffffff";
+                                      }}
+                                      onMouseOut={(e) => {
+                                        e.currentTarget.style.background = darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2";
+                                        e.currentTarget.style.color = "#ea4335";
+                                      }}
+                                    >
+                                      <SiGmail style={{ fontSize: "12px" }} />
                                     </button>
                                   </div>
                                 </td>
@@ -1737,20 +1766,35 @@ const Students = () => {
                           if (activeSeats.length === 0) {
                             return <div style={{ color: textMuted, fontSize: '12px', textAlign: 'center', padding: '10px' }}>No active seats available in this floor & room.</div>;
                           }
+                          const parseSeatParts = (seatNumber = '') => {
+                            const trimmed = String(seatNumber || '').trim().toUpperCase();
+                            const match = trimmed.match(/^([A-Z]+)(\d+)$/);
+                            if (match) return { prefix: match[1], num: parseInt(match[2], 10) };
+                            const prefix = trimmed.replace(/[0-9]/g, '').trim() || 'A';
+                            const numMatch = trimmed.match(/(\d+)/);
+                            return { prefix, num: numMatch ? parseInt(numMatch[1], 10) : 0 };
+                          };
                           const groups = {};
                           activeSeats.forEach(seat => {
-                            const rowLetter = (seat.seat_number || '').replace(/[0-9]/g, '').charAt(0).toUpperCase() || 'A';
-                            if (!groups[rowLetter]) groups[rowLetter] = [];
-                            groups[rowLetter].push(seat);
+                            const { prefix } = parseSeatParts(seat.seat_number);
+                            if (!groups[prefix]) groups[prefix] = [];
+                            groups[prefix].push(seat);
                           });
-                          return Object.keys(groups).sort().map(rowLetter => (
+                          return Object.keys(groups).sort((a, b) => a.localeCompare(b)).map(rowLetter => {
+                            const sortedSeats = [...groups[rowLetter]].sort((a, b) => {
+                              const pa = parseSeatParts(a.seat_number);
+                              const pb = parseSeatParts(b.seat_number);
+                              if (pa.num !== pb.num) return pa.num - pb.num;
+                              return String(a.seat_number || '').localeCompare(String(b.seat_number || ''));
+                            });
+                            return (
                             <div key={rowLetter}>
                               <div style={{ fontSize: '10px', fontWeight: 700, color: darkMode ? '#64748b' : '#94a3b8', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ background: darkMode ? '#334155' : '#e2e8f0', padding: '1px 8px', borderRadius: '4px' }}>{rowLetter} Row</span>
-                                <span style={{ fontWeight: 500, fontSize: '9px' }}>({groups[rowLetter].length})</span>
+                                <span style={{ fontWeight: 500, fontSize: '9px' }}>({sortedSeats.length})</span>
                               </div>
                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(48px, 1fr))', gap: '6px' }}>
-                                {groups[rowLetter].map(seat => {
+                                {sortedSeats.map(seat => {
                                   const sc = getSeatColorForEdit(seat, editForm.shift_ids || [], editForm.seat_id, profileData, darkMode);
                                   return (
                                     <div
@@ -1775,7 +1819,8 @@ const Students = () => {
                                 })}
                               </div>
                             </div>
-                          ));
+                          );
+                          });
                         })()}
                       </div>
                     </div>
@@ -1902,7 +1947,7 @@ const Students = () => {
           <button
             onClick={() => {
               setAccessTypeFilter("all");
-              setStatusFilter("all");
+              handleStatusFilterChange("all");
               setSearchQuery("");
             }}
             style={{
@@ -1922,20 +1967,22 @@ const Students = () => {
         )}
       </div>
 
-      <div className="status-filter-pills-bar" style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
+      <div className="status-filter-pills-bar" style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'nowrap', overflowX: 'auto', scrollbarWidth: 'none' }}>
         {[
           { key: "all", label: `All`, color: darkMode ? "#94a3b8" : "#64748b", bg: darkMode ? "#1e293b" : "#f1f5f9" },
           { key: "active", label: `Active`, color: "#16a34a", bg: "#f0fdf4" },
-          { key: "expiring_soon", label: `Expiring in 7 Days`, color: "#d97706", bg: "#fffbeb" },
-          { key: "inactive", label: `Inactive`, color: "#dc2626", bg: "#fef2f2" },
+          { key: "expiring_soon", label: `Expiring Soon`, color: "#d97706", bg: "#fffbeb" },
+          { key: "expired", label: `Grace Period (≤ 10d)`, color: "#e11d48", bg: "#fff1f2" },
           { key: "suspended", label: `Suspended`, color: "#ea580c", bg: "#fff7ed" },
+          { key: "inactive", label: `Inactive`, color: "#dc2626", bg: "#fef2f2" },
+          { key: "disabled", label: `Disabled`, color: "#4b5563", bg: "#f3f4f6" },
         ].map((btn) => {
           const counts = getStatusCounts();
           const count = btn.key === "all" ? counts.all : counts[btn.key] || 0;
           return (
             <button
               key={btn.key}
-              onClick={() => setStatusFilter(btn.key)}
+              onClick={() => handleStatusFilterChange(btn.key)}
               style={{
                 padding: '6px 14px',
                 borderRadius: '20px',
@@ -2002,6 +2049,9 @@ const Students = () => {
       </div>
 
       <style>{`
+        .status-filter-pills-bar::-webkit-scrollbar {
+          display: none;
+        }
         @media (max-width: 768px) {
           .desktop-col {
             display: none !important;
@@ -2011,17 +2061,17 @@ const Students = () => {
           }
         }
       `}</style>
-      <div className="table-card" style={{ padding: '0 12px', background: cardBg, border: `1px solid ${borderColor}`, borderRadius: '16px' }}>
+      <div className="table-card" style={{ padding: '0 12px', overflowX: 'auto', background: cardBg, border: `1px solid ${borderColor}`, borderRadius: '16px' }}>
         <table className="students-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${borderColor}`, color: textSecondary, fontSize: '12px', textTransform: 'uppercase' }}>
-              <th style={{ padding: '16px 12px' }}>Student</th>
-              <th className="desktop-col" style={{ padding: '16px 12px' }}>Contact</th>
-              <th style={{ padding: '16px 12px' }}>Seat / Shift</th>
-              <th className="desktop-col" style={{ padding: '16px 12px' }}>Plan</th>
-              <th className="desktop-col" style={{ padding: '16px 12px' }}>Expiry</th>
-              <th className="desktop-col" style={{ padding: '16px 12px' }}>Status</th>
-              <th style={{ padding: '16px 12px', textAlign: 'center' }}>Actions</th>
+              <th style={{ padding: '16px 10px', whiteSpace: 'nowrap' }}>Student</th>
+              <th className="desktop-col" style={{ padding: '16px 10px', whiteSpace: 'nowrap' }}>Contact</th>
+              <th style={{ padding: '16px 10px', whiteSpace: 'nowrap' }}>Seat / Shift</th>
+              <th className="desktop-col" style={{ padding: '16px 10px', whiteSpace: 'nowrap' }}>Plan</th>
+              <th className="desktop-col" style={{ padding: '16px 10px', whiteSpace: 'nowrap' }}>Expiry</th>
+              <th className="desktop-col" style={{ padding: '16px 10px', whiteSpace: 'nowrap' }}>Status</th>
+              <th style={{ padding: '16px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -2037,12 +2087,12 @@ const Students = () => {
               filteredStudents.map((student) => {
                 const initials = getInitials(student.full_name);
                 const expiryInfo = getExpirySubText(student.end_date);
-                const isValidityExpired = expiryInfo ? expiryInfo.isExpired : false;
+                const rowStatus = getStudentStatus(student);
                 
                 return (
                   <tr key={student.id} style={{ borderBottom: `1px solid ${borderColor}`, fontSize: '14px', verticalAlign: 'middle' }}>
                     {/* STUDENT */}
-                    <td style={{ padding: '16px 12px' }}>
+                    <td style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div style={{
                           width: '40px',
@@ -2059,9 +2109,14 @@ const Students = () => {
                         }}>
                           {initials}
                         </div>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontWeight: 600, color: textPrimary, fontSize: '15px' }}>{student.full_name}</span>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
+                            <span
+                              title={student.full_name}
+                              style={{ fontWeight: 600, color: textPrimary, fontSize: '15px', whiteSpace: 'nowrap', maxWidth: '185px', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block' }}
+                            >
+                              {student.full_name}
+                            </span>
                             {student.due_amount > 0 && (
                               <span style={{
                                 backgroundColor: '#fef2f2',
@@ -2069,13 +2124,15 @@ const Students = () => {
                                 padding: '2px 8px',
                                 borderRadius: '9999px',
                                 fontSize: '11px',
-                                fontWeight: 600
+                                fontWeight: 600,
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
                               }}>
                                 ₹{student.due_amount} due
                               </span>
                             )}
                           </div>
-                          <div style={{ fontSize: '12px', color: textSecondary, marginTop: '2px' }}>
+                          <div style={{ fontSize: '12px', color: textSecondary, marginTop: '2px', whiteSpace: 'nowrap' }}>
                             {student.student_code}
                           </div>
                         </div>
@@ -2083,49 +2140,80 @@ const Students = () => {
                     </td>
 
                     {/* CONTACT */}
-                    <td className="desktop-col" style={{ padding: '16px 12px' }}>
-                      <div style={{ fontWeight: 500, color: textPrimary }}>{student.mobile}</div>
+                    <td className="desktop-col" style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontWeight: 500, color: textPrimary, whiteSpace: 'nowrap' }}>{student.mobile}</div>
                       {student.email && (
-                        <div style={{ fontSize: '12px', color: textSecondary, marginTop: '2px' }}>{student.email}</div>
+                        <div
+                          title={student.email}
+                          style={{ fontSize: '12px', color: textSecondary, marginTop: '2px', whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        >
+                          {student.email}
+                        </div>
                       )}
                     </td>
 
                     {/* SEAT / SHIFT */}
-                    <td style={{ padding: '16px 12px' }}>
+                    <td style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
                       {student.seat_number ? (
                         <>
-                          <div style={{ fontWeight: 600, color: textPrimary }}>Seat {student.seat_number}</div>
-                          <div style={{ fontSize: '12px', color: textSecondary, marginTop: '2px' }}>{student.shift_name}</div>
+                          <div style={{ fontWeight: 600, color: textPrimary, whiteSpace: 'nowrap' }}>Seat {student.seat_number}</div>
+                          <div
+                            title={student.shift_name}
+                            style={{ fontSize: '12px', color: textSecondary, marginTop: '2px', whiteSpace: 'nowrap', maxWidth: '170px', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          >
+                            {student.shift_name}
+                          </div>
+                        </>
+                      ) : student.access_type === "RESERVED" && student.account_status === "ACTIVE" ? (
+                        <>
+                          <div style={{ fontWeight: 700, color: '#d97706', fontSize: '13px', whiteSpace: 'nowrap' }}>Floating · Reassign Seat</div>
+                          <div
+                            title={student.shift_name || "—"}
+                            style={{ fontSize: '12px', color: textSecondary, marginTop: '2px', whiteSpace: 'nowrap', maxWidth: '170px', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          >
+                            {student.shift_name || "—"}
+                          </div>
                         </>
                       ) : (
                         <>
-                          <div style={{ fontWeight: 600, color: textSecondary }}>
-                            {student.access_type === "RESERVED" ? "No Seat" : "Unreserved"}
+                          <div style={{ fontWeight: 600, color: textSecondary, whiteSpace: 'nowrap' }}>
+                            {student.access_type === "RESERVED" ? "Unassigned / Released" : "Unreserved"}
                           </div>
-                          <div style={{ fontSize: '12px', color: textSecondary, marginTop: '2px' }}>{student.shift_name || "—"}</div>
+                          <div
+                            title={student.shift_name || "—"}
+                            style={{ fontSize: '12px', color: textSecondary, marginTop: '2px', whiteSpace: 'nowrap', maxWidth: '170px', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          >
+                            {student.shift_name || "—"}
+                          </div>
                         </>
                       )}
                     </td>
 
                     {/* PLAN */}
-                    <td className="desktop-col" style={{ padding: '16px 12px' }}>
+                    <td className="desktop-col" style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
                       {student.plan_name ? (
-                        <span style={{ color: textPrimary, fontWeight: 500 }}>{student.plan_name}</span>
+                        <span
+                          title={student.plan_name}
+                          style={{ color: textPrimary, fontWeight: 500, whiteSpace: 'nowrap', maxWidth: '130px', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', verticalAlign: 'middle' }}
+                        >
+                          {student.plan_name}
+                        </span>
                       ) : (
                         <span style={{ color: textSecondary }}>—</span>
                       )}
                     </td>
 
                     {/* EXPIRY */}
-                    <td className="desktop-col" style={{ padding: '16px 12px' }}>
+                    <td className="desktop-col" style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
                       {student.end_date ? (
                         <>
-                          <div style={{ fontWeight: 500, color: textPrimary }}>{formatReadableDate(student.end_date)}</div>
+                          <div style={{ fontWeight: 500, color: textPrimary, whiteSpace: 'nowrap' }}>{formatReadableDate(student.end_date)}</div>
                           {expiryInfo && (
                             <div style={{ 
                               fontSize: '12px', 
                               color: expiryInfo.isExpired ? '#ef4444' : expiryInfo.isWarning ? '#f59e0b' : textSecondary, 
-                              marginTop: '2px' 
+                              marginTop: '2px',
+                              whiteSpace: 'nowrap',
                             }}>
                               {expiryInfo.text}
                             </div>
@@ -2137,7 +2225,7 @@ const Students = () => {
                     </td>
 
                     {/* STATUS */}
-                    <td className="desktop-col" style={{ padding: '16px 12px' }}>
+                    <td className="desktop-col" style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
                       {(() => {
                         if (student.account_status === "DISABLED") {
                           return (
@@ -2150,20 +2238,22 @@ const Students = () => {
                               fontWeight: 600,
                               display: 'inline-flex',
                               alignItems: 'center',
-                              gap: '6px'
+                              gap: '6px',
+                              whiteSpace: 'nowrap',
                             }}>
-                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#4b5563' }}></span>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#4b5563', flexShrink: 0 }}></span>
                               Disabled
                             </span>
                           );
                         }
-                        const status = getStudentStatus(student);
+                        const status = rowStatus;
                         const statusStyles = {
                           active: { bg: '#f0fdf4', color: '#16a34a', dot: '#16a34a', label: 'Active' },
-                          expiring_soon: { bg: '#fffbeb', color: '#d97706', dot: '#d97706', label: 'Expiring in 7 Days' },
-                          expired: { bg: '#fef2f2', color: '#ef4444', dot: '#ef4444', label: 'Expired' },
-                          inactive: { bg: '#fef2f2', color: '#dc2626', dot: '#dc2626', label: 'Inactive' },
+                          expiring_soon: { bg: '#fffbeb', color: '#d97706', dot: '#d97706', label: 'Expiring Soon' },
+                          expired: { bg: '#fff1f2', color: '#e11d48', dot: '#e11d48', label: 'Grace Period (≤ 10d)' },
                           suspended: { bg: '#fff7ed', color: '#ea580c', dot: '#ea580c', label: 'Suspended' },
+                          inactive: { bg: '#fef2f2', color: '#dc2626', dot: '#dc2626', label: 'Inactive' },
+                          disabled: { bg: '#f3f4f6', color: '#4b5563', dot: '#4b5563', label: 'Disabled' },
                         };
                         const s = statusStyles[status] || statusStyles.active;
                         return (
@@ -2176,9 +2266,10 @@ const Students = () => {
                             fontWeight: 600,
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '6px'
+                            gap: '6px',
+                            whiteSpace: 'nowrap',
                           }}>
-                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: s.dot }}></span>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: s.dot, flexShrink: 0 }}></span>
                             {s.label}
                           </span>
                         );
@@ -2186,11 +2277,11 @@ const Students = () => {
                     </td>
 
                     {/* ACTIONS */}
-                    <td style={{ padding: '16px 12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+                    <td style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'nowrap' }}>
                         <button
                           style={{
-                            padding: '6px 14px',
+                            padding: '6px 12px',
                             border: '1px solid #cbd5e1',
                             background: darkMode ? '#334155' : '#ffffff',
                             color: textPrimary,
@@ -2198,7 +2289,9 @@ const Students = () => {
                             fontWeight: 600,
                             fontSize: '13px',
                             cursor: 'pointer',
-                            transition: 'all 0.15s'
+                            transition: 'all 0.15s',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
                           }}
                           onClick={() => openProfile(student)}
                           onMouseEnter={(e) => {
@@ -2212,37 +2305,51 @@ const Students = () => {
                         >
                           View
                         </button>
+                        {(() => {
+                          const showActivate = canManuallyActivateMember(student);
+                          return (
+                            <button
+                              className="desktop-col"
+                              style={{
+                                padding: '6px 12px',
+                                border: `1px solid ${showActivate ? '#bbf7d0' : '#fca5a5'}`,
+                                background: showActivate ? '#f0fdf4' : '#fee2e2',
+                                color: showActivate ? '#16a34a' : '#dc2626',
+                                borderRadius: '8px',
+                                fontWeight: 600,
+                                fontSize: '13px',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s',
+                                minWidth: '76px',
+                                textAlign: 'center',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
+                              }}
+                              title={
+                                showActivate
+                                  ? 'Activate member'
+                                  : student.account_status === 'SUSPENDED' || student.account_status === 'INACTIVE' || rowStatus === 'suspended' || rowStatus === 'inactive'
+                                  ? 'Suspended/Inactive members become Active only after clearing fees in Collect Fee. Click to disable member.'
+                                  : 'Disable member'
+                              }
+                              onClick={() => handleToggleStudentStatus(student)}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = showActivate ? '#dcfce7' : '#fecaca';
+                                e.currentTarget.style.borderColor = showActivate ? '#86efac' : '#f87171';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = showActivate ? '#f0fdf4' : '#fee2e2';
+                                e.currentTarget.style.borderColor = showActivate ? '#bbf7d0' : '#fca5a5';
+                              }}
+                            >
+                              {showActivate ? 'Activate' : 'Disable'}
+                            </button>
+                          );
+                        })()}
                         <button
                           className="desktop-col"
                           style={{
-                            padding: '6px 14px',
-                            border: `1px solid ${student.account_status === 'ACTIVE' ? '#fca5a5' : '#bbf7d0'}`,
-                            background: student.account_status === 'ACTIVE' ? '#fee2e2' : '#f0fdf4',
-                            color: student.account_status === 'ACTIVE' ? '#dc2626' : '#16a34a',
-                            borderRadius: '8px',
-                            fontWeight: 600,
-                            fontSize: '13px',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s',
-                            minWidth: '80px',
-                            textAlign: 'center'
-                          }}
-                          onClick={() => handleToggleStudentStatus(student)}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = student.account_status === 'ACTIVE' ? '#fecaca' : '#dcfce7';
-                            e.currentTarget.style.borderColor = student.account_status === 'ACTIVE' ? '#f87171' : '#86efac';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = student.account_status === 'ACTIVE' ? '#fee2e2' : '#f0fdf4';
-                            e.currentTarget.style.borderColor = student.account_status === 'ACTIVE' ? '#fca5a5' : '#bbf7d0';
-                          }}
-                        >
-                          {student.account_status === 'ACTIVE' ? 'Disable' : 'Activate'}
-                        </button>
-                        <button
-                          className="desktop-col"
-                          style={{
-                            padding: '6px 14px',
+                            padding: '6px 12px',
                             border: '1px solid #bbf7d0',
                             background: '#f0fdf4',
                             color: '#16a34a',
@@ -2251,6 +2358,11 @@ const Students = () => {
                             fontSize: '13px',
                             cursor: 'pointer',
                             transition: 'all 0.15s',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
                           }}
                           onClick={(e) => {
                             e.stopPropagation();

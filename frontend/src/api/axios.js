@@ -89,9 +89,15 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Don't auto logout when changing password or logging in
+      // Don't auto logout when changing password, resetting password, or logging in
       const requestUrl = error.config?.url || "";
-      if (requestUrl.includes("/users/change-password") || requestUrl.includes("/users/login")) {
+      if (
+        requestUrl.includes("/users/change-password") ||
+        requestUrl.includes("/users/login") ||
+        requestUrl.includes("/users/forgot-password") ||
+        requestUrl.includes("/users/verify-reset-otp") ||
+        requestUrl.includes("/users/reset-password")
+      ) {
         return Promise.reject(error);
       }
 
@@ -99,7 +105,8 @@ api.interceptors.response.use(
       clientCache.clear();
       localStorage.removeItem("lms_token");
       localStorage.removeItem("lms_user");
-      if (window.location.pathname !== "/login") {
+      const publicPaths = ["/login", "/forgot-password", "/reset-password"];
+      if (!publicPaths.includes(window.location.pathname)) {
         if (isDeviceLoggedOut) {
           window.location.href = "/login?reason=logged_out";
         } else {

@@ -1,27 +1,38 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import { FaBookOpen, FaEye, FaEyeSlash, FaExclamationTriangle } from "react-icons/fa";
 import api from "../api/axios";
+
+const getInitialLoginMessages = () => {
+  if (typeof window === "undefined") return { info: "", success: "" };
+  const params = new URLSearchParams(window.location.search);
+  return {
+    info:
+      params.get("reason") === "logged_out"
+        ? "This account has been logged out because a new user logged in on another device. Use your main account."
+        : "",
+    success:
+      params.get("reset") === "success"
+        ? "Password set/updated successfully! Sign in with your new password."
+        : "",
+  };
+};
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [infoMessage, setInfoMessage] = useState("");
+  const [infoMessage, setInfoMessage] = useState(() => getInitialLoginMessages().info);
+  const [successMessage, setSuccessMessage] = useState(() => getInitialLoginMessages().success);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showForceLogin, setShowForceLogin] = useState(false);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("reason") === "logged_out") {
-      setInfoMessage("This account has been logged out because a new user logged in on another device. Use your main account.");
-    }
-  }, []);
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     setError("");
     setInfoMessage("");
+    setSuccessMessage("");
     setLoading(true);
     try {
       const res = await api.post("/users/login", { email: email.trim(), password });
@@ -114,6 +125,16 @@ const Login = () => {
 
         {/* Form */}
         <div style={{ padding: "32px" }}>
+          {successMessage && (
+            <div style={{
+              background: "#f0fdf4", border: "1px solid #bbf7d0",
+              borderRadius: "8px", padding: "12px 16px",
+              color: "#15803d", fontSize: "14px", marginBottom: "20px",
+            }}>
+              {successMessage}
+            </div>
+          )}
+
           {infoMessage && (
             <div style={{
               background: "#eff6ff", border: "1px solid #bfdbfe",
@@ -149,7 +170,20 @@ const Login = () => {
             </div>
 
             <div className="form-group">
-              <label>Password</label>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                <label style={{ margin: 0 }}>Password</label>
+                <Link
+                  to="/forgot-password"
+                  style={{
+                    fontSize: "12.5px",
+                    fontWeight: 600,
+                    color: "#2563eb",
+                    textDecoration: "none",
+                  }}
+                >
+                  Set Password / Forgot Password?
+                </Link>
+              </div>
               <div style={{ position: "relative" }}>
                 <input
                   type={showPassword ? "text" : "password"}

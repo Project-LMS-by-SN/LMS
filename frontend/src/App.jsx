@@ -15,6 +15,8 @@ import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
 import ChangePassword from "./pages/ChangePassword";
 import Login from "./pages/Login";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import PublicAdmission from "./pages/PublicAdmission";
 import Subscription from "./pages/Subscription";
 import SubscriptionInvoice from "./pages/SubscriptionInvoice";
@@ -66,6 +68,14 @@ const App = () => {
             mustChangePassword() ? <Navigate to="/change-password" replace /> : <Navigate to="/dashboard" replace />
           ) : <Login />
         } />
+
+        <Route path="/forgot-password" element={
+          isAuthenticated() ? (
+            mustChangePassword() ? <Navigate to="/change-password" replace /> : <Navigate to="/dashboard" replace />
+          ) : <ForgotPassword />
+        } />
+
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         <Route path="/change-password" element={
           isAuthenticated() ? (

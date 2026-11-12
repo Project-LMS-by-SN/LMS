@@ -12,7 +12,13 @@ describe('auth middleware unit tests', () => {
   });
 
   it('allows public routes without authentication', async () => {
-    const publicPaths = ['/login', '/users/login', '/users/forgot-password'];
+    const publicPaths = [
+      '/login',
+      '/users/login',
+      '/users/forgot-password',
+      '/users/verify-reset-otp',
+      '/users/reset-password',
+    ];
 
     for (const path of publicPaths) {
       const req = { method: 'GET', path, originalUrl: path };

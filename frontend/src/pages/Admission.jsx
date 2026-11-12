@@ -797,20 +797,35 @@ const Admission = () => {
                   if (activeSeats.length === 0) {
                     return <div style={{ color: textMuted, fontSize: '14px', textAlign: 'center', padding: '20px' }}>No active seats available in this floor & room.</div>;
                   }
+                  const parseSeatParts = (seatNumber = '') => {
+                    const trimmed = String(seatNumber || '').trim().toUpperCase();
+                    const match = trimmed.match(/^([A-Z]+)(\d+)$/);
+                    if (match) return { prefix: match[1], num: parseInt(match[2], 10) };
+                    const prefix = trimmed.replace(/[0-9]/g, '').trim() || 'A';
+                    const numMatch = trimmed.match(/(\d+)/);
+                    return { prefix, num: numMatch ? parseInt(numMatch[1], 10) : 0 };
+                  };
                   const groups = {};
                   activeSeats.forEach(seat => {
-                    const rowLetter = (seat.seat_number || '').replace(/[0-9]/g, '').charAt(0).toUpperCase() || 'A';
-                    if (!groups[rowLetter]) groups[rowLetter] = [];
-                    groups[rowLetter].push(seat);
+                    const { prefix } = parseSeatParts(seat.seat_number);
+                    if (!groups[prefix]) groups[prefix] = [];
+                    groups[prefix].push(seat);
                   });
-                  return Object.keys(groups).sort().map(rowLetter => (
+                  return Object.keys(groups).sort((a, b) => a.localeCompare(b)).map(rowLetter => {
+                    const sortedSeats = [...groups[rowLetter]].sort((a, b) => {
+                      const pa = parseSeatParts(a.seat_number);
+                      const pb = parseSeatParts(b.seat_number);
+                      if (pa.num !== pb.num) return pa.num - pb.num;
+                      return String(a.seat_number || '').localeCompare(String(b.seat_number || ''));
+                    });
+                    return (
                     <div key={rowLetter}>
                       <div style={{ fontSize: '11px', fontWeight: 700, color: textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ background: darkMode ? '#334155' : '#e2e8f0', color: textPrimary, padding: '2px 10px', borderRadius: '6px' }}>{rowLetter} Row</span>
-                        <span style={{ fontWeight: 500, fontSize: '10px' }}>({groups[rowLetter].length})</span>
+                        <span style={{ fontWeight: 500, fontSize: '10px' }}>({sortedSeats.length})</span>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(56px, 1fr))', gap: '10px' }}>
-                        {groups[rowLetter].map(seat => {
+                        {sortedSeats.map(seat => {
                           const sc = getSeatColorForAdmission(seat, formData.shift_ids, selectedSeat, darkMode);
                           return (
                             <div
@@ -835,7 +850,8 @@ const Admission = () => {
                         })}
                       </div>
                     </div>
-                  ));
+                  );
+                  });
                 })()}
               </div>
               {selectedSeat && (() => {

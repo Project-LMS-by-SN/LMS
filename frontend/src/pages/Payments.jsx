@@ -3,7 +3,8 @@ import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
 import { FaSearch, FaTimes, FaWallet, FaReceipt, FaDownload, FaWhatsapp } from "react-icons/fa";
-import { generateStudentInvoicePdf, sendInvoiceOnWhatsApp } from "../utils/studentInvoicePdf";
+import { SiGmail } from "react-icons/si";
+import { generateStudentInvoicePdf, sendInvoiceOnWhatsApp, sendInvoiceOnGmail } from "../utils/studentInvoicePdf";
 import CustomDatePicker from "../components/CustomDatePicker";
 
 const Payments = () => {
@@ -68,19 +69,26 @@ const Payments = () => {
     }
   };
 
-  const fetchData = async () => {
-    try {
-      const res = await api.get("/payments");
-      setPayments(res.data.data || []);
-    } catch (error) {
-      console.log("Payments fetch error:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchData();
+    let active = true;
+    const loadPayments = async () => {
+      try {
+        const res = await api.get("/payments");
+        if (active) {
+          setPayments(res.data.data || []);
+        }
+      } catch (error) {
+        console.log("Payments fetch error:", error);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+    loadPayments();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const toDateStr = (d) =>
@@ -290,16 +298,17 @@ const Payments = () => {
                       type="button"
                       onClick={() => generateStudentInvoicePdf(payment, user)}
                       title="Download PDF Invoice"
+                      aria-label="Download PDF Invoice"
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
-                        gap: "5px",
-                        padding: "5px 10px",
+                        justifyContent: "center",
+                        padding: "6px 9px",
                         borderRadius: "6px",
                         border: "1px solid #3b82f6",
                         background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
                         color: "#2563eb",
-                        fontSize: "12px",
+                        fontSize: "13px",
                         fontWeight: "600",
                         cursor: "pointer",
                         whiteSpace: "nowrap",
@@ -314,22 +323,23 @@ const Payments = () => {
                         e.currentTarget.style.color = "#2563eb";
                       }}
                     >
-                      <FaDownload style={{ fontSize: "11px" }} /> PDF
+                      <FaDownload style={{ fontSize: "13px" }} />
                     </button>
                     <button
                       type="button"
                       onClick={() => sendInvoiceOnWhatsApp(payment, payment.mobile, user)}
                       title="Send Invoice to Student on WhatsApp"
+                      aria-label="Send Invoice to Student on WhatsApp"
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
-                        gap: "5px",
-                        padding: "5px 10px",
+                        justifyContent: "center",
+                        padding: "6px 9px",
                         borderRadius: "6px",
                         border: "1px solid #16a34a",
                         background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
                         color: "#16a34a",
-                        fontSize: "12px",
+                        fontSize: "14px",
                         fontWeight: "600",
                         cursor: "pointer",
                         whiteSpace: "nowrap",
@@ -344,7 +354,38 @@ const Payments = () => {
                         e.currentTarget.style.color = "#16a34a";
                       }}
                     >
-                      <FaWhatsapp style={{ fontSize: "12px" }} /> WhatsApp
+                      <FaWhatsapp style={{ fontSize: "14px" }} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sendInvoiceOnGmail(payment, payment.email, user)}
+                      title="Send Invoice via Gmail"
+                      aria-label="Send Invoice via Gmail"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: "6px 9px",
+                        borderRadius: "6px",
+                        border: "1px solid #ea4335",
+                        background: darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2",
+                        color: "#ea4335",
+                        fontSize: "13px",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                        transition: "all 0.15s",
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.background = "#ea4335";
+                        e.currentTarget.style.color = "#ffffff";
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.background = darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2";
+                        e.currentTarget.style.color = "#ea4335";
+                      }}
+                    >
+                      <SiGmail style={{ fontSize: "13px" }} />
                     </button>
                   </div>
                 </td>

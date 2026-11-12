@@ -1,8 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
 import CustomDatePicker from "../components/CustomDatePicker";
+import { getTodayYmdIST, diffDaysYmd } from "../utils/studentStatus";
 import {
   FaCreditCard,
   FaSearch,
@@ -15,16 +18,12 @@ import {
   FaHashtag,
   FaDownload,
   FaWhatsapp,
+  FaExclamationTriangle,
 } from "react-icons/fa";
-import { generateStudentInvoicePdf, sendInvoiceOnWhatsApp } from "../utils/studentInvoicePdf";
+import { SiGmail } from "react-icons/si";
+import { generateStudentInvoicePdf, sendInvoiceOnWhatsApp, sendInvoiceOnGmail } from "../utils/studentInvoicePdf";
 
-const getTodayStr = () => {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
+const getTodayStr = () => getTodayYmdIST();
 
 const generateInvoiceNo = () => {
   const prefix = "INV";
@@ -37,6 +36,11 @@ const generateInvoiceNo = () => {
 
 const CollectFee = () => {
   const { darkMode, timeFormat } = useTheme();
+  const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const studentIdParam = searchParams.get("student_id") || searchParams.get("id");
+  const studentCodeParam = searchParams.get("student_code") || searchParams.get("studentCode");
+  const autoSelectedKeyRef = useRef("");
   const currentUser = (() => {
     try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); }
     catch { return {}; }
@@ -61,6 +65,7 @@ const CollectFee = () => {
   const [collectType, setCollectType] = useState("fee"); // "fee" | "registration"
   const [registrationAmount, setRegistrationAmount] = useState(0);
   const [renewalPlanFee, setRenewalPlanFee] = useState(0);
+  const [renewPlan, setRenewPlan] = useState(false);
   const [paymentModeId, setPaymentModeId] = useState("");
   const [amountReceived, setAmountReceived] = useState("");
   const [invoiceNo, setInvoiceNo] = useState(generateInvoiceNo());
@@ -69,77 +74,22 @@ const CollectFee = () => {
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
+  const [seatAlert, setSeatAlert] = useState(null);
 
-  const showToast = (msg, type = "success") => {
+  const prefix = (() => {
+    if (!currentUser || !currentUser.role) return "";
+    const roleSegment = currentUser.role.toLowerCase();
+    const nameSegment = (currentUser.name || "user").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    return `/${roleSegment}/${nameSegment}`;
+  })();
+
+  const showToast = useCallback((msg, type = "success") => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  const fetchData = async () => {
-    try {
-      const [studentRes, modeRes, paymentRes, planRes] = await Promise.all([
-        api.get("/students"),
-        api.get("/payment-modes"),
-        api.get("/payments"),
-        api.get("/fee-plans"),
-      ]);
-      setStudents(studentRes.data.data || []);
-      const rawModes = modeRes.data.data || [];
-      const modes = rawModes.length > 0
-        ? rawModes
-        : [
-            { id: 1, mode_name: "Cash" },
-            { id: 2, mode_name: "UPI" },
-            { id: 3, mode_name: "Card" },
-          ];
-      setPaymentModes(modes);
-      if (modes.length > 0) setPaymentModeId(modes[0].id.toString());
-
-      const plans = planRes.data.data || [];
-      setFeePlans(plans);
-      const regPlan = plans.find((p) => p.plan_type === "REGISTRATION" && p.is_active !== false);
-      setRegistrationAmount(regPlan ? Number(regPlan.amount) : 0);
-      const firstPlan = plans.find((p) => p.is_active !== false && p.plan_type !== "REGISTRATION");
-      if (firstPlan) setSelectedPlanId(String(firstPlan.id));
-
-      const allPayments = paymentRes.data.data || [];
-      setRecentPayments(allPayments.slice(0, 5));
-    } catch {
-      showToast("Failed to load initial data", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
+    setTimeout(() => setToast(null), 4000);
   }, []);
 
-  // Handle Search Input Change
-  const handleSearchChange = (e) => {
-    const query = e.target.value;
-    setSearchQuery(query);
-
-    if (query.trim() === "") {
-      setSearchResults([]);
-      setShowResults(false);
-      return;
-    }
-
-    const q = query.toLowerCase();
-    const filtered = students.filter(
-      (s) =>
-        s.full_name?.toLowerCase().includes(q) ||
-        s.mobile?.includes(q) ||
-        s.student_code?.toLowerCase().includes(q) ||
-        s.reg_no?.toLowerCase().includes(q)
-    );
-    setSearchResults(filtered);
-    setShowResults(true);
-  };
-
   // Select Student from Dropdown
-  const handleSelectStudent = async (student) => {
+  const loadStudentDetails = useCallback(async (student, activePlans, effectiveDefaultPlanId) => {
     setSelectedStudent(student);
     setSearchQuery(`${student.full_name} (${student.student_code || student.mobile})`);
     setShowResults(false);
@@ -172,20 +122,33 @@ const CollectFee = () => {
           planRate = basePlanAmount * shiftMultiplier;
         } else {
           // No validity yet — use the selected (first active) fee plan rate
-          const plan = feePlans.find((p) => String(p.id) === String(selectedPlanId));
+          const plan = activePlans.find((p) => String(p.id) === String(effectiveDefaultPlanId));
           planRate = plan ? Number(plan.amount) : 0;
         }
         setRenewalPlanFee(planRate);
 
-        // Auto fill amount with due amount if positive, else fee plan renewal rate
-        const due = student.due_amount || (val ? val.due_amount : 0);
-        if (due > 0) {
+        // Auto fill amount:
+        // - If plan is expired and there is pending due, default to Clearing Due + Plan Renewal
+        // - Else if there is pending due on an active plan, default to Due amount
+        // - Else default to fee plan renewal rate
+        const due = Number(student.due_amount ?? (val ? val.due_amount : 0) ?? 0);
+        const planEndDate = val?.end_date || student.end_date;
+        const isExpired = Boolean(planEndDate && planEndDate < getTodayStr());
+
+        if (due > 0 && isExpired && planRate > 0) {
+          setRenewPlan(true);
+          setAmountReceived((due + planRate).toString());
+        } else if (due > 0) {
+          setRenewPlan(false);
           setAmountReceived(due.toString());
         } else if (planRate > 0) {
+          setRenewPlan(true);
           setAmountReceived(planRate.toString());
         } else if (val && val.total_amount) {
+          setRenewPlan(false);
           setAmountReceived(val.total_amount.toString());
         } else {
+          setRenewPlan(false);
           setAmountReceived("");
         }
       }
@@ -194,6 +157,91 @@ const CollectFee = () => {
     } finally {
       setValidityLoading(false);
     }
+  }, [showToast]);
+
+  const handleSelectStudent = (student) => loadStudentDetails(student, feePlans, selectedPlanId);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [studentRes, modeRes, paymentRes, planRes] = await Promise.all([
+        api.get("/students"),
+        api.get("/payment-modes"),
+        api.get("/payments"),
+        api.get("/fee-plans"),
+      ]);
+      const studentList = studentRes.data.data || [];
+      setStudents(studentList);
+      const rawModes = modeRes.data.data || [];
+      const modes = rawModes.length > 0
+        ? rawModes
+        : [
+            { id: 1, mode_name: "Cash" },
+            { id: 2, mode_name: "UPI" },
+            { id: 3, mode_name: "Card" },
+          ];
+      setPaymentModes(modes);
+      if (modes.length > 0) setPaymentModeId(modes[0].id.toString());
+
+      const plans = planRes.data.data || [];
+      setFeePlans(plans);
+      const regPlan = plans.find((p) => p.plan_type === "REGISTRATION" && p.is_active !== false);
+      setRegistrationAmount(regPlan ? Number(regPlan.amount) : 0);
+      const firstPlan = plans.find((p) => p.is_active !== false && p.plan_type !== "REGISTRATION");
+      const firstPlanId = firstPlan ? String(firstPlan.id) : "";
+      if (firstPlanId) setSelectedPlanId(firstPlanId);
+
+      const allPayments = paymentRes.data.data || [];
+      setRecentPayments(allPayments.slice(0, 5));
+
+      const targetKey = `${studentIdParam || ""}:${studentCodeParam || ""}`;
+      if ((studentIdParam || studentCodeParam) && autoSelectedKeyRef.current !== targetKey) {
+        const matched = studentList.find((s) =>
+          (studentIdParam && String(s.id) === String(studentIdParam)) ||
+          (studentCodeParam && String(s.student_code || "").trim().toLowerCase() === String(studentCodeParam).trim().toLowerCase())
+        );
+        if (matched) {
+          autoSelectedKeyRef.current = targetKey;
+          await loadStudentDetails(matched, plans, firstPlanId);
+        }
+      }
+    } catch {
+      showToast("Failed to load initial data", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [loadStudentDetails, showToast, studentCodeParam, studentIdParam]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.resolve().then(() => {
+      if (active) fetchData();
+    });
+    return () => {
+      active = false;
+    };
+  }, [fetchData]);
+
+  // Handle Search Input Change
+  const handleSearchChange = (e) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+
+    if (query.trim() === "") {
+      setSearchResults([]);
+      setShowResults(false);
+      return;
+    }
+
+    const q = query.toLowerCase();
+    const filtered = students.filter(
+      (s) =>
+        s.full_name?.toLowerCase().includes(q) ||
+        s.mobile?.includes(q) ||
+        s.student_code?.toLowerCase().includes(q) ||
+        s.reg_no?.toLowerCase().includes(q)
+    );
+    setSearchResults(filtered);
+    setShowResults(true);
   };
 
   // Close search results dropdown on outside click
@@ -211,11 +259,22 @@ const CollectFee = () => {
   const handleCollectTypeChange = (type) => {
     setCollectType(type);
     if (type === "registration") {
+      setRenewPlan(false);
       if (registrationAmount > 0) setAmountReceived(registrationAmount.toString());
     } else {
-      const due = selectedStudent?.due_amount || 0;
-      if (due > 0) setAmountReceived(due.toString());
-      else if (renewalPlanFee > 0) setAmountReceived(renewalPlanFee.toString());
+      const due = Number(selectedStudent?.due_amount ?? studentValidity?.due_amount ?? 0);
+      const planEndDate = studentValidity?.end_date || selectedStudent?.end_date;
+      const isExpired = Boolean(planEndDate && planEndDate < getTodayStr());
+      if (due > 0 && isExpired && renewalPlanFee > 0) {
+        setRenewPlan(true);
+        setAmountReceived((due + renewalPlanFee).toString());
+      } else if (due > 0) {
+        setRenewPlan(false);
+        setAmountReceived(due.toString());
+      } else if (renewalPlanFee > 0) {
+        setRenewPlan(true);
+        setAmountReceived(renewalPlanFee.toString());
+      }
     }
   };
 
@@ -226,7 +285,7 @@ const CollectFee = () => {
     if (!plan) return;
     const rate = Number(plan.amount);
     setRenewalPlanFee(rate);
-    const due = selectedStudent?.due_amount || 0;
+    const due = Number(selectedStudent?.due_amount || 0);
     if (collectType === "fee") {
       if (due > 0) setAmountReceived(due.toString());
       else setAmountReceived(rate.toString());
@@ -259,7 +318,15 @@ const CollectFee = () => {
 
     setSubmitting(true);
     const isRegistration = collectType === "registration" && !!studentValidity;
-    const finalRemarks = remarks.trim() || (isRegistration ? "(Registration Fee)" : "(Fee Renewal)");
+    const due = Number(selectedStudent?.due_amount ?? studentValidity?.due_amount ?? 0);
+    const defaultRemark = isRegistration
+      ? "(Registration Fee)"
+      : due > 0 && renewPlan
+      ? "(Due Cleared + Plan Renewal)"
+      : due > 0
+      ? "(Due Clearance)"
+      : "(Fee Renewal)";
+    const finalRemarks = remarks.trim() || defaultRemark;
 
     const buildPayload = (invNo) => {
       const base = {
@@ -268,6 +335,7 @@ const CollectFee = () => {
         payment_date: paymentDate,
         utr_number: utrNumber.trim() || null,
         remarks: finalRemarks,
+        renew_plan: !isRegistration && renewPlan,
       };
       if (studentValidity && studentValidity.id) {
         return {
@@ -295,15 +363,16 @@ const CollectFee = () => {
       return api.post("/payments/record", payload);
     };
 
+    let paymentRes;
     try {
-      await submitOnce(invoiceNo);
+      paymentRes = await submitOnce(invoiceNo);
     } catch (err) {
       // Duplicate invoice number — regenerate once and retry
       if (err.response?.status === 409) {
         const freshInvoice = generateInvoiceNo();
         setInvoiceNo(freshInvoice);
         try {
-          await submitOnce(freshInvoice);
+          paymentRes = await submitOnce(freshInvoice);
         } catch (err2) {
           showToast(err2.response?.data?.message || "Failed to collect payment", "error");
           setSubmitting(false);
@@ -316,12 +385,35 @@ const CollectFee = () => {
       }
     }
 
-    showToast(`Payment of ₹${amountReceived} collected successfully!`);
+    const resData = paymentRes?.data?.data;
+    const paidStudent = selectedStudent;
+    if (resData?.seat_reassignment_required) {
+      setSeatAlert({
+        studentId: paidStudent.id,
+        studentName: paidStudent.full_name,
+        studentCode: paidStudent.student_code,
+        previousSeatNumber: resData.previous_seat_number || null,
+        message: resData.seat_prompt || "Seat was reassigned. Please allocate a new seat.",
+      });
+      showToast(`₹${amountReceived} collected & Student reactivated — allocate a new seat!`, "error");
+    } else {
+      setSeatAlert(null);
+      if (resData?.reactivated && resData?.restored_seat_number) {
+        showToast(`Payment of ₹${amountReceived} collected — Student reactivated & Seat ${resData.restored_seat_number} restored!`);
+      } else if (resData?.reactivated) {
+        showToast(`Payment of ₹${amountReceived} collected — Student reactivated to Active!`);
+      } else if (resData?.plan_expired && !isRegistration) {
+        showToast(`₹${amountReceived} collected (due updated, plan still expired — collect renewal fee to activate).`);
+      } else {
+        showToast(`Payment of ₹${amountReceived} collected successfully!`);
+      }
+    }
 
     // Reset Form State
     setSelectedStudent(null);
     setStudentValidity(null);
     setRenewalPlanFee(0);
+    setRenewPlan(false);
     setCollectType("fee");
     setSearchQuery("");
     setAmountReceived("");
@@ -329,7 +421,10 @@ const CollectFee = () => {
     setRemarks("");
     setInvoiceNo(generateInvoiceNo());
 
-    // Refresh Data
+    // Refresh Data & Invalidate Shared Overview/Students Caches
+    queryClient.invalidateQueries({ queryKey: ["studentsList"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+    queryClient.invalidateQueries({ queryKey: ["recentPayments"] });
     fetchData();
     setSubmitting(false);
   };
@@ -370,6 +465,70 @@ const CollectFee = () => {
         </div>
       </div>
 
+      {/* Seat Reassignment Prompt Banner */}
+      {seatAlert && (
+        <div
+          style={{
+            background: darkMode ? "rgba(245, 158, 11, 0.14)" : "#fffbeb",
+            border: "1px solid #f59e0b",
+            borderRadius: "12px",
+            padding: "14px 18px",
+            marginBottom: "20px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "12px",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <FaExclamationTriangle style={{ color: "#d97706", fontSize: "20px", flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 700, color: darkMode ? "#fde68a" : "#92400e", fontSize: "14px" }}>
+                {seatAlert.studentName} ({seatAlert.studentCode}) reactivated — {seatAlert.message}
+              </div>
+              {seatAlert.previousSeatNumber && (
+                <div style={{ fontSize: "12px", color: darkMode ? "#fcd34d" : "#a16207", marginTop: "2px" }}>
+                  Previous Seat {seatAlert.previousSeatNumber} is now occupied by another member. Member status is Active (Floating / Unassigned).
+                </div>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <Link
+              to={`${prefix}/students?student_id=${seatAlert.studentId}`}
+              style={{
+                padding: "8px 14px",
+                borderRadius: "8px",
+                background: "#d97706",
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: "13px",
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Allocate New Seat
+            </Link>
+            <button
+              type="button"
+              onClick={() => setSeatAlert(null)}
+              aria-label="Dismiss seat alert"
+              style={{
+                background: "transparent",
+                border: "none",
+                color: textMuted,
+                cursor: "pointer",
+                fontSize: "16px",
+                padding: "4px",
+              }}
+            >
+              <FaTimes />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="collect-fee-layout" style={{ display: "grid", gap: "20px", alignItems: "start" }}>
         {/* Left Section: Collect Payment Form */}
         <div style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "14px", padding: "24px" }}>
@@ -396,7 +555,15 @@ const CollectFee = () => {
                 {selectedStudent && (
                   <button
                     type="button"
-                    onClick={() => { setSelectedStudent(null); setStudentValidity(null); setSearchQuery(""); setAmountReceived(""); setRenewalPlanFee(0); setCollectType("fee"); }}
+                    onClick={() => {
+                      setSelectedStudent(null);
+                      setStudentValidity(null);
+                      setSearchQuery("");
+                      setAmountReceived("");
+                      setRenewalPlanFee(0);
+                      setRenewPlan(false);
+                      setCollectType("fee");
+                    }}
                     style={{ border: "none", background: "transparent", color: textMuted, cursor: "pointer" }}
                   >
                     <FaTimes />
@@ -428,11 +595,22 @@ const CollectFee = () => {
                           {st.student_code} · {st.mobile} {st.seat_number ? `· Seat: ${st.seat_number}` : ""}
                         </div>
                       </div>
-                      {st.due_amount > 0 && (
-                        <span style={{ fontSize: "11px", fontWeight: 700, background: "#fef2f2", color: "#ef4444", padding: "2px 8px", borderRadius: "12px" }}>
-                          ₹{st.due_amount} due
-                        </span>
-                      )}
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {st.account_status && st.account_status !== "ACTIVE" && (
+                          <span style={{
+                            fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "12px",
+                            background: st.account_status === "SUSPENDED" ? "#fff7ed" : "#f1f5f9",
+                            color: st.account_status === "SUSPENDED" ? "#ea580c" : "#64748b",
+                          }}>
+                            {st.account_status}
+                          </span>
+                        )}
+                        {st.due_amount > 0 && (
+                          <span style={{ fontSize: "11px", fontWeight: 700, background: "#fef2f2", color: "#ef4444", padding: "2px 8px", borderRadius: "12px" }}>
+                            ₹{st.due_amount} due
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -440,63 +618,81 @@ const CollectFee = () => {
             </div>
 
             {/* Selected Student Card Summary */}
-            {selectedStudent && (
-              <div style={{
-                background: darkMode ? "rgba(59, 130, 246, 0.1)" : "#eff6ff",
-                border: `1px solid ${darkMode ? "rgba(59, 130, 246, 0.2)" : "#bfdbfe"}`,
-                borderRadius: "12px", padding: "14px 18px", marginBottom: "20px",
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                  <div style={{ fontSize: "15px", fontWeight: 700, color: textPrimary, display: "flex", alignItems: "center", gap: "6px" }}>
-                    <FaUserCheck style={{ color: "#3b82f6" }} /> {selectedStudent.full_name}
-                  </div>
-                  <span style={{ fontSize: "12px", background: "#3b82f6", color: "#fff", padding: "2px 8px", borderRadius: "6px", fontWeight: 600 }}>
-                    {selectedStudent.student_code}
-                  </span>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", fontSize: "12px", color: textMuted }}>
-                  <div>
-                    <span style={{ fontWeight: 600 }}>Mobile:</span> {selectedStudent.mobile}
-                  </div>
-                  <div>
-                    <span style={{ fontWeight: 600 }}>Seat:</span> {selectedStudent.seat_number || "Unreserved"}
-                  </div>
-                  <div>
-                    <span style={{ fontWeight: 600 }}>Plan:</span> {selectedStudent.plan_name || "N/A"}
-                    {renewalPlanFee > 0 && (
-                      <span style={{ color: "#16a34a", fontWeight: 700, marginLeft: "4px" }} title="Pure Fee Plan rate without registration fee">
-                        (₹{renewalPlanFee})
+            {selectedStudent && (() => {
+              const accStatus = (selectedStudent.account_status || "ACTIVE").toUpperCase();
+              const endDateStr = studentValidity?.end_date || selectedStudent.end_date;
+              const statusColors =
+                accStatus === "ACTIVE"
+                  ? { bg: "#dcfce7", text: "#15803d" }
+                  : accStatus === "SUSPENDED"
+                  ? { bg: "#ffedd5", text: "#c2410c" }
+                  : accStatus === "DISABLED"
+                  ? { bg: "#fee2e2", text: "#b91c1c" }
+                  : { bg: "#f1f5f9", text: "#475569" };
+              return (
+                <div style={{
+                  background: darkMode ? "rgba(59, 130, 246, 0.1)" : "#eff6ff",
+                  border: `1px solid ${darkMode ? "rgba(59, 130, 246, 0.2)" : "#bfdbfe"}`,
+                  borderRadius: "12px", padding: "14px 18px", marginBottom: "20px",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", gap: "8px", flexWrap: "wrap" }}>
+                    <div style={{ fontSize: "15px", fontWeight: 700, color: textPrimary, display: "flex", alignItems: "center", gap: "6px" }}>
+                      <FaUserCheck style={{ color: "#3b82f6" }} /> {selectedStudent.full_name}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{ fontSize: "11px", background: statusColors.bg, color: statusColors.text, padding: "2px 8px", borderRadius: "6px", fontWeight: 700 }}>
+                        {accStatus}
                       </span>
-                    )}
+                      <span style={{ fontSize: "12px", background: "#3b82f6", color: "#fff", padding: "2px 8px", borderRadius: "6px", fontWeight: 600 }}>
+                        {selectedStudent.student_code}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", fontSize: "12px", color: textMuted }}>
+                    <div>
+                      <span style={{ fontWeight: 600 }}>Mobile:</span> {selectedStudent.mobile}
+                    </div>
+                    <div>
+                      <span style={{ fontWeight: 600 }}>Seat:</span>{" "}
+                      {selectedStudent.seat_number || (
+                        selectedStudent.access_type === "RESERVED"
+                          ? (accStatus === "ACTIVE" ? "Floating (Unassigned)" : "Unassigned / Released")
+                          : "Unreserved"
+                      )}
+                    </div>
+                    <div>
+                      <span style={{ fontWeight: 600 }}>Plan:</span> {selectedStudent.plan_name || "N/A"}
+                      {renewalPlanFee > 0 && (
+                        <span style={{ color: "#16a34a", fontWeight: 700, marginLeft: "4px" }} title="Pure Fee Plan rate without registration fee">
+                          (₹{renewalPlanFee})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px", paddingTop: "8px", borderTop: `1px solid ${border}` }}>
+                    <span style={{ fontSize: "12px", color: textMuted }}>
+                      Plan End Date: <strong style={{ color: textPrimary }}>{endDateStr || "N/A"}</strong>
+                      {endDateStr && (() => {
+                        const diff = diffDaysYmd(getTodayYmdIST(), String(endDateStr).slice(0, 10));
+                        return (
+                          <span style={{
+                            marginLeft: "6px", fontSize: "11px", fontWeight: 700,
+                            color: diff < 0 ? "#dc2626" : diff <= 7 ? "#d97706" : "#16a34a"
+                          }}>
+                            ({diff < 0 ? `Expired ${Math.abs(diff)}d ago` : diff === 0 ? "Expires today" : `${diff}d left`})
+                          </span>
+                        );
+                      })()}
+                    </span>
+                    <span style={{ fontSize: "13px", fontWeight: 700, color: selectedStudent.due_amount > 0 ? "#ef4444" : "#16a34a" }}>
+                      {selectedStudent.due_amount > 0 ? `Pending Due: ₹${selectedStudent.due_amount}` : "Fee Paid"}
+                    </span>
                   </div>
                 </div>
-
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px", paddingTop: "8px", borderTop: `1px solid ${border}` }}>
-                  <span style={{ fontSize: "12px", color: textMuted }}>
-                    Plan End Date: <strong style={{ color: textPrimary }}>{selectedStudent.end_date || "N/A"}</strong>
-                    {selectedStudent.end_date && (() => {
-                      const exp = new Date(selectedStudent.end_date);
-                      const now = new Date();
-                      now.setHours(0, 0, 0, 0);
-                      exp.setHours(0, 0, 0, 0);
-                      const diff = Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
-                      return (
-                        <span style={{
-                          marginLeft: "6px", fontSize: "11px", fontWeight: 700,
-                          color: diff < 0 ? "#dc2626" : diff <= 7 ? "#d97706" : "#16a34a"
-                        }}>
-                          ({diff < 0 ? `Expired ${Math.abs(diff)}d ago` : diff === 0 ? "Expires today" : `${diff}d left`})
-                        </span>
-                      );
-                    })()}
-                  </span>
-                  <span style={{ fontSize: "13px", fontWeight: 700, color: selectedStudent.due_amount > 0 ? "#ef4444" : "#16a34a" }}>
-                    {selectedStudent.due_amount > 0 ? `Pending Due: ₹${selectedStudent.due_amount}` : "Fee Paid"}
-                  </span>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Payment Type & Fee Plan Selector */}
             {selectedStudent && (
@@ -571,7 +767,19 @@ const CollectFee = () => {
                   type="number"
                   step="any"
                   value={amountReceived}
-                  onChange={(e) => setAmountReceived(e.target.value)}
+                  onChange={(e) => {
+                    const valStr = e.target.value;
+                    setAmountReceived(valStr);
+                    const dueAmt = Number(selectedStudent?.due_amount ?? studentValidity?.due_amount ?? 0);
+                    const num = parseFloat(valStr) || 0;
+                    if (dueAmt > 0 && collectType === "fee") {
+                      if (num <= dueAmt) {
+                        setRenewPlan(false);
+                      } else if (renewalPlanFee > 0 && num >= dueAmt + renewalPlanFee) {
+                        setRenewPlan(true);
+                      }
+                    }
+                  }}
                   placeholder="e.g. 1000"
                   required
                   style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: `1px solid ${border}`, background: inputBg, color: textPrimary, fontSize: "14px", fontWeight: "600", outline: "none", boxSizing: "border-box" }}
@@ -580,13 +788,75 @@ const CollectFee = () => {
                   <span style={{ fontSize: "11px", color: "#d97706", fontWeight: 600, display: "block", marginTop: "4px" }}>
                     ✓ Registration fee amount (₹{registrationAmount})
                   </span>
-                ) : renewalPlanFee > 0 && (!selectedStudent?.due_amount || selectedStudent?.due_amount <= 0) ? (
+                ) : selectedStudent && collectType === "fee" ? (() => {
+                  const dueAmt = Number(selectedStudent.due_amount ?? studentValidity?.due_amount ?? 0);
+                  const endDateStr = studentValidity?.end_date || selectedStudent.end_date;
+                  const isExpired = Boolean(endDateStr && endDateStr < getTodayStr());
+                  const isSusp = selectedStudent.account_status === "SUSPENDED" || selectedStudent.account_status === "INACTIVE";
+                  if (dueAmt > 0) {
+                    return (
+                      <div style={{ marginTop: "6px" }}>
+                        {renewalPlanFee > 0 && studentValidity && (
+                          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "4px" }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRenewPlan(true);
+                                setAmountReceived((dueAmt + renewalPlanFee).toString());
+                              }}
+                              style={{
+                                fontSize: "11px", fontWeight: 700, padding: "4px 8px", borderRadius: "6px", cursor: "pointer",
+                                border: `1px solid ${renewPlan ? "#16a34a" : border}`,
+                                background: renewPlan ? (darkMode ? "rgba(22,163,74,0.2)" : "#dcfce7") : inputBg,
+                                color: renewPlan ? "#16a34a" : textMuted,
+                              }}
+                            >
+                              Clear Due + Renew (₹{dueAmt + renewalPlanFee})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRenewPlan(false);
+                                setAmountReceived(dueAmt.toString());
+                              }}
+                              style={{
+                                fontSize: "11px", fontWeight: 700, padding: "4px 8px", borderRadius: "6px", cursor: "pointer",
+                                border: `1px solid ${!renewPlan ? "#3b82f6" : border}`,
+                                background: !renewPlan ? (darkMode ? "rgba(59,130,246,0.2)" : "#eff6ff") : inputBg,
+                                color: !renewPlan ? "#2563eb" : textMuted,
+                              }}
+                            >
+                              Due Only (₹{dueAmt})
+                            </button>
+                          </div>
+                        )}
+                        {renewPlan && renewalPlanFee > 0 ? (
+                          <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: 600, display: "block" }}>
+                            ✓ Clears ₹{dueAmt} due + renews plan{isSusp ? " & reactivates to Active" : ""}
+                          </span>
+                        ) : isExpired ? (
+                          <span style={{ fontSize: "11px", color: "#d97706", fontWeight: 600, display: "block" }}>
+                            ⚠ Plan expired — due-only payment clears balance, renewal needed to activate
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: "11px", color: "#2563eb", fontWeight: 600, display: "block" }}>
+                            ✓ Pending due amount (₹{dueAmt}){isSusp ? " — full payment reactivates to Active" : ""}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  }
+                  if (renewalPlanFee > 0) {
+                    return (
+                      <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: 600, display: "block", marginTop: "4px" }}>
+                        ✓ Fee plan renewal rate (₹{renewalPlanFee}){isSusp ? " — reactivates to Active" : ""}
+                      </span>
+                    );
+                  }
+                  return null;
+                })() : renewalPlanFee > 0 ? (
                   <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: 600, display: "block", marginTop: "4px" }}>
                     ✓ Fee plan renewal rate (₹{renewalPlanFee})
-                  </span>
-                ) : selectedStudent?.due_amount > 0 && collectType === "fee" ? (
-                  <span style={{ fontSize: "11px", color: "#ef4444", fontWeight: 600, display: "block", marginTop: "4px" }}>
-                    ✓ Pending due amount (₹{selectedStudent.due_amount})
                   </span>
                 ) : null}
               </div>
@@ -783,6 +1053,7 @@ const CollectFee = () => {
                         type="button"
                         onClick={() => sendInvoiceOnWhatsApp(p, p.mobile, currentUser)}
                         title="Send on WhatsApp"
+                        aria-label="Send on WhatsApp"
                         style={{
                           background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
                           border: "1px solid #16a34a",
@@ -796,6 +1067,25 @@ const CollectFee = () => {
                         }}
                       >
                         <FaWhatsapp />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => sendInvoiceOnGmail(p, p.email, currentUser)}
+                        title="Send via Gmail"
+                        aria-label="Send via Gmail"
+                        style={{
+                          background: darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2",
+                          border: "1px solid #ea4335",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          color: "#ea4335",
+                          padding: "2px 6px",
+                          fontSize: "11px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                        }}
+                      >
+                        <SiGmail />
                       </button>
                     </div>
                   </div>

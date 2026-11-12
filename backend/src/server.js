@@ -15,14 +15,22 @@ dotenv.config();
 const app = require("./app");
 const { connectDB } = require("./config/db");
 const { seedAdminUser } = require("./controllers/user.controller");
+const { autoSuspendExpiredStudents } = require("./controllers/student.controller");
 
 const PORT = process.env.PORT || 3000;
+const LIFECYCLE_SWEEP_MS = 15 * 60 * 1000;
 
 const server = app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   try {
     await connectDB();
     await seedAdminUser();
+    await autoSuspendExpiredStudents(undefined, { force: true });
+    setInterval(() => {
+      autoSuspendExpiredStudents(undefined, { force: true }).catch((err) =>
+        console.error("Scheduled lifecycle sweep error:", err.message)
+      );
+    }, LIFECYCLE_SWEEP_MS).unref();
   } catch (err) {
     console.error("Initialization warning:", err.message);
   }

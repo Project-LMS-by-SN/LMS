@@ -4,7 +4,16 @@ import { formatTime } from "../utils/timeUtils";
 import { useTheme } from "../context/ThemeContext";
 import { FaChair, FaPlus, FaTrash, FaToggleOn, FaToggleOff, FaTimes, FaSearch, FaInfoCircle, FaCheckCircle, FaExclamationTriangle, FaBolt, FaHashtag, FaCheck } from "react-icons/fa";
 
-const ROW_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const parseSeatParts = (seatNumber = "") => {
+  const trimmed = String(seatNumber || "").trim().toUpperCase();
+  const match = trimmed.match(/^([A-Z]+)(\d+)$/);
+  if (match) {
+    return { prefix: match[1], num: parseInt(match[2], 10) };
+  }
+  const prefix = trimmed.replace(/[0-9]/g, "").trim() || "A";
+  const numMatch = trimmed.match(/(\d+)/);
+  return { prefix, num: numMatch ? parseInt(numMatch[1], 10) : 0 };
+};
 
 const Seats = () => {
   const { darkMode, timeFormat } = useTheme();
@@ -75,6 +84,31 @@ const Seats = () => {
   }, []);
 
   useEffect(() => {
+    if (!deleteMode && !selectedSeat) return;
+
+    const handleDocumentClick = (e) => {
+      const target = e.target instanceof Element ? e.target : e.target?.parentElement;
+      if (!target) return;
+
+      if (target.closest("[data-seat-item='true']")) return;
+      if (deleteMode && target.closest("[data-delete-control='true']")) return;
+      if (deleteMode && target.closest("[data-seat-filter='true']")) return;
+      if (selectedSeat && target.closest("[data-seat-bar='true']")) return;
+
+      if (deleteMode) {
+        setDeleteMode(false);
+        setSelectedSeatIds([]);
+      }
+      if (selectedSeat) {
+        setSelectedSeat(null);
+      }
+    };
+
+    document.addEventListener("click", handleDocumentClick, true);
+    return () => document.removeEventListener("click", handleDocumentClick, true);
+  }, [deleteMode, selectedSeat]);
+
+  useEffect(() => {
     if (seats.length === 0) return;
     const roomsForCurrentFloor = [...new Set(seats.filter(s => {
       const sf = String(s.floor || "").trim().toLowerCase();
@@ -135,10 +169,25 @@ const Seats = () => {
   const allUsedPrefixesMap = useMemo(() => {
     const map = {};
     seats.forEach(s => {
-      const prefix = (s.seat_number || "").replace(/[0-9]/g, "").toUpperCase();
+      const { prefix, num } = parseSeatParts(s.seat_number);
       if (!prefix) return;
-      if (!map[prefix]) map[prefix] = { count: 0, sample: s.seat_number, floor: s.floor, room: s.room };
+      if (!map[prefix]) {
+        map[prefix] = {
+          count: 0,
+          maxNum: 0,
+          minNum: Infinity,
+          existingNums: new Set(),
+          sample: s.seat_number,
+          floor: s.floor,
+          room: s.room,
+        };
+      }
       map[prefix].count++;
+      if (num > 0) {
+        map[prefix].existingNums.add(num);
+        if (num > map[prefix].maxNum) map[prefix].maxNum = num;
+        if (num < map[prefix].minNum) map[prefix].minNum = num;
+      }
     });
     return map;
   }, [seats]);
@@ -149,37 +198,66 @@ const Seats = () => {
   }, [allUsedPrefixesMap]);
 
   const genPreview = useMemo(() => {
-    const startNum = parseInt(genStart, 10) || 1;
+    const parsedStart = parseInt(genStart, 10);
+    const startNum = !isNaN(parsedStart) && parsedStart >= 1 ? parsedStart : 0;
     const countNum = parseInt(genCount, 10) || 0;
-    const prefixUp = (genPrefix || "").toUpperCase().trim();
-    const endNum = countNum > 0 ? startNum + countNum - 1 : startNum;
-    const isValid = countNum > 0 && countNum <= 200 && prefixUp.length > 0;
-    
-    const existingGroup = allUsedPrefixesMap[prefixUp];
-    const hasPrefixConflict = !!existingGroup;
-    return { startNum, countNum, prefixUp, endNum, isValid, hasPrefixConflict, existingGroup };
+    const prefixUp = (genPrefix || "").replace(/[^a-zA-Z]/g, "").toUpperCase().trim();
+    const endNum = countNum > 0 && startNum >= 1 ? startNum + countNum - 1 : startNum;
+    const isValid = countNum > 0 && countNum <= 200 && prefixUp.length > 0 && startNum >= 1;
+
+    const existingGroup = allUsedPrefixesMap[prefixUp] || null;
+    const nextAvailableStart = existingGroup ? existingGroup.maxNum + 1 : 1;
+    const overlappingSeats = [];
+    if (isValid && existingGroup) {
+      for (let n = startNum; n <= endNum; n++) {
+        if (existingGroup.existingNums.has(n)) {
+          overlappingSeats.push(`${prefixUp}${n}`);
+        }
+      }
+    }
+    const hasOverlap = overlappingSeats.length > 0;
+    return { startNum, countNum, prefixUp, endNum, isValid, existingGroup, nextAvailableStart, overlappingSeats, hasOverlap };
   }, [genStart, genCount, genPrefix, allUsedPrefixesMap]);
+
+  const handleGenPrefixChange = (val) => {
+    const clean = String(val || "").replace(/[^a-zA-Z]/g, "").toUpperCase();
+    setGenPrefix(clean);
+    const existing = allUsedPrefixesMap[clean];
+    if (existing) {
+      setGenStart(String(existing.maxNum + 1));
+    } else {
+      setGenStart("1");
+    }
+  };
 
   const handleOpenGenModal = () => {
     const firstUnused = unusedPrefixesList.length > 0 ? unusedPrefixesList[0] : "A";
+    const existing = allUsedPrefixesMap[firstUnused];
     setGenPrefix(firstUnused);
+    setGenStart(existing ? String(existing.maxNum + 1) : "1");
+    if (filterFloor && filterFloor !== "all") {
+      setGenFloor(filterFloor);
+    }
+    if (filterRoom && filterRoom !== "all") {
+      setGenRoom(filterRoom);
+    }
     setShowGenModal(true);
   };
 
   const handleBulkGenerate = async () => {
     const start = parseInt(genStart, 10);
     const count = parseInt(genCount, 10);
-    if (!genStart || !genCount || isNaN(start) || isNaN(count)) { showToast("Enter valid start and count", "error"); return; }
+    if (!genStart || !genCount || isNaN(start) || isNaN(count) || start < 1) { showToast("Enter valid start and count", "error"); return; }
     if (count <= 0) { showToast("Count must be at least 1", "error"); return; }
     if (count > 200) { showToast("Max 200 seats at once", "error"); return; }
-    if (!genPrefix.trim()) { showToast("Enter a seat prefix", "error"); return; }
+    const prefix = genPrefix.replace(/[^a-zA-Z]/g, "").trim().toUpperCase();
+    if (!prefix) { showToast("Enter a seat prefix", "error"); return; }
     if (!genFloor.trim()) { showToast("Select or add a floor", "error"); return; }
     if (!genRoom.trim()) { showToast("Select or add a room", "error"); return; }
-    if (genPreview.hasPrefixConflict) {
-      showToast(`Prefix "${genPreview.prefixUp}" already used by existing seats. Please choose a different prefix letter.`, "error");
+    if (genPreview.hasOverlap) {
+      showToast(`Seat(s) ${genPreview.overlappingSeats.slice(0, 3).join(", ")} already exist. Start from ${prefix}${genPreview.nextAvailableStart}.`, "error");
       return;
     }
-    const prefix = genPrefix.trim().toUpperCase();
     const generated = [];
     for (let i = 0; i < count; i++) generated.push(`${prefix}${start + i}`);
     setGenerating(true);
@@ -189,7 +267,7 @@ const Seats = () => {
       showToast(res.data.message || `Generated ${generated.length} seats`);
       setShowGenModal(false);
       setGenPrefix("A"); setGenStart("1"); setGenCount("50");
-      setGenSeatType("Regular"); setGenFloor("1"); setGenRoom("F1");
+      setGenSeatType("Regular");
       setShowNewFloor(false); setNewFloorName(""); setShowNewRoom(false); setNewRoomName("");
       fetchSeats();
     } catch (err) {
@@ -260,6 +338,7 @@ const Seats = () => {
       const res = await api.post("/seats/delete-bulk", { seat_ids: selectedSeatIds });
       showToast(res.data.message || `${selectedSeatIds.length} seats deleted`);
       setSelectedSeatIds([]);
+      setDeleteMode(false);
       fetchSeats();
     } catch (err) {
       showToast(err.response?.data?.message || "Failed to delete seats", "error");
@@ -298,12 +377,21 @@ const Seats = () => {
   const seatGroups = useMemo(() => {
     const groups = {};
     filteredSeats.forEach(seat => {
-      const rowLetter = (seat.seat_number || "").replace(/[0-9]/g, "").charAt(0).toUpperCase() || "A";
-      if (!groups[rowLetter]) groups[rowLetter] = [];
-      groups[rowLetter].push(seat);
+      const { prefix } = parseSeatParts(seat.seat_number);
+      if (!groups[prefix]) groups[prefix] = [];
+      groups[prefix].push(seat);
     });
     const sorted = {};
-    Object.keys(groups).sort().forEach(k => { sorted[k] = groups[k]; });
+    Object.keys(groups)
+      .sort((a, b) => a.localeCompare(b))
+      .forEach(k => {
+        sorted[k] = [...groups[k]].sort((a, b) => {
+          const pa = parseSeatParts(a.seat_number);
+          const pb = parseSeatParts(b.seat_number);
+          if (pa.num !== pb.num) return pa.num - pb.num;
+          return String(a.seat_number || "").localeCompare(String(b.seat_number || ""));
+        });
+      });
     return sorted;
   }, [filteredSeats]);
 
@@ -453,7 +541,12 @@ const Seats = () => {
           </button>
           <button
             className="secondary-btn"
-            onClick={() => { setDeleteMode(!deleteMode); setSelectedSeatIds([]); }}
+            data-delete-control="true"
+            onClick={() => {
+              setDeleteMode(prev => !prev);
+              setSelectedSeatIds([]);
+              setSelectedSeat(null);
+            }}
             style={{ color: deleteMode ? "#fff" : "#ef4444", background: deleteMode ? "#ef4444" : undefined, border: deleteMode ? "none" : undefined, display: "flex", alignItems: "center", gap: "6px" }}
           >
             {deleteMode ? <><FaTimes /> Cancel Delete</> : <><FaTrash /> Delete Seats</>}
@@ -508,7 +601,7 @@ const Seats = () => {
 
       <div style={{ display: "flex", gap: "10px", marginBottom: "10px", flexWrap: "wrap", alignItems: "center" }}>
         {["all", "available", "occupied", "inactive"].map(f => (
-          <button key={f} onClick={() => setFilter(f)} style={{
+          <button key={f} data-seat-filter="true" onClick={() => setFilter(f)} style={{
             padding: "7px 16px", borderRadius: "20px", fontSize: "13px", fontWeight: 600, cursor: "pointer",
             border: `2px solid ${filter === f ? "#3b82f6" : border}`,
             background: filter === f ? "#eff6ff" : card,
@@ -519,7 +612,7 @@ const Seats = () => {
           </button>
         ))}
         {deleteMode && (
-          <div style={{ marginLeft: "auto", display: "flex", gap: "6px" }}>
+          <div data-delete-control="true" style={{ marginLeft: "auto", display: "flex", gap: "6px", flexWrap: "wrap" }}>
             <button onClick={() => setSelectedSeatIds(filteredSeats.filter(s => !s.is_occupied).map(s => s.id))} style={{
               padding: "7px 14px", borderRadius: "20px", fontSize: "12px", fontWeight: 600, cursor: "pointer",
               border: `2px solid ${border}`, background: card, color: textMuted, transition: "all 0.15s",
@@ -529,7 +622,7 @@ const Seats = () => {
             {selectedSeatIds.length > 0 && (
               <button onClick={() => setSelectedSeatIds([])} style={{
                 padding: "7px 14px", borderRadius: "20px", fontSize: "12px", fontWeight: 600, cursor: "pointer",
-                border: "2px solid #ef4444", background: "#fef2f2", color: "#ef4444", transition: "all 0.15s",
+                border: "2px solid #ef4444", background: darkMode ? "rgba(239,68,68,0.12)" : "#fef2f2", color: "#ef4444", transition: "all 0.15s",
               }}>
                 Clear ({selectedSeatIds.length})
               </button>
@@ -541,7 +634,7 @@ const Seats = () => {
       <div style={{ display: "flex", gap: "12px", marginBottom: "14px", alignItems: "flex-end" }}>
         <div style={{ flex: 1 }}>
           <label style={{ display: "block", fontSize: "12px", color: textMuted, marginBottom: "4px", fontWeight: "600" }}>Floor</label>
-          <select value={filterFloor} onChange={e => {
+          <select data-seat-filter="true" value={filterFloor} onChange={e => {
             const newFloor = e.target.value;
             setFilterFloor(newFloor);
             const roomsForNewFloor = [...new Set(seats.filter(s => {
@@ -558,13 +651,13 @@ const Seats = () => {
         </div>
         <div style={{ flex: 1 }}>
           <label style={{ display: "block", fontSize: "12px", color: textMuted, marginBottom: "4px", fontWeight: "600" }}>Room</label>
-          <select value={filterRoom} onChange={e => setFilterRoom(e.target.value)} style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1px solid ${border}`, background: inputBg, color: textPrimary, fontSize: "14px", fontWeight: "600", outline: "none", boxSizing: "border-box", cursor: "pointer" }}>
+          <select data-seat-filter="true" value={filterRoom} onChange={e => setFilterRoom(e.target.value)} style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1px solid ${border}`, background: inputBg, color: textPrimary, fontSize: "14px", fontWeight: "600", outline: "none", boxSizing: "border-box", cursor: "pointer" }}>
             {uniqueRooms.map(r => (
               <option key={r} value={r}>{r.toLowerCase().includes("room") ? r : `Room ${r}`}</option>
             ))}
           </select>
         </div>
-        <div style={{
+        <div data-seat-filter="true" style={{
           display: "flex", alignItems: "center", gap: "8px",
           background: card, border: `1px solid ${border}`, borderRadius: "10px",
           padding: "7px 14px", flex: 1, maxWidth: "260px",
@@ -656,6 +749,7 @@ const Seats = () => {
                                 return (
                                   <div
                                     key={seat.id}
+                                    data-seat-item="true"
                                     onClick={() => {
                                       if (deleteMode) { toggleSeatSelect(seat.id); }
                                       else { setSelectedSeat(isSelected ? null : seat); }
@@ -666,9 +760,9 @@ const Seats = () => {
                                     style={{
                                       height: "56px", borderRadius: "8px", display: "flex", flexDirection: "column",
                                       alignItems: "center", justifyContent: "center", gap: "2px", position: "relative",
-                                      background: isSelected ? (darkMode ? "#1d4ed8" : "#2563eb") : deleteMode && isMultiSelected ? "#fef2f2" : s.bg,
+                                      background: isSelected ? (darkMode ? "#1d4ed8" : "#2563eb") : deleteMode && isMultiSelected ? (darkMode ? "rgba(239,68,68,0.22)" : "#fef2f2") : s.bg,
                                       border: `2px solid ${isSelected ? "#2563eb" : deleteMode && isMultiSelected ? "#ef4444" : s.border}`,
-                                      color: isSelected ? "#fff" : deleteMode && isMultiSelected ? "#ef4444" : s.color,
+                                      color: isSelected ? "#fff" : deleteMode && isMultiSelected ? (darkMode ? "#fca5a5" : "#ef4444") : s.color,
                                       cursor: "pointer", transition: "all 0.15s",
                                       opacity: isLoading ? 0.5 : 1,
                                       transform: isSelected ? "scale(1.08)" : "scale(1)",
@@ -677,10 +771,10 @@ const Seats = () => {
                                   >
                                     {deleteMode && (
                                       <div style={{
-                                        position: "absolute", top: "2px", right: "2px",
-                                        width: "14px", height: "14px", borderRadius: "3px",
-                                        background: isMultiSelected ? "#ef4444" : "rgba(255,255,255,0.6)",
-                                        border: `1.5px solid ${isMultiSelected ? "#ef4444" : "#999"}`,
+                                        position: "absolute", top: "3px", right: "3px",
+                                        width: "15px", height: "15px", borderRadius: "4px",
+                                        background: isMultiSelected ? "#ef4444" : (darkMode ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.9)"),
+                                        border: `1.5px solid ${isMultiSelected ? "#ef4444" : (darkMode ? "#94a3b8" : "#64748b")}`,
                                         display: "flex", alignItems: "center", justifyContent: "center",
                                         fontSize: "8px", color: "#fff", fontWeight: 700,
                                       }}>
@@ -716,6 +810,7 @@ const Seats = () => {
                       return (
                         <div
                           key={seat.id}
+                          data-seat-item="true"
                           onClick={() => {
                             if (deleteMode) { toggleSeatSelect(seat.id); }
                             else { setSelectedSeat(isSelected ? null : seat); }
@@ -726,9 +821,9 @@ const Seats = () => {
                           style={{
                             height: "56px", borderRadius: "8px", display: "flex", flexDirection: "column",
                             alignItems: "center", justifyContent: "center", gap: "2px", position: "relative",
-                            background: isSelected ? (darkMode ? "#1d4ed8" : "#2563eb") : deleteMode && isMultiSelected ? "#fef2f2" : s.bg,
+                            background: isSelected ? (darkMode ? "#1d4ed8" : "#2563eb") : deleteMode && isMultiSelected ? (darkMode ? "rgba(239,68,68,0.22)" : "#fef2f2") : s.bg,
                             border: `2px solid ${isSelected ? "#2563eb" : deleteMode && isMultiSelected ? "#ef4444" : s.border}`,
-                            color: isSelected ? "#fff" : deleteMode && isMultiSelected ? "#ef4444" : s.color,
+                            color: isSelected ? "#fff" : deleteMode && isMultiSelected ? (darkMode ? "#fca5a5" : "#ef4444") : s.color,
                             cursor: "pointer", transition: "all 0.15s",
                             opacity: isLoading ? 0.5 : 1,
                             transform: isSelected ? "scale(1.08)" : "scale(1)",
@@ -737,10 +832,10 @@ const Seats = () => {
                         >
                           {deleteMode && (
                             <div style={{
-                              position: "absolute", top: "2px", right: "2px",
-                              width: "14px", height: "14px", borderRadius: "3px",
-                              background: isMultiSelected ? "#ef4444" : "rgba(255,255,255,0.6)",
-                              border: `1.5px solid ${isMultiSelected ? "#ef4444" : "#999"}`,
+                              position: "absolute", top: "3px", right: "3px",
+                              width: "15px", height: "15px", borderRadius: "4px",
+                              background: isMultiSelected ? "#ef4444" : (darkMode ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.9)"),
+                              border: `1.5px solid ${isMultiSelected ? "#ef4444" : (darkMode ? "#94a3b8" : "#64748b")}`,
                               display: "flex", alignItems: "center", justifyContent: "center",
                               fontSize: "8px", color: "#fff", fontWeight: 700,
                             }}>
@@ -761,16 +856,20 @@ const Seats = () => {
         )}
       </div>
 
-      {selectedSeat && (
-        <div style={{
-          position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)",
-          background: darkMode ? "#1e293b" : "#fff",
-          border: `1px solid ${border}`,
-          borderRadius: "16px", padding: "18px 24px",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
-          display: "flex", alignItems: "center", gap: "20px", zIndex: 500,
-          maxWidth: "95vw", minWidth: 0, flexWrap: "wrap",
-        }}>
+      {selectedSeat && !deleteMode && (
+        <div
+          data-seat-bar="true"
+          className="seats-floating-bar"
+          style={{
+            position: "fixed", left: "50%", transform: "translateX(-50%)",
+            background: darkMode ? "#1e293b" : "#fff",
+            border: `1px solid ${border}`,
+            borderRadius: "16px", padding: "18px 24px",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+            display: "flex", alignItems: "center", gap: "20px",
+            maxWidth: "95vw", minWidth: 0, flexWrap: "wrap",
+          }}
+        >
           <div>
             <div style={{ fontSize: "18px", fontWeight: 800, color: textPrimary }}>Seat {selectedSeat.seat_number}</div>
             <div style={{ fontSize: "13px", color: textMuted }}>
@@ -838,35 +937,98 @@ const Seats = () => {
         </div>
       )}
 
-      {deleteMode && selectedSeatIds.length > 0 && !selectedSeat && (
-        <div style={{
-          position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)",
-          background: darkMode ? "#1e293b" : "#fff",
-          border: `1px solid ${border}`,
-          borderRadius: "16px", padding: "18px 24px",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
-          display: "flex", alignItems: "center", gap: "20px", zIndex: 500,
-        }}>
-          <div>
-            <div style={{ fontSize: "16px", fontWeight: 800, color: textPrimary }}>{selectedSeatIds.length} seat(s) selected</div>
+      {deleteMode && (
+        <div
+          data-delete-control="true"
+          className="seats-floating-bar"
+          style={{
+            position: "fixed", left: "50%", transform: "translateX(-50%)",
+            background: darkMode ? "#1e293b" : "#fff",
+            border: `1.5px solid ${selectedSeatIds.length > 0 ? "#ef4444" : border}`,
+            borderRadius: "16px", padding: "14px 20px",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.22)",
+            display: "flex", alignItems: "center", gap: "16px",
+            maxWidth: "95vw", minWidth: 0, flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div style={{
+              width: "34px", height: "34px", borderRadius: "10px",
+              background: darkMode ? "rgba(239,68,68,0.18)" : "#fef2f2",
+              color: "#ef4444", display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: "14px", flexShrink: 0,
+            }}>
+              <FaTrash />
+            </div>
+            <div>
+              <div style={{ fontSize: "14px", fontWeight: 800, color: textPrimary }}>
+                {selectedSeatIds.length > 0
+                  ? `${selectedSeatIds.length} seat(s) selected`
+                  : "Select seats to delete"}
+              </div>
+              <div style={{ fontSize: "11px", color: textMuted }}>
+                Tap seats to select · Click outside or Cancel to close
+              </div>
+            </div>
           </div>
-          <div style={{ display: "flex", gap: "10px", marginLeft: "auto" }}>
+          <div style={{ display: "flex", gap: "8px", marginLeft: "auto", flexWrap: "wrap", alignItems: "center" }}>
             <button
-              onClick={handleBulkDelete}
-              disabled={actionLoading === "bulk-delete"}
+              type="button"
+              onClick={() => setSelectedSeatIds(filteredSeats.filter(s => !s.is_occupied).map(s => s.id))}
               style={{
-                padding: "9px 18px", borderRadius: "9px", border: "none", cursor: "pointer",
-                background: "#ef4444", color: "#fff", fontWeight: 700, fontSize: "13px",
-                display: "flex", alignItems: "center", gap: "7px",
+                padding: "8px 14px", borderRadius: "9px",
+                border: `1px solid ${border}`,
+                background: darkMode ? "#0f172a" : "#f8fafc",
+                color: textPrimary, fontWeight: 600, fontSize: "12.5px", cursor: "pointer",
               }}
             >
-              <FaTrash style={{ fontSize: "11px" }} /> {actionLoading === "bulk-delete" ? "Deleting..." : "Delete Selected"}
+              Select Available
             </button>
-            <button onClick={() => setSelectedSeatIds([])} style={{
-              padding: "9px 12px", borderRadius: "9px", cursor: "pointer",
-              background: "transparent", border: `1px solid ${border}`, color: textMuted,
-            }}>
-              <FaTimes />
+            {selectedSeatIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedSeatIds([])}
+                style={{
+                  padding: "8px 12px", borderRadius: "9px",
+                  border: "1px solid #fecaca",
+                  background: darkMode ? "rgba(239,68,68,0.12)" : "#fef2f2",
+                  color: "#ef4444", fontWeight: 600, fontSize: "12.5px", cursor: "pointer",
+                }}
+              >
+                Clear
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={actionLoading === "bulk-delete" || selectedSeatIds.length === 0}
+              title={selectedSeatIds.length === 0 ? "Select at least one seat to delete" : "Delete selected seats"}
+              style={{
+                padding: "8px 16px", borderRadius: "9px", border: "none",
+                cursor: selectedSeatIds.length === 0 ? "not-allowed" : "pointer",
+                background: "#ef4444", color: "#fff", fontWeight: 700, fontSize: "13px",
+                display: "flex", alignItems: "center", gap: "6px",
+                opacity: selectedSeatIds.length === 0 ? 0.45 : 1,
+                transition: "opacity 0.15s",
+              }}
+            >
+              <FaTrash style={{ fontSize: "11px" }} />{" "}
+              {actionLoading === "bulk-delete"
+                ? "Deleting..."
+                : selectedSeatIds.length > 0
+                  ? `Delete Selected (${selectedSeatIds.length})`
+                  : "Delete Selected"}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setDeleteMode(false); setSelectedSeatIds([]); }}
+              style={{
+                padding: "8px 14px", borderRadius: "9px", cursor: "pointer",
+                background: "transparent", border: `1px solid ${border}`, color: textMuted,
+                fontWeight: 600, fontSize: "12.5px", display: "flex", alignItems: "center", gap: "5px",
+              }}
+            >
+              <FaTimes style={{ fontSize: "11px" }} /> Cancel
             </button>
           </div>
         </div>
@@ -874,7 +1036,7 @@ const Seats = () => {
 
       {showGenModal && (
         <div onClick={() => setShowGenModal(false)} style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000,
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1100,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>
           <div onClick={e => e.stopPropagation()} style={{
@@ -896,9 +1058,9 @@ const Seats = () => {
                   <label style={{ fontSize: "12px", fontWeight: 600, color: textMuted, marginBottom: "6px", display: "block" }}>Prefix</label>
                   <input
                     type="text" maxLength={4}
-                    value={genPrefix} onChange={e => setGenPrefix(e.target.value)}
+                    value={genPrefix} onChange={e => handleGenPrefixChange(e.target.value)}
                     placeholder="A"
-                    style={{ background: inputBg, color: textPrimary, border: `1px solid ${border}`, borderRadius: "8px", padding: "10px 12px", fontSize: "14px", width: "100%", boxSizing: "border-box" }}
+                    style={{ background: inputBg, color: textPrimary, border: `1px solid ${border}`, borderRadius: "8px", padding: "10px 12px", fontSize: "14px", width: "100%", boxSizing: "border-box", textTransform: "uppercase" }}
                   />
                 </div>
                 <div className="form-group">
@@ -915,6 +1077,36 @@ const Seats = () => {
                 </div>
               </div>
 
+              {Object.keys(allUsedPrefixesMap).length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: textMuted }}>Continue row:</span>
+                  {Object.keys(allUsedPrefixesMap).sort((a, b) => a.localeCompare(b)).map(pfx => {
+                    const info = allUsedPrefixesMap[pfx];
+                    const nextNum = info.maxNum + 1;
+                    const isActive = genPreview.prefixUp === pfx;
+                    return (
+                      <button
+                        key={pfx}
+                        type="button"
+                        onClick={() => handleGenPrefixChange(pfx)}
+                        style={{
+                          padding: "3px 9px",
+                          borderRadius: "6px",
+                          border: `1px solid ${isActive ? "#2563eb" : border}`,
+                          background: isActive ? (darkMode ? "rgba(37,99,235,0.25)" : "#eff6ff") : (darkMode ? "#0f172a" : "#f8fafc"),
+                          color: isActive ? "#2563eb" : textPrimary,
+                          fontSize: "11.5px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {pfx} (from {pfx}{nextNum})
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {genPreview.isValid && (
                 <div style={{
                   background: darkMode ? "rgba(59,130,246,0.1)" : "#eff6ff",
@@ -923,37 +1115,47 @@ const Seats = () => {
                   <div style={{ fontSize: "13px", color: "#2563eb", fontWeight: 600 }}>
                     Preview: {genPreview.prefixUp}{genPreview.startNum} → {genPreview.prefixUp}{genPreview.endNum}
                   </div>
+                  {genPreview.existingGroup && !genPreview.hasOverlap && (
+                    <div style={{ fontSize: "12px", color: darkMode ? "#93c5fd" : "#1d4ed8", marginTop: "4px" }}>
+                      Existing prefix "{genPreview.prefixUp}" has {genPreview.existingGroup.count} seat(s) (up to {genPreview.prefixUp}{genPreview.existingGroup.maxNum}). Continuing from {genPreview.prefixUp}{genPreview.nextAvailableStart}.
+                    </div>
+                  )}
                 </div>
               )}
 
-              {genPreview.isValid && genPreview.hasPrefixConflict && (
+              {genPreview.isValid && genPreview.hasOverlap && (
                 <div style={{
                   background: darkMode ? "rgba(239,68,68,0.1)" : "#fef2f2",
                   border: "1px solid rgba(239,68,68,0.3)", borderRadius: "10px", padding: "12px 14px",
                 }}>
                   <div style={{ fontSize: "13px", color: "#dc2626", fontWeight: 700, marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
-                    <FaExclamationTriangle /> Prefix "{genPreview.prefixUp}" is already used!
+                    <FaExclamationTriangle /> Seat(s) already exist: {genPreview.overlappingSeats.slice(0, 5).join(", ")}{genPreview.overlappingSeats.length > 5 ? ` +${genPreview.overlappingSeats.length - 5} more` : ""}
                   </div>
-                  {genPreview.existingGroup && (
-                    <div style={{ fontSize: "12px", color: "#dc2626", marginLeft: "12px" }}>
-                      • {genPreview.existingGroup.sample} ({genPreview.existingGroup.count} seats, Floor {genPreview.existingGroup.floor})
-                    </div>
-                  )}
-                  <div style={{ fontSize: "12px", color: "#dc2626", marginTop: "8px", fontWeight: 600 }}>
-                    Prefix "{genPreview.prefixUp}" is already used by existing seats. Please select a different prefix:
+                  <div style={{ fontSize: "12px", color: "#dc2626", marginTop: "4px", fontWeight: 500 }}>
+                    Prefix "{genPreview.prefixUp}" already has seats up to {genPreview.prefixUp}{genPreview.existingGroup?.maxNum}. Start from {genPreview.prefixUp}{genPreview.nextAvailableStart} onwards.
                   </div>
-                  <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
-                    {unusedPrefixesList.slice(0, 10).map(letter => (
+                  <div style={{ display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap", alignItems: "center" }}>
+                    <button
+                      type="button"
+                      onClick={() => setGenStart(String(genPreview.nextAvailableStart))}
+                      style={{
+                        padding: "5px 12px", borderRadius: "6px", border: "none",
+                        background: "#2563eb", color: "#fff", fontSize: "12px", fontWeight: 700, cursor: "pointer"
+                      }}
+                    >
+                      Start from {genPreview.prefixUp}{genPreview.nextAvailableStart}
+                    </button>
+                    {unusedPrefixesList.slice(0, 6).map(letter => (
                       <button
                         key={letter}
                         type="button"
-                        onClick={() => setGenPrefix(letter)}
+                        onClick={() => handleGenPrefixChange(letter)}
                         style={{
-                          padding: "4px 10px", borderRadius: "6px", border: "1px solid #dc2626",
-                          background: darkMode ? "#1e293b" : "#fff", color: "#dc2626", fontSize: "12px", fontWeight: 700, cursor: "pointer"
+                          padding: "4px 10px", borderRadius: "6px", border: `1px solid ${border}`,
+                          background: darkMode ? "#1e293b" : "#fff", color: textMuted, fontSize: "12px", fontWeight: 700, cursor: "pointer"
                         }}
                       >
-                        {letter}
+                        New: {letter}
                       </button>
                     ))}
                   </div>
@@ -1024,8 +1226,8 @@ const Seats = () => {
               <button
                 className="primary-btn"
                 onClick={handleBulkGenerate}
-                disabled={generating || !genPreview.isValid || genPreview.hasPrefixConflict}
-                style={{ flex: 1, justifyContent: "center", opacity: (!genPreview.isValid || genPreview.hasPrefixConflict) ? 0.5 : 1 }}
+                disabled={generating || !genPreview.isValid || genPreview.hasOverlap}
+                style={{ flex: 1, justifyContent: "center", opacity: (!genPreview.isValid || genPreview.hasOverlap) ? 0.5 : 1 }}
               >
                 {generating ? "Generating..." : `Add ${genPreview.isValid ? genPreview.countNum : ""} Seats`}
               </button>
@@ -1036,6 +1238,17 @@ const Seats = () => {
 
       <style>{`
         @keyframes slideIn { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .seats-floating-bar {
+          bottom: 24px;
+          z-index: 1001;
+        }
+        @media (max-width: 768px) {
+          .seats-floating-bar {
+            bottom: 72px;
+            width: calc(100vw - 24px);
+            padding: 12px 14px !important;
+          }
+        }
       `}</style>
     </div>
   );

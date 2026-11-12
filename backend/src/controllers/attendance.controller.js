@@ -1,6 +1,129 @@
 const mongoClient = require("../config/mongoClient");
 const { formatDateStr, formatDateTimeStr, getISTTimeParts, getISTDayBounds } = require("../utils/format");
 const { clearStatsCache } = require("./dashboard.controller");
+const cache = require("../utils/cache");
+const { evaluateStudentLifecycle } = require("../utils/studentStatus");
+const { releaseStudentSeats, attemptSeatRecoveryOnReactivation } = require("../utils/seatLifecycle");
+
+const hasCompleteValidity = (val) =>
+  Boolean(
+    val &&
+    (val.endDate !== undefined || val.startDate !== undefined) &&
+    Array.isArray(val.payments)
+  );
+
+const syncStudentLifecycleForAttendance = async (student, fallbackValidity = null) => {
+  if (!student) return { student: null, lifecycle: null };
+  let evalStudent = student;
+  const latestEmbeddedValidity =
+    Array.isArray(student.validities) && student.validities.length > 0
+      ? student.validities[student.validities.length - 1]
+      : null;
+  const hasValidityMeta = hasCompleteValidity(latestEmbeddedValidity);
+
+  if (!hasValidityMeta) {
+    if (hasCompleteValidity(fallbackValidity)) {
+      evalStudent = { ...student, validities: [fallbackValidity] };
+    } else {
+      let loadedCompleteFromDb = false;
+      if (
+        student.id &&
+        mongoClient.studentValidity &&
+        typeof mongoClient.studentValidity.findMany === "function"
+      ) {
+        try {
+          const fetchedValidities = await mongoClient.studentValidity.findMany({
+            where: { studentId: student.id },
+            include: { payments: true },
+            orderBy: { id: "asc" },
+          });
+          if (Array.isArray(fetchedValidities) && fetchedValidities.length > 0) {
+            evalStudent = { ...student, validities: fetchedValidities };
+            loadedCompleteFromDb = hasCompleteValidity(
+              fetchedValidities[fetchedValidities.length - 1]
+            );
+          }
+        } catch (e) {}
+      }
+
+      if (
+        !loadedCompleteFromDb &&
+        !latestEmbeddedValidity &&
+        fallbackValidity &&
+        (fallbackValidity.endDate !== undefined || fallbackValidity.startDate !== undefined)
+      ) {
+        evalStudent = { ...student, validities: [fallbackValidity] };
+      }
+    }
+  }
+
+  const lifecycle = evaluateStudentLifecycle(evalStudent);
+  const currentStatus = (student.accountStatus || "ACTIVE").toUpperCase();
+  const latestEvaluatedValidity =
+    Array.isArray(evalStudent.validities) && evalStudent.validities.length > 0
+      ? evalStudent.validities[evalStudent.validities.length - 1]
+      : null;
+  const hasKnownPayments =
+    !latestEvaluatedValidity || Array.isArray(latestEvaluatedValidity.payments);
+  const targetStatus = lifecycle.targetAccountStatus;
+
+  if (
+    currentStatus !== "DISABLED" &&
+    currentStatus !== "DELETED" &&
+    targetStatus !== currentStatus &&
+    (hasKnownPayments || lifecycle.isExpired || targetStatus !== "ACTIVE")
+  ) {
+    if (targetStatus === "INACTIVE") {
+      await releaseStudentSeats([student.id]);
+    }
+    await mongoClient.student.update({
+      where: { id: student.id },
+      data: { accountStatus: targetStatus, updatedAt: new Date() },
+    });
+    if (targetStatus === "ACTIVE" && currentStatus === "INACTIVE") {
+      const latestVal =
+        Array.isArray(evalStudent.validities) && evalStudent.validities.length > 0
+          ? evalStudent.validities[evalStudent.validities.length - 1]
+          : null;
+      await attemptSeatRecoveryOnReactivation({
+        client: mongoClient,
+        validity: latestVal,
+        studentId: student.id,
+        previousStatus: currentStatus,
+        newStatus: "ACTIVE",
+        branchId: student.branchId || null,
+      });
+    }
+    student.accountStatus = targetStatus;
+    try {
+      clearStatsCache();
+      cache.invalidateBranch(student.branchId || 1);
+    } catch (e) {}
+  }
+
+  return { student, lifecycle };
+};
+
+const getAttendanceBlockMessage = (student, isPublic = false) => {
+  const status = (student?.accountStatus || "").toUpperCase();
+  const name = student?.fullName || "Student";
+  if (status === "SUSPENDED") {
+    return isPublic
+      ? `Check-in blocked for ${name}: Account is SUSPENDED due to unpaid fees (11–20 days overdue). Please clear dues at the desk.`
+      : `Check-in blocked: ${name}'s account is SUSPENDED due to unpaid dues (11–20 days overdue). Please clear dues to resume attendance.`;
+  }
+  if (status === "INACTIVE") {
+    return isPublic
+      ? `Check-in blocked for ${name}: Account is INACTIVE (unpaid > 20 days) and seat was unassigned. Please renew fee plan.`
+      : `Check-in blocked: ${name}'s account is INACTIVE (unpaid > 20 days). Seat has been unassigned; renew fee plan to reactivate.`;
+  }
+  if (status === "DISABLED") {
+    return isPublic
+      ? `Check-in blocked for ${name}: Account is DISABLED by library administration.`
+      : `Check-in blocked: ${name}'s account has been DISABLED by admin.`;
+  }
+  return `Check-in blocked for ${name}: Account status (${status}) is not ACTIVE.`;
+};
 
 const getDayBounds = getISTDayBounds;
 
@@ -353,6 +476,11 @@ const searchStudentAttendance = async (req, res) => {
           { fullName: { contains: term } },
         ],
       },
+      include: {
+        validities: {
+          include: { payments: true },
+        },
+      },
     });
 
     if (!student) {
@@ -363,12 +491,15 @@ const searchStudentAttendance = async (req, res) => {
       });
     }
 
+    const syncedSearch = await syncStudentLifecycleForAttendance(student);
+
     const formattedStudent = {
       id: student.id,
       student_code: student.studentCode,
       reg_no: student.regNo,
       full_name: student.fullName,
-      account_status: student.accountStatus,
+      account_status: syncedSearch.student.accountStatus,
+      derived_status: syncedSearch.lifecycle ? syncedSearch.lifecycle.derivedStatus : syncedSearch.student.accountStatus,
     };
 
     // Get all active assignments
@@ -555,6 +686,7 @@ const checkIn = async (req, res) => {
         validity: {
           include: {
             student: true,
+            payments: true,
           },
         },
       },
@@ -566,6 +698,22 @@ const checkIn = async (req, res) => {
     });
 
     if (assignments.length === 0) {
+      const bareStudent = await mongoClient.student.findFirst({
+        where: { id: sId, deletedAt: null, branchId: req.user.branchId },
+        include: { validities: { include: { payments: true } } },
+      });
+      if (bareStudent) {
+        const syncedBare = await syncStudentLifecycleForAttendance(bareStudent);
+        if (syncedBare.student.accountStatus !== "ACTIVE") {
+          return res.status(403).json({
+            success: false,
+            code: "ACCOUNT_BLOCKED",
+            account_status: syncedBare.student.accountStatus,
+            derived_status: syncedBare.lifecycle ? syncedBare.lifecycle.derivedStatus : syncedBare.student.accountStatus,
+            message: getAttendanceBlockMessage(syncedBare.student, false),
+          });
+        }
+      }
       return res.status(400).json({
         success: false,
         message: "No active shift assignment found for this student",
@@ -585,12 +733,19 @@ const checkIn = async (req, res) => {
     }
 
     const shift = assignment.shift;
-    const student = assignment.validity.student;
+    const syncedCheckIn = await syncStudentLifecycleForAttendance(
+      assignment.validity.student,
+      assignment.validity
+    );
+    const student = syncedCheckIn.student;
 
-    if (student.accountStatus === "DISABLED") {
+    if (student.accountStatus !== "ACTIVE") {
       return res.status(403).json({
         success: false,
-        message: "Check-in failed: Student account is suspended.",
+        code: "ACCOUNT_BLOCKED",
+        account_status: student.accountStatus,
+        derived_status: syncedCheckIn.lifecycle ? syncedCheckIn.lifecycle.derivedStatus : student.accountStatus,
+        message: getAttendanceBlockMessage(student, false),
       });
     }
 
@@ -1160,6 +1315,8 @@ const publicSearchStudent = async (req, res) => {
       return res.status(404).json({ success: false, message: "Student not found in this library branch" });
     }
 
+    const syncedPublicSearch = await syncStudentLifecycleForAttendance(student);
+
     const { start, end } = getDayBounds(new Date());
     const todayAttendance = await mongoClient.attendance.findFirst({
       where: {
@@ -1180,7 +1337,9 @@ const publicSearchStudent = async (req, res) => {
           student_code: student.studentCode,
           full_name: student.fullName,
           mobile: student.mobile,
-          profile_photo_url: student.profilePhotoUrl
+          profile_photo_url: student.profilePhotoUrl,
+          account_status: syncedPublicSearch.student.accountStatus,
+          derived_status: syncedPublicSearch.lifecycle ? syncedPublicSearch.lifecycle.derivedStatus : syncedPublicSearch.student.accountStatus,
         },
         isCheckedIn: !!todayAttendance,
         activeAttendance: todayAttendance ? {
@@ -1268,6 +1427,7 @@ const publicCheckInOrOut = async (req, res) => {
       include: {
         validities: {
           include: {
+            payments: true,
             assignments: {
               where: { assignmentStatus: "ACTIVE" },
               include: { shift: true, seat: true }
@@ -1281,10 +1441,18 @@ const publicCheckInOrOut = async (req, res) => {
       return res.status(404).json({ success: false, message: "Student not found in this library branch. Please verify code or mobile." });
     }
 
-    if (student.accountStatus === "DISABLED") {
+    const primaryValidity = Array.isArray(student.validities) && student.validities.length > 0
+      ? student.validities[student.validities.length - 1]
+      : null;
+    const syncedPublic = await syncStudentLifecycleForAttendance(student, primaryValidity);
+
+    if (syncedPublic.student.accountStatus !== "ACTIVE") {
       return res.status(403).json({
         success: false,
-        message: `Check-in failed for ${student.fullName}: Student account is suspended.`,
+        code: "ACCOUNT_BLOCKED",
+        account_status: syncedPublic.student.accountStatus,
+        derived_status: syncedPublic.lifecycle ? syncedPublic.lifecycle.derivedStatus : syncedPublic.student.accountStatus,
+        message: getAttendanceBlockMessage(syncedPublic.student, true),
       });
     }
 

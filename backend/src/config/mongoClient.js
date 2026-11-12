@@ -56,6 +56,7 @@ const NUMERIC_FIELDS = new Set([
   "paymentModeId",
   "shiftId",
   "seatId",
+  "previousSeatId",
   "shiftAssignmentId",
   "createdBy",
   "amount",
@@ -338,6 +339,9 @@ const resolveInclude = async (modelName, doc, include) => {
     }
     if (include.seat && item.seatId) {
       item.seat = (await models.Seat.findOne({ id: item.seatId }).lean()) || null;
+    }
+    if (include.previousSeat && item.previousSeatId) {
+      item.previousSeat = (await models.Seat.findOne({ id: item.previousSeatId }).lean()) || null;
     }
     if (include.attendance) {
       const attDocs = await models.Attendance.find({ shiftAssignmentId: item.id }).lean().exec();

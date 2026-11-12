@@ -86,6 +86,9 @@ const userSchema = new mongoose.Schema(
 
     passwordResetToken: { type: String, default: null },
     passwordResetExpiry: { type: Date, default: null },
+    passwordResetOtpHash: { type: String, default: null },
+    passwordResetOtpExpiry: { type: Date, default: null },
+    passwordResetOtpAttempts: { type: Number, default: 0 },
     deletedAt: { type: Date, default: null },
   },
   { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } }
@@ -188,6 +191,7 @@ const studentValiditySchema = new mongoose.Schema(
     feePlanId: { type: Number, default: null },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
+    lastRenewedAt: { type: Date, default: null },
     totalAmount: { type: Number, required: true },
     accessType: { type: String, enum: ["RESERVED", "UNRESERVED"], default: "UNRESERVED" },
   },
@@ -249,6 +253,8 @@ const studentShiftAssignmentSchema = new mongoose.Schema(
     validityId: { type: Number, required: true, index: true },
     shiftId: { type: Number, required: true, index: true },
     seatId: { type: Number, default: null, index: true },
+    previousSeatId: { type: Number, default: null },
+    seatReleasedAt: { type: Date, default: null },
     assignmentStatus: { type: String, enum: ["ACTIVE", "ENDED"], default: "ACTIVE", index: true },
   },
   { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } }

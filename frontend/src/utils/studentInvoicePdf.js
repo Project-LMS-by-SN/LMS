@@ -557,3 +557,98 @@ export const sendInvoiceOnWhatsApp = (payment, studentMobile, libraryInfo = {}) 
   }
 };
 
+/**
+ * Format and open Gmail compose window with official payment receipt
+ *
+ * @param {Object} payment - Payment record
+ * @param {string} studentEmail - Student's email address
+ * @param {Object} libraryInfo - Library / User profile
+ */
+export const sendInvoiceOnGmail = (payment, studentEmail, libraryInfo = {}) => {
+  try {
+    let rawEmail = studentEmail || payment?.email || "";
+
+    if (!rawEmail || !String(rawEmail).trim()) {
+      const enteredEmail = window.prompt(
+        `Student "${payment?.full_name || payment?.student_name || "Member"}" ki Gmail / Email address enter karein:`,
+        ""
+      );
+      if (!enteredEmail || !enteredEmail.trim()) {
+        return false;
+      }
+      rawEmail = enteredEmail;
+    }
+
+    const cleanEmail = String(rawEmail).trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      alert("Kripya valid email address enter karein.");
+      return false;
+    }
+
+    const libName = libraryInfo?.library_name || libraryInfo?.branch_name || "Library Main Branch";
+    const libPhone = libraryInfo?.contact || libraryInfo?.phone || libraryInfo?.branch_phone || "";
+    const libAddress = libraryInfo?.address || libraryInfo?.branch_address || "";
+
+    const studentName = payment?.full_name || payment?.student_name || "Student Member";
+    const studentCode = payment?.student_code || "N/A";
+    const studentMobile = payment?.mobile || payment?.phone || "";
+    const invoiceNo = payment?.invoice_no || `INV-${Date.now()}`;
+    const amountNum = Number(payment?.amount_received) || 0;
+    const amountFormatted = amountNum.toLocaleString("en-IN");
+    const rawDate = payment?.payment_date || "";
+    const dateOnly = rawDate ? rawDate.split(" ")[0] : new Date().toLocaleDateString("en-IN");
+    const modeName = payment?.mode_name || "Cash";
+    const planName = payment?.plan_name || payment?.fee_plan_name || "";
+    const validityStr =
+      payment?.start_date && payment?.end_date ? `${payment.start_date} to ${payment.end_date}` : "";
+    const remarks = payment?.remarks || "Library Membership Fee";
+    const utrNumber = payment?.utr_number || "";
+
+    const subject = `Fee Payment Receipt (${invoiceNo}) - ${libName}`;
+
+    let body = `FEE PAYMENT RECEIPT / INVOICE\n`;
+    body += `-------------------------------------\n`;
+    body += `${libName}\n`;
+    if (libAddress) body += `Address: ${libAddress}\n`;
+    if (libPhone) body += `Contact: ${libPhone}\n`;
+    body += `-------------------------------------\n\n`;
+
+    body += `Invoice No: ${invoiceNo}\n`;
+    body += `Date: ${dateOnly}\n`;
+    body += `Status: PAID\n\n`;
+
+    body += `STUDENT DETAILS\n`;
+    body += `- Name: ${studentName}\n`;
+    body += `- Student Code: ${studentCode}\n`;
+    if (studentMobile) {
+      body += `- Mobile: ${studentMobile}\n`;
+    }
+    body += `- Email: ${cleanEmail}\n\n`;
+
+    body += `PAYMENT DETAILS\n`;
+    body += `- Amount Received: Rs. ${amountFormatted}\n`;
+    body += `- Payment Mode: ${modeName}\n`;
+    if (utrNumber) {
+      body += `- UTR / Ref No: ${utrNumber}\n`;
+    }
+    if (planName) {
+      body += `- Plan: ${planName}\n`;
+    }
+    if (validityStr) {
+      body += `- Validity: ${validityStr}\n`;
+    }
+    body += `- Remarks: ${remarks}\n`;
+    body += `-------------------------------------\n`;
+    body += `Thank you for your payment!\n`;
+    body += `This is a computer-generated confirmation receipt.`;
+
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(cleanEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(gmailUrl, "_blank", "noopener,noreferrer");
+    return true;
+  } catch (error) {
+    console.error("Failed to open Gmail for invoice:", error);
+    alert("Gmail par invoice bhejne me samasya aayi.");
+    return false;
+  }
+};
+

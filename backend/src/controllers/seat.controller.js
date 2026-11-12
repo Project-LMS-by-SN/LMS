@@ -151,23 +151,19 @@ const createSeat = async (req, res) => {
     const branchId = req.user.branchId;
 
     const seatNumTrimmed = seat_number.trim().toUpperCase();
-    const match = seatNumTrimmed.match(/^([A-Z]+)\d+$/);
-    const prefix = match ? match[1] : null;
 
-    if (prefix) {
-      const existingPrefixSeat = await mongoClient.seat.findFirst({
-        where: {
-          branchId,
-          seatNumber: { startsWith: prefix },
-        },
+    const existingSeat = await mongoClient.seat.findFirst({
+      where: {
+        branchId,
+        seatNumber: seatNumTrimmed,
+      },
+    });
+
+    if (existingSeat) {
+      return res.status(409).json({
+        success: false,
+        message: `Seat "${seatNumTrimmed}" already exists in this branch.`,
       });
-
-      if (existingPrefixSeat) {
-        return res.status(400).json({
-          success: false,
-          message: `Prefix "${prefix}" is already in use by existing seats (${existingPrefixSeat.seatNumber}). Please select a different prefix letter (e.g. B, C, D...).`,
-        });
-      }
     }
 
     const newSeat = await mongoClient.seat.create({
@@ -335,39 +331,39 @@ const createBulkSeats = async (req, res) => {
 
     const branchId = req.user.branchId;
 
+    const existingBranchSeats = await mongoClient.seat.findMany({
+      where: { branchId },
+    });
+    const existingSet = new Set(
+      existingBranchSeats.map((s) => String(s.seatNumber || "").trim().toUpperCase())
+    );
+
     const firstSeatNum = (seats[0] || "").trim().toUpperCase();
     const match = firstSeatNum.match(/^([A-Z]+)\d+$/);
     const prefix = match ? match[1] : null;
 
-    if (prefix) {
-      const existingPrefixSeat = await mongoClient.seat.findFirst({
-        where: {
-          branchId,
-          seatNumber: { startsWith: prefix },
-        },
-      });
-
-      if (existingPrefixSeat) {
-        return res.status(400).json({
-          success: false,
-          message: `Prefix "${prefix}" is already in use by existing seats (${existingPrefixSeat.seatNumber}). Please select a different prefix letter (e.g. B, C, D...).`,
-        });
-      }
-    }
-
     let created = 0;
     let skipped = 0;
+    const createdSeatNumbers = [];
     for (const seatNumber of seats) {
+      const normalizedSeat = String(seatNumber || "").trim().toUpperCase();
+      if (!normalizedSeat) continue;
+      if (existingSet.has(normalizedSeat)) {
+        skipped++;
+        continue;
+      }
       try {
         await mongoClient.seat.create({
           data: {
-            seatNumber: seatNumber.trim().toUpperCase(),
+            seatNumber: normalizedSeat,
             floor: floor ? floor.trim() : null,
             room: room ? room.trim() : null,
             section: section ? section.trim().toUpperCase() : null,
             branchId: branchId,
           },
         });
+        existingSet.add(normalizedSeat);
+        createdSeatNumbers.push(normalizedSeat);
         created++;
       } catch (e) {
         if (e.code === "P2002" || e.code === 11000) { skipped++; }
@@ -375,8 +371,36 @@ const createBulkSeats = async (req, res) => {
       }
     }
 
+    if (created === 0) {
+      let hint = "";
+      if (prefix) {
+        let maxExistingNum = 0;
+        existingBranchSeats.forEach((s) => {
+          const parsed = parseSeatNumber(String(s.seatNumber || "").trim().toUpperCase());
+          if (parsed.prefix === prefix && parsed.num > maxExistingNum) {
+            maxExistingNum = parsed.num;
+          }
+        });
+        if (maxExistingNum > 0) {
+          hint = ` Next available seat for prefix "${prefix}" is ${prefix}${maxExistingNum + 1}.`;
+        }
+      }
+      return res.status(409).json({
+        success: false,
+        message: `All requested seats already exist.${hint}`,
+      });
+    }
+
+    cache.invalidateBranch(branchId);
+
     const createdSeats = await mongoClient.seat.findMany({
-      where: { seatNumber: { in: seats.map(s => s.trim().toUpperCase()) } },
+      where: { branchId, seatNumber: { in: createdSeatNumbers } },
+    });
+    createdSeats.sort((a, b) => {
+      const pa = parseSeatNumber(a.seatNumber);
+      const pb = parseSeatNumber(b.seatNumber);
+      if (pa.prefix !== pb.prefix) return pa.prefix.localeCompare(pb.prefix);
+      return pa.num - pb.num;
     });
 
     const formattedSeats = createdSeats.map((s) => ({

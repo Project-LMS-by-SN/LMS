@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router-dom";
-import { FaUsers, FaUserCheck, FaChair, FaUserMinus, FaClipboardCheck, FaExclamationTriangle, FaTimes, FaUserPlus, FaRocket, FaCrown, FaBolt, FaBuilding, FaPhone, FaEnvelope, FaMapMarkerAlt, FaUserShield, FaEdit } from "react-icons/fa";
+import { Link } from "react-router-dom";
+import { FaUsers, FaUserCheck, FaChair, FaClipboardCheck, FaExclamationTriangle, FaTimes, FaUserPlus, FaBolt, FaClock } from "react-icons/fa";
 import api from "../api/axios";
 import SeatAvailability from "../components/SeatAvailability";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
 
 const Dashboard = () => {
-  const navigate = useNavigate();
   const { darkMode, timeFormat } = useTheme();
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); }
@@ -48,21 +47,11 @@ const Dashboard = () => {
   };
   const prefix = getRolePrefix();
 
-  const getTierLabel = (tier) => {
-    const map = { FREE: "Free", STARTER: "Starter", PRO_100: "Basic", PRO_200: "Pro", PRO: "Pro", ENTERPRISE: "Enterprise" };
-    return map[tier] || "Free";
-  };
-
   const formatExpiryDate = (dateStr) => {
     if (!dateStr) return "N/A";
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return "N/A";
     return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-  };
-
-  const getTierColor = (tier) => {
-    const map = { FREE: "#94a3b8", STARTER: "#10b981", PRO_100: "#3b82f6", PRO_200: "#8b5cf6", PRO: "#8b5cf6", ENTERPRISE: "#f59e0b" };
-    return map[tier] || "#94a3b8";
   };
 
   const getDaysRemaining = () => {
@@ -113,7 +102,7 @@ const Dashboard = () => {
     };
   };
 
-  const { data: stats = null, isLoading: statsLoading, isError: statsError } = useQuery({
+  const { data: stats = null, isLoading: statsLoading } = useQuery({
     queryKey: ['dashboardStats'],
     queryFn: async () => {
       const res = await api.get("/dashboard/stats");
@@ -165,10 +154,10 @@ const Dashboard = () => {
 
   const statsCards = [
     { icon: <FaUsers />, color: "blue", label: "Total Members", value: stats?.total_students ?? (statsLoading ? "..." : 0), key: "total_students" },
-    { icon: <FaUserCheck />, color: "green", label: "Active Members", value: stats ? `${stats.active_students || stats.active_validities} / ${stats.total_students}` : (statsLoading ? "..." : "0 / 0"), key: "active_students" },
-    { icon: <FaExclamationTriangle />, color: "amber", label: "Suspended Members (unpaid > 7d)", value: stats ? (stats.suspended_students !== undefined ? stats.suspended_students : (stats.unpaid_students || 0)) : (statsLoading ? "..." : 0), key: "suspended" },
-    { icon: <FaUserMinus />, color: "red", label: "Inactive Members (unpaid > 20d)", value: stats?.inactive_members ?? (statsLoading ? "..." : 0), key: "inactive" },
-    { icon: <FaExclamationTriangle />, color: "orange", label: "Expire Soon (7 days)", value: stats?.expiring_soon ?? (statsLoading ? "..." : 0), key: "expiring_soon" },
+    { icon: <FaUserCheck />, color: "green", label: "Active Members", value: stats ? `${stats.active_students ?? stats.active_validities ?? 0} / ${stats.total_students ?? 0}` : (statsLoading ? "..." : "0 / 0"), key: "active_students" },
+    { icon: <FaClock />, color: "rose", label: "Grace Period (Expired ≤ 10d)", value: stats?.expired_students ?? (statsLoading ? "..." : 0), key: "expired" },
+    { icon: <FaExclamationTriangle />, color: "amber", label: "Suspended Members (11–20d unpaid)", value: stats ? (stats.suspended_students !== undefined ? stats.suspended_students : (stats.unpaid_students || 0)) : (statsLoading ? "..." : 0), key: "suspended" },
+    { icon: <FaExclamationTriangle />, color: "orange", label: "Expire Soon (0–7 days)", value: stats?.expiring_soon ?? (statsLoading ? "..." : 0), key: "expiring_soon" },
     { icon: <FaClipboardCheck />, color: "purple", label: "Today's Attendance", value: stats?.today_present ?? (statsLoading ? "..." : 0), key: "today_present" },
   ];
 
@@ -309,7 +298,7 @@ const Dashboard = () => {
 
       <section className="stats-grid dashboard-stats">
         {statsCards.map((card, i) => {
-          const isClickable = ["total_students", "active_students", "suspended", "inactive", "expiring_soon", "today_present", "unpaid"].includes(card.key);
+          const isClickable = ["total_students", "active_students", "expired", "suspended", "expiring_soon", "today_present", "unpaid"].includes(card.key);
           return (
             <div 
               className="stats-card" 
@@ -674,6 +663,9 @@ const Dashboard = () => {
                               <th style={{ padding: '10px 8px', color: '#475569', fontSize: '13px', fontWeight: 600 }}>Name</th>
                               <th style={{ padding: '10px 8px', color: '#475569', fontSize: '13px', fontWeight: 600 }}>Mobile</th>
                               <th style={{ padding: '10px 8px', color: '#475569', fontSize: '13px', fontWeight: 600 }}>Type</th>
+                              {selectedMetric.key === "expired" && (
+                                <th style={{ padding: '10px 8px', color: '#475569', fontSize: '13px', fontWeight: 600, textAlign: 'right' }}>Action</th>
+                              )}
                             </tr>
                           </thead>
                           <tbody>
@@ -682,7 +674,11 @@ const Dashboard = () => {
                                 <td style={{ padding: '12px 8px', fontWeight: 600, color: '#4f46e5', fontSize: '13px' }}>{s.student_code}</td>
                                 <td style={{ padding: '12px 8px' }}>
                                   <div style={{ fontWeight: 600, color: '#1e293b', fontSize: '14px' }}>{s.full_name}</div>
-                                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>Admitted: {s.admission_date}</div>
+                                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                                    {selectedMetric.key === "expired" && s.end_date
+                                      ? `Grace Period · Expired ${s.end_date} (${s.days_overdue ?? 0}d overdue)`
+                                      : `Admitted: ${s.admission_date}`}
+                                  </div>
                                 </td>
                                 <td style={{ padding: '12px 8px', color: '#475569', fontSize: '13px' }}>{s.mobile}</td>
                                 <td style={{ padding: '12px 8px' }}>
@@ -701,6 +697,27 @@ const Dashboard = () => {
                                     <span style={{ color: '#94a3b8', fontSize: '12px' }}>N/A</span>
                                   )}
                                 </td>
+                                {selectedMetric.key === "expired" && (
+                                  <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                                    <Link
+                                      to={`${prefix}/collect-fee?student_id=${s.id}`}
+                                      onClick={() => setSelectedMetric(null)}
+                                      style={{
+                                        padding: '5px 12px',
+                                        borderRadius: '6px',
+                                        background: '#16a34a',
+                                        color: '#fff',
+                                        fontSize: '12px',
+                                        fontWeight: 700,
+                                        textDecoration: 'none',
+                                        display: 'inline-block',
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      Clear Fee
+                                    </Link>
+                                  </td>
+                                )}
                               </tr>
                             ))}
                           </tbody>

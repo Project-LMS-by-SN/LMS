@@ -1,6 +1,9 @@
 const mongoClient = require("../config/mongoClient");
-const { formatDateStr } = require("../utils/format");
+const { formatDateStr, getISTTimeParts, getISTDayBounds, addDaysToYmd } = require("../utils/format");
 const { clearStatsCache } = require("./dashboard.controller");
+const cache = require("../utils/cache");
+const { getValidityEndInstantIST } = require("../utils/studentStatus");
+const { attemptSeatRecoveryOnReactivation } = require("../utils/seatLifecycle");
 
 const formatValidity = (sv) => {
   const totalPaid = (sv.payments || []).reduce((sum, p) => sum + Number(p.amountReceived || 0), 0);
@@ -96,10 +99,12 @@ const createOrUpdateStudentValidity = async (req, res) => {
       });
     }
 
-    // Calculate end date based on plan duration (start_date + duration_days - 1)
-    const startDateObj = new Date(start_date);
-    const endDateObj = new Date(startDateObj);
-    endDateObj.setDate(startDateObj.getDate() + (feePlan.durationDays - 1));
+    // Calculate end date based on plan duration in IST (start_date + duration_days - 1, expiring at 23:59:59.999 IST)
+    const startYmd = getISTDayBounds(start_date).ymd;
+    const durationDays = Math.max(1, Number(feePlan.durationDays || 30));
+    const endYmd = addDaysToYmd(startYmd, durationDays - 1);
+    const startDateObj = new Date(`${startYmd}T00:00:00+05:30`);
+    const endDateObj = new Date(`${endYmd}T23:59:59.999+05:30`);
 
     const finalAmount = custom_amount !== undefined && custom_amount !== null && custom_amount !== "" ? parseFloat(custom_amount) : feePlan.amount;
 
@@ -109,6 +114,7 @@ const createOrUpdateStudentValidity = async (req, res) => {
         feePlanId: fpId,
         startDate: startDateObj,
         endDate: endDateObj,
+        lastRenewedAt: startDateObj,
         totalAmount: finalAmount,
         accessType: access_type,
         updatedAt: new Date(),
@@ -128,14 +134,64 @@ const createOrUpdateStudentValidity = async (req, res) => {
       },
     });
 
+    const todayYmd = getISTTimeParts().ymd;
+    const graceCutoffYmd = addDaysToYmd(todayYmd, -10);
+    const totalPaid = (validity.payments || []).reduce((sum, p) => sum + Number(p.amountReceived || 0), 0);
+    const dueAmount = Number(validity.totalAmount || 0) - totalPaid;
+    const endInstant = getValidityEndInstantIST(endYmd);
+    const notExpired = Boolean(endInstant && Date.now() <= endInstant.getTime());
+
+    const previousStatus = student.accountStatus;
+    let reactivated = false;
+    let seatRecovery = {
+      status: "NONE",
+      seat_reassignment_required: false,
+      restored_seat_number: null,
+      previous_seat_number: null,
+      seat_prompt: null,
+    };
+
+    if (
+      (previousStatus === "SUSPENDED" || previousStatus === "INACTIVE") &&
+      notExpired &&
+      (dueAmount <= 0 || startYmd >= graceCutoffYmd)
+    ) {
+      await mongoClient.student.update({
+        where: { id: sId },
+        data: { accountStatus: "ACTIVE", updatedAt: new Date() },
+      });
+      if (validity.student) validity.student.accountStatus = "ACTIVE";
+      reactivated = true;
+      if (previousStatus === "INACTIVE") {
+        seatRecovery = await attemptSeatRecoveryOnReactivation({
+          client: mongoClient,
+          validity,
+          studentId: sId,
+          previousStatus,
+          newStatus: "ACTIVE",
+          branchId: req.user.branchId,
+        });
+      }
+    }
+
     try {
       clearStatsCache();
+      cache.invalidateBranch(req.user ? req.user.branchId : 1);
     } catch (e) {}
 
     res.status(201).json({
       success: true,
-      message: "Student validity saved successfully",
-      data: formatValidity(validity),
+      message: seatRecovery.seat_prompt || "Student validity saved successfully",
+      data: {
+        ...formatValidity(validity),
+        reactivated,
+        account_status: validity.student ? validity.student.accountStatus : previousStatus,
+        seat_status: seatRecovery.status,
+        seat_reassignment_required: seatRecovery.seat_reassignment_required,
+        restored_seat_number: seatRecovery.restored_seat_number,
+        previous_seat_number: seatRecovery.previous_seat_number,
+        seat_prompt: seatRecovery.seat_prompt,
+      },
     });
   } catch (error) {
     res.status(500).json({

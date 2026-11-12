@@ -118,6 +118,12 @@ const generateInvoiceNo = () => {
   return `INV-${parts.year}${pad(parts.month)}${pad(parts.day)}-${pad(parts.hours)}${pad(parts.minutes)}${pad(parts.seconds)}-${rand}`;
 };
 
+const addDaysToYmd = (ymd, days) => {
+  const [y, m, d] = String(ymd).split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().slice(0, 10);
+};
+
 module.exports = {
   getISTTimeParts,
   getISTDayBounds,
@@ -125,4 +131,5 @@ module.exports = {
   formatDateTimeStr,
   parsePaymentDate,
   generateInvoiceNo,
+  addDaysToYmd,
 };

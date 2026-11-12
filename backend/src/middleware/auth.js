@@ -17,6 +17,7 @@ module.exports = async (req, res, next) => {
     path === "/login" ||
     path === "/users/login" ||
     path === "/users/forgot-password" ||
+    path === "/users/verify-reset-otp" ||
     path === "/users/reset-password" ||
     path.startsWith("/admission-requests/branch-info") ||
     originalUrl.includes("/admission-requests/branch-info") ||
@@ -28,6 +29,7 @@ module.exports = async (req, res, next) => {
     ((path === "/admission-requests" || originalUrl.includes("/api/admission-requests")) && req.method === "POST") ||
     originalUrl.startsWith("/api/users/login") ||
     originalUrl.startsWith("/api/users/forgot-password") ||
+    originalUrl.startsWith("/api/users/verify-reset-otp") ||
     originalUrl.startsWith("/api/users/reset-password");
 
   if (isPublic) {

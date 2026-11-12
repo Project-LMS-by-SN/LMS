@@ -161,6 +161,13 @@ const createStudentShiftAssignment = async (req, res) => {
           shiftId: shId,
           seatId: stId,
           assignmentStatus: "ACTIVE",
+          validity: {
+            student: {
+              deletedAt: null,
+              branchId: req.user.branchId,
+              accountStatus: { in: ["ACTIVE", "SUSPENDED"] },
+            },
+          },
         },
       });
 
@@ -177,6 +184,8 @@ const createStudentShiftAssignment = async (req, res) => {
         validityId: valId,
         shiftId: shId,
         seatId: stId,
+        previousSeatId: null,
+        seatReleasedAt: null,
       },
     });
 
@@ -308,6 +317,13 @@ const createBulkShiftAssignments = async (req, res) => {
               shiftId: shId,
               seatId: stId,
               assignmentStatus: "ACTIVE",
+              validity: {
+                student: {
+                  deletedAt: null,
+                  branchId: req.user.branchId,
+                  accountStatus: { in: ["ACTIVE", "SUSPENDED"] },
+                },
+              },
             },
           });
 
@@ -323,6 +339,8 @@ const createBulkShiftAssignments = async (req, res) => {
             validityId: valId,
             shiftId: shId,
             seatId: stId,
+            previousSeatId: null,
+            seatReleasedAt: null,
           },
         });
 

@@ -6,6 +6,7 @@ const { loginLimiter } = require("../middleware/rateLimiter");
 router.post("/login", loginLimiter, userController.login);
 router.post("/logout", userController.logout);
 router.post("/forgot-password", loginLimiter, userController.forgotPassword);
+router.post("/verify-reset-otp", loginLimiter, userController.verifyResetOtp);
 router.get("/reset-password", userController.resetPassword);
 router.post("/reset-password", userController.resetPassword);
 router.get("/profile", userController.getProfile);
