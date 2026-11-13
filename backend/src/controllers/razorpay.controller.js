@@ -51,19 +51,20 @@ const updateSubscriptionPlansEndpoint = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to update subscription plans", error: error.message });
   }
 };
+
 const validateCouponEndpoint = async (req, res) => {
   try {
-    const { couponCode, tier } = req.body;
+    const { couponCode, tier, billing } = req.body;
     if (!couponCode) {
       return res.status(400).json({ success: false, message: "Please enter a coupon code" });
     }
-    const result = await couponService.validateCoupon(req.user.id, couponCode, tier);
+    const result = await couponService.validateCoupon(req.user.id, couponCode, tier, billing);
     if (!result.valid) {
       return res.status(400).json({ success: false, ...result });
     }
     return res.json({ success: true, ...result });
   } catch (error) {
-    console.error("Coupon validation endpoint error:", error);
+    console.error("Coupon validation error:", error);
     return res.status(500).json({ success: false, message: "Failed to validate coupon" });
   }
 };
@@ -86,31 +87,48 @@ const createOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid subscription tier selected" });
     }
 
-    let isCouponApplied = false;
-    let finalAmount;
+    if (tier === "FREE" || tier === "ENTERPRISE") {
+      return res.status(400).json({ success: false, message: "This tier does not require online checkout." });
+    }
 
+    let effectiveBilling = billing || "monthly";
+    const isYearly = (effectiveBilling === "yearly" || effectiveBilling === "annual") && (tierPricing[tier].yearly || tierPricing[tier].annual);
+    const isHalfYearly = effectiveBilling === "halfyearly" && tierPricing[tier].halfYearly;
+    const isQuarterly = effectiveBilling === "quarterly" && tierPricing[tier].quarterly;
+    let finalAmount = isYearly
+      ? (tierPricing[tier].yearly || tierPricing[tier].annual)
+      : isHalfYearly
+        ? tierPricing[tier].halfYearly
+        : isQuarterly
+          ? tierPricing[tier].quarterly
+          : tierPricing[tier].monthly;
+
+    let appliedCouponData = null;
     if (couponCode) {
-      const validation = await couponService.validateCoupon(req.user.id, couponCode, tier);
-      if (!validation.valid) {
-        return res.status(400).json({ success: false, message: validation.message, alreadyUsed: validation.alreadyUsed });
+      const couponValidation = await couponService.validateCoupon(req.user.id, couponCode, tier, effectiveBilling);
+      if (!couponValidation.valid) {
+        return res.status(400).json({ success: false, message: couponValidation.message });
       }
-      isCouponApplied = true;
-      finalAmount = 1; // 1 Rupee for PRO plans with coupon!
-    } else {
-      const isHalfYearly = billing === "halfyearly" && tierPricing[tier].halfYearly;
-      const isQuarterly = billing === "quarterly" && tierPricing[tier].quarterly;
-      finalAmount = isHalfYearly ? tierPricing[tier].halfYearly : isQuarterly ? tierPricing[tier].quarterly : tierPricing[tier].monthly;
+      appliedCouponData = couponValidation;
+      finalAmount = couponValidation.discountedPrice;
+      if (couponValidation.lockBilling) {
+        effectiveBilling = couponValidation.lockBilling;
+      }
+    }
+
+    if (!finalAmount || finalAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid plan pricing for checkout" });
     }
 
     const options = {
-      amount: finalAmount * 100,
+      amount: Math.round(finalAmount * 100),
       currency: "INR",
       receipt: `receipt_user_${req.user.id}_${Date.now()}`,
       notes: {
         userId: String(req.user.id),
         tier: tier,
-        billing: billing || "monthly",
-        couponCode: couponCode || ""
+        billing: effectiveBilling,
+        couponCode: appliedCouponData ? appliedCouponData.couponCode : "",
       }
     };
 
@@ -126,10 +144,10 @@ const createOrder = async (req, res) => {
       userId: req.user.id,
       orderId: order.id,
       tier,
-      billing: billing || "monthly",
+      billing: effectiveBilling,
       amount: finalAmount,
       status: "PENDING",
-      couponCode: isCouponApplied ? couponCode : null,
+      couponCode: appliedCouponData ? appliedCouponData.couponCode : null,
     });
 
     return res.json({
@@ -138,8 +156,8 @@ const createOrder = async (req, res) => {
       amount: order.amount,
       currency: order.currency,
       keyId: process.env.RAZORPAY_KEY_ID,
-      couponApplied: isCouponApplied,
-      discountedAmount: finalAmount
+      finalAmount,
+      couponCode: appliedCouponData ? appliedCouponData.couponCode : undefined,
     });
   } catch (error) {
     console.error("Razorpay order creation error:", error);
@@ -149,7 +167,7 @@ const createOrder = async (req, res) => {
 
 const verifySignature = async (req, res) => {
   try {
-    const { razorpay_payment_id, razorpay_order_id, razorpay_signature, tier, billing, couponCode } = req.body;
+    const { razorpay_payment_id, razorpay_order_id, razorpay_signature, tier, billing } = req.body;
     if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
       return res.status(400).json({ success: false, message: "Missing required signature verification parameters" });
     }
@@ -164,7 +182,7 @@ const verifySignature = async (req, res) => {
       return res.status(500).json({ success: false, message: "Payment gateway credentials not configured" });
     }
 
-    // Verify cryptographic signature
+    // 1. Strict HMAC-SHA256 signature verification
     const generated_signature = crypto
       .createHmac("sha256", secret)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
@@ -174,7 +192,7 @@ const verifySignature = async (req, res) => {
       return res.status(400).json({ success: false, message: "Payment signature verification failed" });
     }
 
-    // Fetch the actual order from Razorpay to prevent client-side tier/price tampering
+    // 2. Fetch authoritative order from Razorpay to prevent tampering
     const order = await client.orders.fetch(razorpay_order_id);
     if (!order) {
       return res.status(400).json({ success: false, message: "Order not found in payment gateway" });
@@ -185,58 +203,50 @@ const verifySignature = async (req, res) => {
       return res.status(403).json({ success: false, message: "Security violation: Order was created for a different account" });
     }
 
-    // Use authoritative tier and billing stored on the order notes
+    // 3. Strict Razorpay Payment Fetch: Verify payment status is captured or authorized
+    try {
+      const payment = await client.payments.fetch(razorpay_payment_id);
+      if (payment) {
+        if (payment.status !== "captured" && payment.status !== "authorized") {
+          return res.status(400).json({
+            success: false,
+            message: `Payment status is ${payment.status}. Plan cannot be upgraded until payment is successfully received.`
+          });
+        }
+        if (payment.order_id && payment.order_id !== razorpay_order_id) {
+          return res.status(400).json({ success: false, message: "Payment order ID mismatch" });
+        }
+      }
+    } catch (payErr) {
+      console.warn("Payment fetch check warning:", payErr.message);
+    }
+
+    // Use authoritative tier and billing stored on order notes
     const effectiveTier = order.notes?.tier || tier;
     const effectiveBilling = order.notes?.billing || billing;
-    const effectiveCoupon = order.notes?.couponCode || couponCode;
-
-    // If a coupon code was used, record the coupon usage to guarantee one-time redemption per user ID
-    if (effectiveCoupon) {
-      await couponService.recordCouponUsage(req.user.id, effectiveCoupon, effectiveTier, 1);
-    }
+    const notesCoupon = order.notes?.couponCode || req.body?.couponCode;
 
     const existingUser = await mongoClient.user.findUnique({ where: { id: req.user.id } });
-    const tierPricing = await getEffectivePricing();
     const isSameTier = existingUser && existingUser.subscriptionTier === effectiveTier;
-    const isExpired = !existingUser?.subscriptionExpiry || new Date(existingUser.subscriptionExpiry) <= new Date();
 
-    const isHalfYearly = effectiveBilling === "halfyearly" && tierPricing[effectiveTier] && tierPricing[effectiveTier].halfYearly;
-    const isQuarterly = effectiveBilling === "quarterly" && tierPricing[effectiveTier] && tierPricing[effectiveTier].quarterly;
-    // Coupon PRO1 gives strictly 3 months (90 days)
-    const daysToAdd = effectiveCoupon ? 90 : (isHalfYearly ? 180 : isQuarterly ? 90 : 30);
-
-    if (!isSameTier && existingUser?.subscriptionTier !== "FREE" && !isExpired) {
-      if (existingUser.pendingTier && existingUser.pendingTier !== effectiveTier) {
-        // Don't silently overwrite — tell user a different plan is already pending
-        return res.json({
-          success: true,
-          isPendingActivation: true,
-          warning: true,
-          message: `You already have a pending ${existingUser.pendingTier} plan. Your new ${effectiveTier} purchase has been recorded. Contact support to resolve conflicting plans.`,
-          pendingTier: existingUser.pendingTier,
-          pendingExpiryDays: existingUser.pendingExpiryDays,
-          couponApplied: !!effectiveCoupon
-        });
-      }
-      await mongoClient.user.update({
-        where: { id: req.user.id },
-        data: {
-          pendingTier: effectiveTier,
-          pendingExpiryDays: daysToAdd
-        }
-      });
-      return res.json({
-        success: true,
-        isPendingActivation: true,
-        message: effectiveCoupon
-          ? `Payment of ₹1 successful! 3 Months Plan ${effectiveTier} is purchased with coupon and ready for activation.`
-          : `Payment successful! Plan ${effectiveTier} is purchased and ready for activation. Click "Activate Plan" when you are ready to switch!`,
-        pendingTier: effectiveTier,
-        pendingExpiryDays: daysToAdd,
-        couponApplied: !!effectiveCoupon
-      });
+    let daysToAdd = 30;
+    if (notesCoupon && String(notesCoupon).toUpperCase() === "PRO1") {
+      daysToAdd = 90; // 3 months promo
+    } else if (effectiveBilling === "yearly" || effectiveBilling === "annual") {
+      daysToAdd = 365;
+    } else if (effectiveBilling === "halfyearly") {
+      daysToAdd = 180;
+    } else if (effectiveBilling === "quarterly") {
+      daysToAdd = 90;
+    } else {
+      daysToAdd = 30;
     }
 
+    if (notesCoupon) {
+      await couponService.recordCouponUsage(req.user.id, notesCoupon, effectiveTier, order.amount / 100);
+    }
+
+    // If renewing the same active tier, extend from current expiry date
     const baseDate = (isSameTier && existingUser?.subscriptionExpiry && new Date(existingUser.subscriptionExpiry) > new Date())
       ? new Date(existingUser.subscriptionExpiry)
       : new Date();
@@ -259,7 +269,7 @@ const verifySignature = async (req, res) => {
         email: existingUser.email,
         userId: existingUser.id,
         ipAddress: req.ip || "unknown",
-        userAgent: `Razorpay Payment ID: ${razorpay_payment_id} | Order: ${razorpay_order_id} | Tier: ${effectiveTier}`,
+        userAgent: `Razorpay Payment ID: ${razorpay_payment_id} | Order: ${razorpay_order_id} | Tier: ${effectiveTier} | Coupon: ${notesCoupon || 'none'}`,
       }
     }).catch(() => {});
 
@@ -273,11 +283,10 @@ const verifySignature = async (req, res) => {
 
     return res.json({
       success: true,
-      message: effectiveCoupon
-        ? `Payment of ₹1 successful! 3 Months Subscription upgraded to ${effectiveTier} using coupon.`
-        : `Subscription successfully upgraded to ${effectiveTier}!`,
+      message: `Payment successful! Upgraded to ${effectiveTier} plan.`,
+      subscriptionTier: effectiveTier,
       subscriptionExpiry: expiryDate,
-      couponApplied: !!effectiveCoupon
+      isPendingActivation: false
     });
   } catch (error) {
     console.error("Razorpay signature verification error:", error);

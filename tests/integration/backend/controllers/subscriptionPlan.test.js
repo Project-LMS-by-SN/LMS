@@ -3,44 +3,57 @@ import subscriptionPlanService from '../../../../backend/src/services/subscripti
 
 describe('subscription plan service integration tests', () => {
   it('resolves student limits according to tier', async () => {
-    const starterLimit = await subscriptionPlanService.getStudentLimitForTier('STARTER');
-    expect(typeof starterLimit).toBe('number');
-    expect(starterLimit).toBeGreaterThan(0);
+    const freeLimit = await subscriptionPlanService.getStudentLimitForTier('FREE');
+    expect(freeLimit).toBe(50);
 
-    const pro100Limit = await subscriptionPlanService.getStudentLimitForTier('PRO_100');
-    expect(typeof pro100Limit).toBe('number');
-    expect(pro100Limit).toBeGreaterThan(0);
+    const basicLimit = await subscriptionPlanService.getStudentLimitForTier('BASIC');
+    expect(basicLimit).toBe(200);
 
-    const pro200Limit = await subscriptionPlanService.getStudentLimitForTier('PRO_200');
-    expect(typeof pro200Limit).toBe('number');
-    expect(pro200Limit).toBeGreaterThan(0);
+    const proLimit = await subscriptionPlanService.getStudentLimitForTier('PRO');
+    expect(proLimit).toBe(500);
+
+    const enterpriseLimit = await subscriptionPlanService.getStudentLimitForTier('ENTERPRISE');
+    expect(enterpriseLimit).toBe(999999);
   });
 
   it('resolves staff user limits according to tier', async () => {
-    const starterStaff = await subscriptionPlanService.getStaffLimitForTier('STARTER');
-    expect(typeof starterStaff).toBe('number');
-    expect(starterStaff).toBeGreaterThanOrEqual(1);
+    const freeStaff = await subscriptionPlanService.getStaffLimitForTier('FREE');
+    expect(freeStaff).toBe(0);
 
-    const pro100Staff = await subscriptionPlanService.getStaffLimitForTier('PRO_100');
-    expect(typeof pro100Staff).toBe('number');
-    expect(pro100Staff).toBeGreaterThanOrEqual(1);
+    const basicStaff = await subscriptionPlanService.getStaffLimitForTier('BASIC');
+    expect(basicStaff).toBe(2);
 
-    const pro200Staff = await subscriptionPlanService.getStaffLimitForTier('PRO_200');
-    expect(typeof pro200Staff).toBe('number');
-    expect(pro200Staff).toBeGreaterThanOrEqual(1);
+    const proStaff = await subscriptionPlanService.getStaffLimitForTier('PRO');
+    expect(proStaff).toBe(3);
+
+    const enterpriseStaff = await subscriptionPlanService.getStaffLimitForTier('ENTERPRISE');
+    expect(enterpriseStaff).toBe(5);
   });
 
   it('resolves device login limits according to tier', async () => {
-    const starterDevice = await subscriptionPlanService.getDeviceLimitForTier('STARTER');
-    expect(typeof starterDevice).toBe('number');
-    expect(starterDevice).toBeGreaterThanOrEqual(1);
+    const freeDevice = await subscriptionPlanService.getDeviceLimitForTier('FREE');
+    expect(freeDevice).toBe(1);
 
-    const pro100Device = await subscriptionPlanService.getDeviceLimitForTier('PRO_100');
-    expect(typeof pro100Device).toBe('number');
-    expect(pro100Device).toBeGreaterThanOrEqual(1);
+    const basicDevice = await subscriptionPlanService.getDeviceLimitForTier('BASIC');
+    expect(basicDevice).toBe(2);
 
-    const pro200Device = await subscriptionPlanService.getDeviceLimitForTier('PRO_200');
-    expect(typeof pro200Device).toBe('number');
-    expect(pro200Device).toBeGreaterThanOrEqual(1);
+    const proDevice = await subscriptionPlanService.getDeviceLimitForTier('PRO');
+    expect(proDevice).toBe(3);
+
+    const enterpriseDevice = await subscriptionPlanService.getDeviceLimitForTier('ENTERPRISE');
+    expect(enterpriseDevice).toBe(5);
+  });
+
+  it('provides dynamic tier pricing for all billing cycles', async () => {
+    const pricing = await subscriptionPlanService.getDynamicTierPricing();
+    expect(pricing.BASIC.monthly).toBe(150);
+    expect(pricing.BASIC.quarterly).toBe(450);
+    expect(pricing.BASIC.halfYearly).toBe(900);
+    expect(pricing.BASIC.yearly).toBe(1800);
+
+    expect(pricing.PRO.monthly).toBe(250);
+    expect(pricing.PRO.quarterly).toBe(750);
+    expect(pricing.PRO.halfYearly).toBe(1500);
+    expect(pricing.PRO.yearly).toBe(3000);
   });
 });

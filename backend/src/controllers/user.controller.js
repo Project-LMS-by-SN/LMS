@@ -8,6 +8,7 @@ const cache = require("../utils/cache");
 const { generateUniqueLibraryCode, ensureAllBranchesHaveCode } = require("../utils/libraryCode");
 const { generateSecureToken, ensureAllBranchesHaveTokens } = require("../utils/branchTokens");
 const { Resend } = require("resend");
+const emailService = require("../services/email.service");
 let resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 let resendOverride;
 const getResendClient = () => {
@@ -17,7 +18,7 @@ const getResendClient = () => {
   }
   return resend;
 };
-const getEmailFrom = () => process.env.EMAIL_FROM || "noreply@dashurl.in";
+const getEmailFrom = () => emailService.getEmailFrom();
 
 // Parse owner configuration from owner_emails.csv or .env fallback
 const getOwnerEmails = () => {
@@ -610,7 +611,7 @@ exports.login = async (req, res) => {
     if (user.role === "OWNER") {
       // If owner logs in, and there is a staff active on this physical device:
       // "if i'm login as staff and then try to login as owner that should not happen it can happen in preium 200 ok not in starter one"
-      const isPremium = cleanEmail === "admin@admin.com" || user.subscriptionTier === "PRO_200" || user.subscriptionTier === "ENTERPRISE";
+      const isPremium = cleanEmail === "admin@admin.com" || user.subscriptionTier === "PRO" || user.subscriptionTier === "ENTERPRISE" || user.subscriptionTier === "PRO_200";
       if (!isPremium && activeStaff.length > 0) {
         for (const s of activeStaff) {
           await mongoClient.userSession.update({
@@ -1491,9 +1492,13 @@ exports.forgotPassword = async (req, res) => {
       });
     }
 
-    const resendClient = getResendClient();
-    if (!resendClient) {
-      console.warn("⚠️ Resend client not initialized. Set RESEND_API_KEY in .env.");
+    const canSendEmail = Boolean(
+      resendOverride !== undefined ||
+      emailService.getTransporter() ||
+      emailService.getResendClient()
+    );
+    if (!canSendEmail) {
+      console.warn("⚠️ Email service not configured. Check EMAIL_FROM and RESEND_API_KEY/SMTP settings in .env.");
       return res.status(500).json({ success: false, message: "Email service is not configured on the server." });
     }
 
@@ -1568,13 +1573,7 @@ exports.forgotPassword = async (req, res) => {
     });
 
     const safeName = escapeHtml(user.name || "User");
-    let emailResponse;
-    try {
-      emailResponse = await resendClient.emails.send({
-        from: getEmailFrom(),
-        to: user.email,
-        subject: "Your 6-Digit Password Verification OTP",
-        html: `
+    const otpEmailHtml = `
         <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #f8fafc; padding: 32px; border-radius: 12px;">
           <div style="text-align: center; margin-bottom: 24px;">
             <div style="width: 52px; height: 52px; background: linear-gradient(135deg, #3b82f6, #2563eb); border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: 24px;">📚</div>
@@ -1597,22 +1596,29 @@ exports.forgotPassword = async (req, res) => {
           </div>
           <p style="color: #cbd5e1; font-size: 11px; text-align: center; margin-top: 16px;">Library Management System · Admin Portal</p>
         </div>
-      `,
-      });
-    } catch (sendErr) {
-      await mongoClient.user.update({
-        where: { id: user.id },
-        data: {
-          passwordResetOtpHash: null,
-          passwordResetOtpExpiry: null,
-          passwordResetOtpAttempts: 0,
-        },
-      }).catch(() => {});
-      throw sendErr;
-    }
+      `;
 
-    if (emailResponse && emailResponse.error) {
-      console.error("Resend OTP delivery error:", emailResponse.error);
+    try {
+      if (resendOverride) {
+        const sendRes = await resendOverride.emails.send({
+          from: getEmailFrom(),
+          to: user.email,
+          subject: "Your 6-Digit Password Verification OTP",
+          html: otpEmailHtml,
+        });
+        if (sendRes && sendRes.error) {
+          throw new Error(sendRes.error.message || "Resend email delivery failed");
+        }
+      } else {
+        await emailService.sendEmail({
+          from: getEmailFrom(),
+          to: user.email,
+          subject: "Your 6-Digit Password Verification OTP",
+          html: otpEmailHtml,
+        });
+      }
+    } catch (sendErr) {
+      console.error("OTP email delivery error:", sendErr);
       await mongoClient.user.update({
         where: { id: user.id },
         data: {

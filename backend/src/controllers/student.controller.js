@@ -1,8 +1,7 @@
 const subscriptionPlanService = require("../services/subscriptionPlan.service");
 const mongoClient = require("../config/mongoClient");
-const { Resend } = require("resend");
-const resend = new Resend(process.env.RESEND_API_KEY);
-const emailFrom = process.env.EMAIL_FROM || "noreply@dashurl.in";
+const emailService = require("../services/email.service");
+const emailFrom = emailService.getEmailFrom();
 const {
   formatDateStr,
   formatDateTimeStr,
@@ -532,7 +531,7 @@ const createStudent = async (req, res) => {
 
           // 1. Send Welcome Email to student
           if (newStudent.email) {
-            await resend.emails.send({
+            await emailService.sendEmail({
               from: emailFrom,
               to: newStudent.email,
               subject: "Welcome to Library Management System!",
@@ -552,7 +551,7 @@ const createStudent = async (req, res) => {
                   <p style="font-size: 12px; color: #64748b;">Best Regards,<br/>Library Management Team</p>
                 </div>
               `
-            });
+            }).catch(e => console.error("Student welcome email error:", e.message));
             console.log(`Welcome email successfully sent to student: ${newStudent.email}`);
           }
 
@@ -563,7 +562,7 @@ const createStudent = async (req, res) => {
 
           const ownerEmails = owners.map(owner => owner.email).filter(Boolean);
           if (ownerEmails.length > 0) {
-            await resend.emails.send({
+            await emailService.sendEmail({
               from: emailFrom,
               to: ownerEmails,
               subject: "New Student Admission Enrolled by Staff",
@@ -598,11 +597,11 @@ const createStudent = async (req, res) => {
                   <p style="font-size: 12px; color: #64748b;">This is an automated notification from your Library Management System.</p>
                 </div>
               `
-            });
+            }).catch(e => console.error("Owner notification email error:", e.message));
             console.log(`Notification email successfully sent to owners: ${ownerEmails.join(", ")}`);
           }
         } catch (emailErr) {
-          console.error("Resend notification error:", emailErr);
+          console.error("Email notification error:", emailErr);
         }
       })();
     }
@@ -1693,14 +1692,12 @@ const admitStudent = async (req, res) => {
     });
 
     try {
-      if (process.env.RESEND_API_KEY) {
-        await resend.emails.send({
-          from: emailFrom,
-          to: [email],
-          subject: "Welcome to Library!",
-          html: `<p>Dear ${full_name}, your admission is complete. Student Code: ${student_code}</p>`,
-        });
-      }
+      await emailService.sendEmail({
+        from: emailFrom,
+        to: [email],
+        subject: "Welcome to Library!",
+        html: `<p>Dear ${full_name}, your admission is complete. Student Code: ${student_code}</p>`,
+      });
     } catch (e) {
       console.log("Email sending error:", e.message);
     }

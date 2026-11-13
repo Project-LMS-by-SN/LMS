@@ -285,7 +285,7 @@ const Support = () => {
     },
     {
       q: "How do I upgrade or renew my library software subscription?",
-      a: "Go to System > Subscription from the sidebar menu. You can select your desired tier (Starter, Pro, Enterprise), apply any available promotional discount coupons (e.g. PRO1), and complete payment securely via Razorpay UPI, Netbanking, or Cards.",
+      a: "Go to System > Subscription from the sidebar menu. You can select your desired tier (Free, Basic, Pro, Enterprise) and billing period (Monthly, Quarterly, Half Yearly, Yearly), and complete payment securely via Razorpay UPI, Netbanking, or Cards. Your plan is activated immediately upon successful payment.",
     },
     {
       q: "Can two students share the same seat in different shifts?",

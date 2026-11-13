@@ -136,7 +136,7 @@ const DashboardLayout = () => {
   };
 
   const getTierName = (tier) => {
-    const map = { FREE: "Free", STARTER: "Starter", PRO_100: "Basic", PRO_200: "Pro", PRO: "Pro", ENTERPRISE: "Enterprise" };
+    const map = { FREE: "Free", BASIC: "Basic", PRO: "Pro", ENTERPRISE: "Enterprise", STARTER: "Free", PRO_100: "Basic", PRO_200: "Pro" };
     return map[tier] || "Free";
   };
 

@@ -516,7 +516,7 @@ const Profile = () => {
                 <div>
                   <span style={{ fontSize: "12px", color: textMuted }}>Plan Tier</span>
                   <div style={{ fontWeight: 700, fontSize: "15px", color: textPrimary }}>
-                    {profile?.subscriptionTier === "PRO_200" || profile?.subscriptionTier === "PRO" ? "Pro Plan" : profile?.subscriptionTier === "PRO_100" ? "Basic Plan" : profile?.subscriptionTier === "STARTER" ? "Starter Plan" : profile?.subscriptionTier === "ENTERPRISE" ? "Enterprise Plan" : "Free Plan"}
+                    {profile?.subscriptionTier === "ENTERPRISE" ? "Enterprise Plan" : profile?.subscriptionTier === "PRO" || profile?.subscriptionTier === "PRO_200" ? "Pro Plan" : profile?.subscriptionTier === "BASIC" || profile?.subscriptionTier === "PRO_100" ? "Basic Plan" : profile?.subscriptionTier === "FREE" || profile?.subscriptionTier === "STARTER" ? "Free Plan" : "Free Plan"}
                   </div>
                 </div>
                 <div>

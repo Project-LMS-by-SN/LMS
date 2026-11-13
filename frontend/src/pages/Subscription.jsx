@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaCheck, FaUsers, FaArrowRight, FaTimes, FaCalendarAlt, FaExclamationTriangle, FaTag, FaReceipt, FaCheckCircle, FaCreditCard, FaShieldAlt, FaDownload, FaFileInvoice, FaExternalLinkAlt } from "react-icons/fa";
+import { FaCheck, FaUsers, FaArrowRight, FaTimes, FaCalendarAlt, FaExclamationTriangle, FaReceipt, FaCheckCircle, FaCreditCard, FaShieldAlt, FaDownload, FaFileInvoice, FaExternalLinkAlt, FaTag } from "react-icons/fa";
 import { useTheme } from "../context/ThemeContext";
 import api from "../api/axios";
 import SubscriptionInvoiceModal from "../components/SubscriptionInvoiceModal";
@@ -15,45 +15,16 @@ const Subscription = () => {
 
   // Coupon state
   const [couponInput, setCouponInput] = useState("");
-  const [appliedCoupon, setAppliedCoupon] = useState(null); // { code: 'PRO1', discountedPrice: 1 }
+  const [appliedCoupon, setAppliedCoupon] = useState(null); // { code, discountedPrice, durationMonths, message, lockBilling }
   const [couponLoading, setCouponLoading] = useState(false);
   const [couponError, setCouponError] = useState("");
- const [, setCouponSuccess] = useState("");
- const [, setHasUsedProCoupon] = useState(false);
+  const [, setCouponSuccess] = useState("");
 
   // Subscription History state
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyData, setHistoryData] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
-
-  const fetchSubscriptionHistory = async () => {
-    setHistoryLoading(true);
-    try {
-      const res = await api.get("/payments/razorpay/subscription-history");
-      if (res.data?.success) {
-        setHistoryData(res.data);
-      }
-    } catch (err) {
-      console.error("Failed to load subscription history:", err);
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    const checkCouponStatus = async () => {
-      try {
-        const res = await api.get("/payments/razorpay/coupon-status");
-        if (res.data?.success && res.data?.hasUsedProCoupon) {
-          setHasUsedProCoupon(true);
-        }
-      } catch {
-        // silent fail
-      }
-    };
-    checkCouponStatus();
-  }, []);
 
   const handleApplyCoupon = async (e) => {
     if (e) e.preventDefault();
@@ -69,17 +40,22 @@ const Subscription = () => {
     try {
       const res = await api.post("/payments/razorpay/validate-coupon", {
         couponCode: code,
-        tier: "PRO_100",
+        tier: "PRO",
+        billing: billing,
       });
 
       if (res.data?.success) {
         setAppliedCoupon({
           code: res.data.couponCode || code,
-          discountedPrice: res.data.discountedPrice || 1,
+          discountedPrice: res.data.discountedPrice !== undefined ? res.data.discountedPrice : 1,
           durationMonths: res.data.durationMonths || 3,
+          message: res.data.message || `Coupon ${code} applied successfully!`,
+          lockBilling: res.data.lockBilling || "quarterly",
         });
-        setBilling("quarterly"); // Lock to 3 months offer
-        setCouponSuccess(res.data.message || `Coupon applied! 3 Months Pro plan is now ₹1.`);
+        if (res.data.lockBilling) {
+          setBilling(res.data.lockBilling);
+        }
+        setCouponSuccess(res.data.message || `Coupon applied successfully!`);
         setCouponError("");
       }
     } catch (err) {
@@ -98,14 +74,29 @@ const Subscription = () => {
     setCouponInput("");
   };
 
-  const user = (() => {
+  const fetchSubscriptionHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await api.get("/payments/razorpay/subscription-history");
+      if (res.data?.success) {
+        setHistoryData(res.data);
+      }
+    } catch (err) {
+      console.error("Failed to load subscription history:", err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const [activeUser, setActiveUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem("lms_user") || "{}"); }
     catch { return {}; }
-  })();
-  const currentTier = user.subscriptionTier || "FREE";
-  const subscriptionExpiry = user.subscriptionExpiry;
-  const pendingTier = user.pendingTier;
-  const pendingExpiryDays = user.pendingExpiryDays;
+  });
+  const user = activeUser;
+  const currentTier = activeUser.subscriptionTier || "FREE";
+  const subscriptionExpiry = activeUser.subscriptionExpiry;
+  const pendingTier = activeUser.pendingTier;
+  const pendingExpiryDays = activeUser.pendingExpiryDays;
 
   const [actLoading, setActLoading] = useState(false);
   const [showActivateConfirmModal, setShowActivateConfirmModal] = useState(false);
@@ -178,12 +169,12 @@ const Subscription = () => {
   const executeUpgrade = async (tierKey, amount, tierName) => {
     try {
       const dbTier = String(tierKey).toUpperCase();
-      const isPro = dbTier === "PRO_100" || dbTier === "PRO_200";
+      const isPro = dbTier === "PRO";
 
       // If coupon applied on non-pro plan
       if (appliedCoupon && !isPro) {
         const proceed = window.confirm(
-          `Coupon ${appliedCoupon.code} is only valid for Pro plans (Basic Pro 100 & Pro 200).\n\nWould you like to proceed with ${tierName} at regular price ₹${amount}?`
+          `Coupon ${appliedCoupon.code} is only valid for Pro plan.\n\nWould you like to proceed with ${tierName} at regular price ₹${amount}?`
         );
         if (!proceed) return;
       }
@@ -194,10 +185,13 @@ const Subscription = () => {
         return;
       }
 
+      const isCouponActive = appliedCoupon && isPro;
+      const orderBilling = isCouponActive && appliedCoupon.lockBilling ? appliedCoupon.lockBilling : billing;
+
       const orderPayload = {
         tier: dbTier,
-        billing: (appliedCoupon && isPro) ? "quarterly" : billing,
-        couponCode: (appliedCoupon && isPro) ? appliedCoupon.code : undefined,
+        billing: orderBilling,
+        couponCode: isCouponActive ? appliedCoupon.code : undefined,
       };
 
       const orderRes = await api.post("/payments/razorpay/create-order", orderPayload);
@@ -213,9 +207,9 @@ const Subscription = () => {
         amount: orderAmount,
         currency: currency,
         name: "Library Management System",
-        description: (appliedCoupon && isPro)
-          ? `Upgrade to ${tierKey} plan (Coupon ${appliedCoupon.code} Applied - ₹1)`
-          : `Upgrade to ${tierKey} plan`,
+        description: isCouponActive
+          ? `Upgrade to ${tierName || tierKey} plan (Coupon ${appliedCoupon.code} Applied)`
+          : `Upgrade to ${tierName || tierKey} plan`,
         order_id: orderId,
         handler: async (response) => {
           try {
@@ -224,8 +218,8 @@ const Subscription = () => {
               razorpay_order_id: response.razorpay_order_id,
               razorpay_signature: response.razorpay_signature,
               tier: dbTier,
-              billing: (appliedCoupon && isPro) ? "quarterly" : billing,
-              couponCode: (appliedCoupon && isPro) ? appliedCoupon.code : undefined,
+              billing: orderBilling,
+              couponCode: isCouponActive ? appliedCoupon.code : undefined,
             });
 
             if (verifyRes.data.success) {
@@ -283,12 +277,166 @@ const Subscription = () => {
 
   
 
-  const [tiers, setTiers] = useState([]);
-  const [plansLoading, setPlansLoading] = useState(true);
+  const DEFAULT_PLANS = [
+    {
+      id: "plan-free",
+      name: "Free",
+      dbTier: "FREE",
+      tierKey: "FREE",
+      monthlyPrice: 0,
+      quarterlyPrice: 0,
+      halfYearPrice: 0,
+      annualPrice: 0,
+      limit: "Up to 50 active students",
+      studentCapacity: "Up to 50",
+      staffCount: 0,
+      deviceLimit: 1,
+      attendance: "Basic Manual",
+      admissionProcess: "QR / Manual",
+      feeManagement: "Basic",
+      supportLevel: "Community Support",
+      planPriceLabel: "Null",
+      description: "Essential library management for small reading rooms",
+      features: [
+        "Up to 50 active students",
+        "0 Staff accounts (Owner only)",
+        "1 Device login limit",
+        "Basic Manual Attendance",
+        "QR / Manual Admission",
+        "Basic Fee Management",
+        "Community Support",
+      ],
+      popular: false,
+      badge: "",
+      isActive: true,
+    },
+    {
+      id: "plan-basic",
+      name: "Basic",
+      dbTier: "BASIC",
+      tierKey: "BASIC",
+      monthlyPrice: 150,
+      quarterlyPrice: 450,
+      halfYearPrice: 900,
+      annualPrice: 1800,
+      limit: "Up to 200 active students",
+      studentCapacity: "Up to 200",
+      staffCount: 2,
+      deviceLimit: 2,
+      attendance: "QR / Manual",
+      admissionProcess: "QR / Manual",
+      feeManagement: "Invoicing & Receipts",
+      supportLevel: "Standard Email",
+      planPriceLabel: "150",
+      description: "Complete management solution for growing libraries",
+      features: [
+        "Up to 200 active students",
+        "2 Staff member accounts",
+        "2 Device login limits",
+        "QR & Manual Attendance",
+        "QR & Manual Admission",
+        "Invoicing & Fee Receipts",
+        "Standard Email Support",
+      ],
+      popular: false,
+      badge: "",
+      isActive: true,
+    },
+    {
+      id: "plan-pro",
+      name: "Pro",
+      dbTier: "PRO",
+      tierKey: "PRO",
+      monthlyPrice: 250,
+      quarterlyPrice: 750,
+      halfYearPrice: 1500,
+      annualPrice: 3000,
+      limit: "Up to 500 active students",
+      studentCapacity: "Up to 500",
+      staffCount: 3,
+      deviceLimit: 3,
+      attendance: "QR / Manual",
+      admissionProcess: "QR / Manual",
+      feeManagement: "Invoicing & Receipts",
+      supportLevel: "Priority Email & Chat",
+      planPriceLabel: "250",
+      description: "Advanced performance and priority support for busy libraries",
+      features: [
+        "Up to 500 active students",
+        "3 Staff member accounts",
+        "3 Device login limits",
+        "QR & Manual Attendance",
+        "QR & Manual Admission",
+        "Invoicing & Fee Receipts",
+        "Priority Email & Chat Support",
+      ],
+      popular: true,
+      badge: "Most Popular",
+      isActive: true,
+    },
+    {
+      id: "plan-enterprise",
+      name: "Enterprise",
+      dbTier: "ENTERPRISE",
+      tierKey: "ENTERPRISE",
+      monthlyPrice: 0,
+      quarterlyPrice: 0,
+      halfYearPrice: 0,
+      annualPrice: 0,
+      isCustom: true,
+      limit: "Unlimited active students",
+      studentCapacity: "Unlimited",
+      staffCount: 5,
+      deviceLimit: 5,
+      attendance: "Advanced Custom Integration",
+      admissionProcess: "Custom Workflow & Portal",
+      feeManagement: "Full ERP & Multi-Branch",
+      supportLevel: "24/7 Dedicated Account Manager",
+      planPriceLabel: "According To Features",
+      description: "Multi-branch ERP and custom workflows for large institutions",
+      features: [
+        "Unlimited active students",
+        "5 Staff member accounts",
+        "5 Device login limits",
+        "Advanced Custom Integration Attendance",
+        "Custom Workflow & Portal Admission",
+        "Full ERP & Multi-Branch Management",
+        "24/7 Dedicated Account Manager",
+      ],
+      popular: false,
+      badge: "Custom",
+      isActive: true,
+    },
+  ];
+
+  const [tiers, setTiers] = useState(DEFAULT_PLANS);
+  const [plansLoading, setPlansLoading] = useState(false);
 
   useEffect(() => {
+    const fetchLatestProfile = async () => {
+      try {
+        const res = await api.get("/users/profile");
+        if (res.data?.success && res.data?.data) {
+          const fresh = res.data.data;
+          setActiveUser((prev) => {
+            const updated = {
+              ...prev,
+              subscriptionTier: fresh.subscriptionTier || prev.subscriptionTier,
+              subscriptionExpiry: fresh.subscriptionExpiry || prev.subscriptionExpiry,
+              pendingTier: fresh.pendingTier,
+              pendingExpiryDays: fresh.pendingExpiryDays,
+            };
+            localStorage.setItem("lms_user", JSON.stringify(updated));
+            return updated;
+          });
+        }
+      } catch {
+        // silent fail
+      }
+    };
+    fetchLatestProfile();
+
     const fetchDbPlans = async () => {
-      setPlansLoading(true);
       try {
         const res = await api.get("/payments/razorpay/plans");
         if (res.data?.success && Array.isArray(res.data?.plans) && res.data.plans.length > 0) {
@@ -296,8 +444,6 @@ const Subscription = () => {
         }
       } catch (err) {
         console.error("Failed to load plans from DB:", err);
-      } finally {
-        setPlansLoading(false);
       }
     };
     fetchDbPlans();
@@ -412,7 +558,7 @@ const Subscription = () => {
           </div>
           <div>
             <h3 style={{ fontSize: '17px', fontWeight: 700, color: textPrimary, margin: 0 }}>
-              {currentTier === "FREE" ? "No Active Plan" : currentTier.replace("_", " ")}
+              {currentTier === "FREE" ? "No Active Plan" : `${currentTier === "PRO" ? "Pro" : currentTier === "BASIC" ? "Basic" : currentTier.replace("_", " ")} Plan`}
             </h3>
             <p style={{ fontSize: '13px', color: textMuted, margin: '4px 0 0 0', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -501,7 +647,7 @@ const Subscription = () => {
                 Have a Coupon Code?
               </h4>
               <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: textMuted }}>
-                Enter your promotional or discount code below
+                Enter your promotional coupon below to unlock discounts
               </p>
             </div>
           </div>
@@ -518,10 +664,10 @@ const Subscription = () => {
               <FaCheck style={{ color: "#10b981", fontSize: "14px" }} />
               <div>
                 <span style={{ fontWeight: 700, color: darkMode ? "#4ade80" : "#15803d", fontSize: "13px" }}>
-                  Coupon Applied!
+                  Coupon Applied ({appliedCoupon.code})!
                 </span>
                 <span style={{ fontSize: "12px", color: textMuted, marginLeft: "8px" }}>
-                  Discount successfully applied to Pro plans
+                  {appliedCoupon.message}
                 </span>
               </div>
             </div>
@@ -539,7 +685,7 @@ const Subscription = () => {
           <form onSubmit={handleApplyCoupon} style={{ display: "flex", gap: "10px" }}>
             <input
               type="text"
-              placeholder="Enter coupon code"
+              placeholder="Enter coupon code (e.g. PRO1)"
               value={couponInput}
               onChange={(e) => {
                 setCouponInput(e.target.value.toUpperCase());
@@ -581,251 +727,445 @@ const Subscription = () => {
       <div id="plans" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '32px' }}>
         <div style={{
           display: 'inline-flex', background: darkMode ? '#1e293b' : '#f1f5f9',
-          borderRadius: '12px', padding: '4px', border: `1px solid ${border}`
+          borderRadius: '12px', padding: '4px', border: `1px solid ${border}`,
+          flexWrap: 'wrap', justifyContent: 'center', gap: '4px'
         }}>
           <button
-            disabled={!!appliedCoupon}
-            onClick={() => !appliedCoupon && setBilling("monthly")}
+            type="button"
+            onClick={() => setBilling("monthly")}
             style={{
-              padding: '10px 20px', borderRadius: '10px', border: 'none', fontWeight: 600,
-              fontSize: '13px', cursor: appliedCoupon ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
+              padding: '10px 18px', borderRadius: '10px', border: 'none', fontWeight: 600,
+              fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
               background: billing === 'monthly' ? '#3b82f6' : 'transparent',
               color: billing === 'monthly' ? '#fff' : textMuted,
-              opacity: appliedCoupon && billing !== 'monthly' ? 0.4 : 1
             }}
           >
             Monthly
           </button>
           <button
+            type="button"
             onClick={() => setBilling("quarterly")}
             style={{
-              padding: '10px 20px', borderRadius: '10px', border: 'none', fontWeight: 600,
+              padding: '10px 18px', borderRadius: '10px', border: 'none', fontWeight: 600,
               fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
               background: billing === 'quarterly' ? '#3b82f6' : 'transparent',
               color: billing === 'quarterly' ? '#fff' : textMuted,
             }}
           >
-            3 Months {appliedCoupon && "✓"}
+            Quarterly (3 Months)
           </button>
           <button
-            disabled={!!appliedCoupon}
-            onClick={() => !appliedCoupon && setBilling("halfyearly")}
+            type="button"
+            onClick={() => setBilling("halfyearly")}
             style={{
-              padding: '10px 20px', borderRadius: '10px', border: 'none', fontWeight: 600,
-              fontSize: '13px', cursor: appliedCoupon ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
+              padding: '10px 18px', borderRadius: '10px', border: 'none', fontWeight: 600,
+              fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
               background: billing === 'halfyearly' ? '#3b82f6' : 'transparent',
               color: billing === 'halfyearly' ? '#fff' : textMuted,
-              opacity: appliedCoupon && billing !== 'halfyearly' ? 0.4 : 1
             }}
           >
-            6 Months
+            Half Yearly (6 Months)
+          </button>
+          <button
+            type="button"
+            onClick={() => setBilling("yearly")}
+            style={{
+              padding: '10px 18px', borderRadius: '10px', border: 'none', fontWeight: 600,
+              fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
+              background: billing === 'yearly' ? '#3b82f6' : 'transparent',
+              color: billing === 'yearly' ? '#fff' : textMuted,
+            }}
+          >
+            Yearly (1 Year)
           </button>
         </div>
-        {appliedCoupon && (
-          <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 600, marginTop: '8px' }}>
-            🔒 Coupon applied: Offer is locked to 3 Months Pro plan
-          </span>
-        )}
       </div>
 
       {/* Plans Grid */}
       {plansLoading ? (
         <div style={{ textAlign: "center", padding: "60px 0", color: textMuted }}>
           <div style={{ fontSize: "28px", marginBottom: "12px" }}>⏳</div>
-          <p style={{ fontSize: "14px", fontWeight: 600 }}>Loading subscription plans from database...</p>
+          <p style={{ fontSize: "14px", fontWeight: 600 }}>Loading subscription plans...</p>
         </div>
       ) : tiers.length === 0 ? (
         <div style={{ textAlign: "center", padding: "60px 0", color: textMuted }}>
-          <p style={{ fontSize: "14px" }}>No active subscription plans found in database.</p>
+          <p style={{ fontSize: "14px" }}>No active subscription plans found.</p>
         </div>
       ) : (
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-        gap: "24px",
-        maxWidth: "1200px",
-        margin: "0 auto",
-      }}>
-        {tiers.map((tier, idx) => {
-          const current = isCurrentPlan(tier);
-          const isPro = tier.dbTier === "PRO_100" || tier.dbTier === "PRO_200";
-          const hasDiscount = appliedCoupon && isPro;
+      <>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+          gap: "24px",
+          maxWidth: "1200px",
+          margin: "0 auto",
+        }}>
+          {tiers.map((tier, idx) => {
+            const current = isCurrentPlan(tier);
+            const isPro = tier.dbTier === "PRO";
+            const isFree = tier.dbTier === "FREE" || tier.dbTier === "STARTER";
+            const isEnterprise = tier.dbTier === "ENTERPRISE" || tier.isCustom;
+            const hasDiscount = appliedCoupon && isPro;
 
-          const regularPrice = hasDiscount
-            ? (tier.quarterlyPrice || 600)
-            : billing === "halfyearly" && tier.halfYearPrice
-              ? tier.halfYearPrice
-              : billing === "quarterly" && tier.quarterlyPrice
-                ? tier.quarterlyPrice
-                : tier.monthlyPrice;
+            const regularPrice = billing === "yearly" && (tier.annualPrice || tier.yearlyPrice)
+              ? (tier.annualPrice || tier.yearlyPrice)
+              : billing === "halfyearly" && tier.halfYearPrice
+                ? tier.halfYearPrice
+                : billing === "quarterly" && tier.quarterlyPrice
+                  ? tier.quarterlyPrice
+                  : tier.monthlyPrice;
 
-          const price = hasDiscount ? appliedCoupon.discountedPrice : regularPrice;
+            const price = hasDiscount ? appliedCoupon.discountedPrice : regularPrice;
 
-          const period = hasDiscount
-            ? "/ 3 months"
-            : billing === "halfyearly" && tier.halfYearPrice
-              ? "/ 6 months"
-              : billing === "quarterly" && tier.quarterlyPrice
-                ? "/ 3 months"
-                : "/ month";
-          const savings = billing === "halfyearly" && tier.halfYearPrice
-            ? Math.round((1 - (tier.halfYearPrice / (tier.monthlyPrice * 6))) * 100)
-            : billing === "quarterly" && tier.quarterlyPrice
-              ? Math.round((1 - (tier.quarterlyPrice / (tier.monthlyPrice * 3))) * 100)
+            const period = isFree
+              ? "forever"
+              : isEnterprise
+                ? ""
+                : hasDiscount
+                  ? "/ 3 months"
+                  : billing === "yearly"
+                    ? "/ year"
+                    : billing === "halfyearly"
+                      ? "/ 6 months"
+                      : billing === "quarterly"
+                        ? "/ 3 months"
+                        : "/ month";
+
+            const savings = !isFree && !isEnterprise && tier.monthlyPrice > 0
+              ? (billing === "yearly" && tier.annualPrice
+                ? Math.round((1 - (tier.annualPrice / (tier.monthlyPrice * 12))) * 100)
+                : billing === "halfyearly" && tier.halfYearPrice
+                  ? Math.round((1 - (tier.halfYearPrice / (tier.monthlyPrice * 6))) * 100)
+                  : billing === "quarterly" && tier.quarterlyPrice
+                    ? Math.round((1 - (tier.quarterlyPrice / (tier.monthlyPrice * 3))) * 100)
+                    : 0)
               : 0;
-          const disabled = false;
 
-          return (
-            <div key={idx} style={{
-              background: cardBg,
-              border: hasDiscount
-                ? "2px solid #10b981"
-                : current ? "2px solid #16a34a" : tier.popular ? "2px solid #3b82f6" : `1px solid ${border}`,
-              borderRadius: "20px",
-              padding: "28px 22px",
-              position: "relative",
-              boxShadow: hasDiscount
-                ? (darkMode ? "0 10px 30px rgba(16,185,129,0.2)" : "0 10px 30px rgba(16,185,129,0.15)")
-                : "0 8px 24px rgba(0,0,0,0.06)",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              transform: hasDiscount || (tier.popular && !current) ? "scale(1.02)" : "none",
-              zIndex: hasDiscount ? 3 : tier.popular ? 2 : 1,
-            }}>
-              {hasDiscount && (
-                <span style={{
-                  position: "absolute", top: "-12px", left: "50%", transform: "translateX(-50%)",
-                  background: "linear-gradient(135deg, #10b981, #059669)", color: "#fff", padding: "5px 14px", borderRadius: "20px",
-                  fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px",
-                  boxShadow: "0 4px 10px rgba(16, 185, 129, 0.4)", display: "flex", alignItems: "center", gap: "4px"
-                }}>
-                  🎉 3 Months for ₹1
-                </span>
-              )}
-              {!hasDiscount && current && (
-                <span style={{
-                  position: "absolute", top: "-12px", left: "50%", transform: "translateX(-50%)",
-                  background: "#16a34a", color: "#fff", padding: "5px 14px", borderRadius: "20px",
-                  fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px",
-                }}>
-                  Current Plan
-                </span>
-              )}
-              {!hasDiscount && !current && tier.popular && (
-                <span style={{
-                  position: "absolute", top: "-12px", left: "50%", transform: "translateX(-50%)",
-                  background: "#3b82f6", color: "#fff", padding: "5px 14px", borderRadius: "20px",
-                  fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px",
-                }}>
-                  Most Popular
-                </span>
-              )}
+            const disabled = isFree && current;
 
-              <div>
-                <h3 style={{ fontSize: "19px", fontWeight: 700, margin: 0, color: textPrimary }}>{tier.name}</h3>
-                <p style={{ color: textMuted, fontSize: "13px", marginTop: "6px", minHeight: "32px" }}>{tier.description}</p>
+            return (
+              <div key={idx} style={{
+                background: cardBg,
+                border: hasDiscount
+                  ? "2px solid #10b981"
+                  : current ? "2px solid #16a34a" : tier.popular ? "2px solid #3b82f6" : `1px solid ${border}`,
+                borderRadius: "20px",
+                padding: "28px 22px",
+                position: "relative",
+                boxShadow: hasDiscount
+                  ? (darkMode ? "0 10px 30px rgba(16,185,129,0.2)" : "0 10px 30px rgba(16,185,129,0.15)")
+                  : "0 8px 24px rgba(0,0,0,0.06)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                transform: hasDiscount || (tier.popular && !current) ? "scale(1.02)" : "none",
+                zIndex: hasDiscount ? 3 : tier.popular ? 2 : 1,
+              }}>
+                {hasDiscount && (
+                  <span style={{
+                    position: "absolute", top: "-12px", left: "50%", transform: "translateX(-50%)",
+                    background: "linear-gradient(135deg, #10b981, #059669)", color: "#fff", padding: "5px 14px", borderRadius: "20px",
+                    fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px",
+                    boxShadow: "0 4px 10px rgba(16, 185, 129, 0.4)", display: "flex", alignItems: "center", gap: "4px"
+                  }}>
+                    🎉 Coupon {appliedCoupon.code} Applied
+                  </span>
+                )}
+                {!hasDiscount && current && (
+                  <span style={{
+                    position: "absolute", top: "-12px", left: "50%", transform: "translateX(-50%)",
+                    background: "#16a34a", color: "#fff", padding: "5px 14px", borderRadius: "20px",
+                    fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px",
+                  }}>
+                    Current Plan
+                  </span>
+                )}
+                {!hasDiscount && !current && tier.popular && (
+                  <span style={{
+                    position: "absolute", top: "-12px", left: "50%", transform: "translateX(-50%)",
+                    background: "#3b82f6", color: "#fff", padding: "5px 14px", borderRadius: "20px",
+                    fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px",
+                  }}>
+                    Most Popular
+                  </span>
+                )}
 
-                <div style={{ margin: "20px 0" }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" }}>
-                    {hasDiscount ? (
-                      <>
-                        <span style={{ fontSize: "38px", fontWeight: 800, color: "#10b981" }}>₹1</span>
-                        <span style={{ fontSize: "18px", textDecoration: "line-through", color: textMuted }}>₹{regularPrice.toLocaleString("en-IN")}</span>
-                        <span style={{ color: textMuted, fontSize: "13px" }}>{period}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span style={{ fontSize: "36px", fontWeight: 800, color: textPrimary }}>₹{price.toLocaleString("en-IN")}</span>
-                        <span style={{ color: textMuted, fontSize: "13px" }}>{period}</span>
-                      </>
+                <div>
+                  <h3 style={{ fontSize: "19px", fontWeight: 700, margin: 0, color: textPrimary }}>{tier.name}</h3>
+                  <p style={{ color: textMuted, fontSize: "13px", marginTop: "6px", minHeight: "32px" }}>{tier.description}</p>
+
+                  <div style={{ margin: "20px 0" }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" }}>
+                      {isFree ? (
+                        <>
+                          <span style={{ fontSize: "36px", fontWeight: 800, color: textPrimary }}>₹0</span>
+                          <span style={{ color: textMuted, fontSize: "13px" }}>/ Free Forever</span>
+                        </>
+                      ) : isEnterprise ? (
+                        <>
+                          <span style={{ fontSize: "28px", fontWeight: 800, color: textPrimary }}>Custom</span>
+                          <span style={{ color: textMuted, fontSize: "13px" }}>According To Features</span>
+                        </>
+                      ) : hasDiscount ? (
+                        <>
+                          <span style={{ fontSize: "38px", fontWeight: 800, color: "#10b981" }}>₹{price.toLocaleString("en-IN")}</span>
+                          <span style={{ fontSize: "18px", textDecoration: "line-through", color: textMuted }}>₹{regularPrice.toLocaleString("en-IN")}</span>
+                          <span style={{ color: textMuted, fontSize: "13px" }}>{period}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ fontSize: "36px", fontWeight: 800, color: textPrimary }}>₹{price.toLocaleString("en-IN")}</span>
+                          <span style={{ color: textMuted, fontSize: "13px" }}>{period}</span>
+                        </>
+                      )}
+                    </div>
+
+                    {hasDiscount && (
+                      <span style={{
+                        display: "inline-block", marginTop: "6px", padding: "3px 10px",
+                        borderRadius: "20px", fontSize: "11px", fontWeight: 700,
+                        background: "rgba(16,185,129,0.15)", color: "#10b981", border: "1px solid rgba(16,185,129,0.3)"
+                      }}>
+                        ⚡ Special Discount: ₹{price} Only
+                      </span>
+                    )}
+                    {!hasDiscount && savings > 0 && (
+                      <span style={{
+                        display: "inline-block", marginTop: "6px", padding: "3px 10px",
+                        borderRadius: "20px", fontSize: "11px", fontWeight: 700,
+                        background: "rgba(16,163,74,0.1)", color: "#16a34a"
+                      }}>
+                        Save {savings}%
+                      </span>
                     )}
                   </div>
 
-                  {hasDiscount && (
-                    <span style={{
-                      display: "inline-block", marginTop: "6px", padding: "3px 10px",
-                      borderRadius: "20px", fontSize: "11px", fontWeight: 700,
-                      background: "rgba(16,185,129,0.15)", color: "#10b981", border: "1px solid rgba(16,185,129,0.3)"
-                    }}>
-                      ⚡ 3 Months Pro: ₹1 Only
-                    </span>
-                  )}
-                  {!hasDiscount && savings > 0 && (
-                    <span style={{
-                      display: "inline-block", marginTop: "6px", padding: "3px 10px",
-                      borderRadius: "20px", fontSize: "11px", fontWeight: 700,
-                      background: "rgba(16,163,74,0.1)", color: "#16a34a"
-                    }}>
-                      Save {savings}%
-                    </span>
-                  )}
+                  <div style={{
+                    background: darkMode ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
+                    borderRadius: "10px", padding: "10px 14px", display: "flex", alignItems: "center", gap: "8px",
+                    fontSize: "13px", color: "#3b82f6", fontWeight: 600, marginBottom: "20px",
+                  }}>
+                    <FaUsers /> {tier.limit}
+                  </div>
+
+                  <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "10px" }}>
+                    {tier.features.map((f, i) => (
+                      <li key={i} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px" }}>
+                        <FaCheck style={{ color: "#10b981", flexShrink: 0 }} />
+                        <span style={{ color: darkMode ? "#cbd5e1" : "#475569" }}>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
 
-                <div style={{
-                  background: darkMode ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
-                  borderRadius: "10px", padding: "10px 14px", display: "flex", alignItems: "center", gap: "8px",
-                  fontSize: "13px", color: "#3b82f6", fontWeight: 600, marginBottom: "20px",
-                }}>
-                  <FaUsers /> {tier.limit}
-                </div>
-
-                <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "10px" }}>
-                  {tier.features.map((f, i) => (
-                    <li key={i} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px" }}>
-                      <FaCheck style={{ color: "#10b981", flexShrink: 0 }} />
-                      <span style={{ color: darkMode ? "#cbd5e1" : "#475569" }}>{f}</span>
-                    </li>
-                  ))}
-                </ul>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    if (disabled) return;
+                    if (isEnterprise) {
+                      setShowContactModal(true);
+                    } else if (isFree) {
+                      // Already on free or cannot downgrade via online payment
+                    } else {
+                      handleUpgrade(tier.dbTier || tier.tierKey, regularPrice, tier.name);
+                    }
+                  }}
+                  style={{
+                    width: "100%", marginTop: "24px", padding: "12px", borderRadius: "12px", fontWeight: 700,
+                    cursor: disabled ? "default" : "pointer", fontSize: "14px", display: "flex",
+                    alignItems: "center", justifyContent: "center", gap: "8px", border: "none",
+                    background: disabled
+                      ? (darkMode ? "rgba(255,255,255,0.08)" : "#e2e8f0")
+                      : (isEnterprise
+                        ? "linear-gradient(135deg, #3b82f6, #2563eb)"
+                        : hasDiscount
+                          ? "linear-gradient(135deg, #10b981, #059669)"
+                          : (current ? "#16a34a" : (tier.popular ? "#3b82f6" : (darkMode ? "rgba(255,255,255,0.1)" : "#f1f5f9")))),
+                    color: disabled
+                      ? textMuted
+                      : (isEnterprise || hasDiscount || current || tier.popular ? "#fff" : (darkMode ? "#f8fafc" : "#0f172a")),
+                    boxShadow: hasDiscount ? "0 4px 14px rgba(16, 185, 129, 0.35)" : "none",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseOver={(e) => {
+                    if (!disabled) {
+                      e.target.style.transform = "translateY(-2px)";
+                      if (isEnterprise) e.target.style.background = "#1d4ed8";
+                      else if (hasDiscount) e.target.style.background = "#059669";
+                      else if (current) e.target.style.background = "#15803d";
+                      else if (tier.popular) e.target.style.background = "#2563eb";
+                      else e.target.style.background = darkMode ? "rgba(255,255,255,0.15)" : "#e2e8f0";
+                    }
+                  }}
+                  onMouseOut={(e) => {
+                    if (!disabled) {
+                      e.target.style.transform = "translateY(0)";
+                      if (isEnterprise) e.target.style.background = "linear-gradient(135deg, #3b82f6, #2563eb)";
+                      else if (hasDiscount) e.target.style.background = "linear-gradient(135deg, #10b981, #059669)";
+                      else if (current) e.target.style.background = "#16a34a";
+                      else if (tier.popular) e.target.style.background = "#3b82f6";
+                      else e.target.style.background = darkMode ? "rgba(255,255,255,0.1)" : "#f1f5f9";
+                    }
+                  }}
+                >
+                  {isEnterprise
+                    ? "Contact Sales"
+                    : isFree
+                      ? (current ? "Current Plan" : "Free Plan")
+                      : hasDiscount
+                        ? `Pay ₹${price} & Upgrade to ${tier.name}`
+                        : (current ? "Renew Plan" : `Upgrade to ${tier.name}`)}
+                  {!disabled && !isFree && <FaArrowRight style={{ fontSize: "11px" }} />}
+                </button>
               </div>
+            );
+          })}
+        </div>
 
-              <button
-                disabled={disabled}
-                onClick={() => !disabled && handleUpgrade(tier.dbTier || tier.tierKey, regularPrice, tier.name)}
-                style={{
-                  width: "100%", marginTop: "24px", padding: "12px", borderRadius: "12px", fontWeight: 700,
-                  cursor: disabled ? "default" : "pointer", fontSize: "14px", display: "flex",
-                  alignItems: "center", justifyContent: "center", gap: "8px", border: "none",
-                  background: disabled
-                    ? (darkMode ? "rgba(255,255,255,0.08)" : "#e2e8f0")
-                    : (hasDiscount
-                      ? "linear-gradient(135deg, #10b981, #059669)"
-                      : (current ? "#16a34a" : (tier.popular ? "#3b82f6" : (darkMode ? "rgba(255,255,255,0.1)" : "#f1f5f9")))),
-                  color: disabled
-                    ? textMuted
-                    : (hasDiscount || current || tier.popular ? "#fff" : (darkMode ? "#f8fafc" : "#0f172a")),
-                  boxShadow: hasDiscount ? "0 4px 14px rgba(16, 185, 129, 0.35)" : "none",
-                  transition: "all 0.2s",
-                }}
-                onMouseOver={(e) => {
-                  if (!disabled) {
-                    e.target.style.transform = "translateY(-2px)";
-                    if (hasDiscount) e.target.style.background = "#059669";
-                    else if (current) e.target.style.background = "#15803d";
-                    else if (tier.popular) e.target.style.background = "#2563eb";
-                    else e.target.style.background = darkMode ? "rgba(255,255,255,0.15)" : "#e2e8f0";
+        {/* Feature Comparison Table */}
+        <div style={{ marginTop: "48px", maxWidth: "1200px", margin: "48px auto 0" }}>
+          <div style={{ textAlign: "center", marginBottom: "20px" }}>
+            <h2 style={{ fontSize: "22px", fontWeight: 800, color: textPrimary, margin: 0 }}>
+              Subscription Tiers Specification
+            </h2>
+            <p style={{ fontSize: "13px", color: textMuted, marginTop: "6px" }}>
+              Complete capacity, features, support level, and pricing breakdown
+            </p>
+          </div>
+
+          <div style={{
+            background: cardBg,
+            borderRadius: "18px",
+            border: `1px solid ${border}`,
+            overflowX: "auto",
+            boxShadow: darkMode ? "0 10px 30px rgba(0,0,0,0.3)" : "0 8px 24px rgba(0,0,0,0.05)"
+          }}>
+            <table style={{ width: "100%", minWidth: "1020px", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
+              <thead>
+                <tr style={{ background: darkMode ? "rgba(255,255,255,0.04)" : "#f8fafc", borderBottom: `1px solid ${border}` }}>
+                  <th style={{ padding: "16px 20px", fontWeight: 700, color: textPrimary, whiteSpace: "nowrap" }}>Subscription Tier</th>
+                  <th style={{ padding: "16px 14px", fontWeight: 700, color: textPrimary, whiteSpace: "nowrap" }}>Student Capacity</th>
+                  <th style={{ padding: "16px 14px", fontWeight: 700, color: textPrimary, whiteSpace: "nowrap" }}>Staff Count</th>
+                  <th style={{ padding: "16px 14px", fontWeight: 700, color: textPrimary, whiteSpace: "nowrap" }}>Device Limit</th>
+                  <th style={{ padding: "16px 14px", fontWeight: 700, color: textPrimary, whiteSpace: "nowrap" }}>Attendance</th>
+                  <th style={{ padding: "16px 14px", fontWeight: 700, color: textPrimary, whiteSpace: "nowrap" }}>Admission Process</th>
+                  <th style={{ padding: "16px 14px", fontWeight: 700, color: textPrimary, whiteSpace: "nowrap" }}>Fee Management</th>
+                  <th style={{ padding: "16px 14px", fontWeight: 700, color: textPrimary, whiteSpace: "nowrap" }}>Support Level</th>
+                  <th style={{ padding: "16px 20px", fontWeight: 700, color: textPrimary, whiteSpace: "nowrap", textAlign: "right" }}>Plan Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  {
+                    tier: "Free",
+                    capacity: "Up to 50",
+                    staff: "0",
+                    device: "1",
+                    attendance: "Basic Manual",
+                    admission: "QR / Manual",
+                    fee: "Basic",
+                    support: "Community Support",
+                    price: "Null",
+                    isPopular: false,
+                    key: "FREE"
+                  },
+                  {
+                    tier: "Basic",
+                    capacity: "Up to 200",
+                    staff: "2",
+                    device: "2",
+                    attendance: "QR / Manual",
+                    admission: "QR / Manual",
+                    fee: "Invoicing & Receipts",
+                    support: "Standard Email",
+                    price: "150",
+                    isPopular: false,
+                    key: "BASIC"
+                  },
+                  {
+                    tier: "Pro",
+                    capacity: "Up to 500",
+                    staff: "3",
+                    device: "3",
+                    attendance: "QR / Manual",
+                    admission: "QR / Manual",
+                    fee: "Invoicing & Receipts",
+                    support: "Priority Email & Chat",
+                    price: "250",
+                    isPopular: true,
+                    key: "PRO"
+                  },
+                  {
+                    tier: "Enterprise",
+                    capacity: "Unlimited",
+                    staff: "5",
+                    device: "5",
+                    attendance: "Advanced Custom Integration",
+                    admission: "Custom Workflow & Portal",
+                    fee: "Full ERP & Multi-Branch",
+                    support: "24/7 Dedicated Account Manager",
+                    price: "According To Features",
+                    isPopular: false,
+                    key: "ENTERPRISE"
                   }
-                }}
-                onMouseOut={(e) => {
-                  if (!disabled) {
-                    e.target.style.transform = "translateY(0)";
-                    if (hasDiscount) e.target.style.background = "linear-gradient(135deg, #10b981, #059669)";
-                    else if (current) e.target.style.background = "#16a34a";
-                    else if (tier.popular) e.target.style.background = "#3b82f6";
-                    else e.target.style.background = darkMode ? "rgba(255,255,255,0.1)" : "#f1f5f9";
-                  }
-                }}
-              >
-                {hasDiscount
-                  ? `Pay ₹1 for 3 Months`
-                  : (current ? "Renew" : "Upgrade")}
-                {!disabled && !current && <FaArrowRight style={{ fontSize: "11px" }} />}
-              </button>
-            </div>
-          );
-        })}
-      </div>
+                ].map((row, rIdx) => {
+                  const isCur = currentTier === row.key;
+                  return (
+                    <tr
+                      key={rIdx}
+                      style={{
+                        borderBottom: rIdx < 3 ? `1px solid ${border}` : "none",
+                        background: row.isPopular
+                          ? (darkMode ? "rgba(59,130,246,0.06)" : "#f0f7ff")
+                          : (isCur ? (darkMode ? "rgba(16,185,129,0.06)" : "#f0fdf4") : "transparent")
+                      }}
+                    >
+                      <td style={{ padding: "16px 20px", fontWeight: 700, color: textPrimary, whiteSpace: "nowrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span>{row.tier}</span>
+                          {row.isPopular && (
+                            <span style={{
+                              fontSize: "10px", fontWeight: 700, padding: "2px 8px", borderRadius: "10px",
+                              background: "#3b82f6", color: "#fff", textTransform: "uppercase"
+                            }}>
+                              Popular
+                            </span>
+                          )}
+                          {isCur && (
+                            <span style={{
+                              fontSize: "10px", fontWeight: 700, padding: "2px 8px", borderRadius: "10px",
+                              background: "#16a34a", color: "#fff"
+                            }}>
+                              Current
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td style={{ padding: "16px 14px", color: textPrimary, fontWeight: 600 }}>{row.capacity}</td>
+                      <td style={{ padding: "16px 14px", color: textPrimary }}>{row.staff}</td>
+                      <td style={{ padding: "16px 14px", color: textPrimary }}>{row.device}</td>
+                      <td style={{ padding: "16px 14px", color: textMuted }}>{row.attendance}</td>
+                      <td style={{ padding: "16px 14px", color: textMuted }}>{row.admission}</td>
+                      <td style={{ padding: "16px 14px", color: textMuted }}>{row.fee}</td>
+                      <td style={{ padding: "16px 14px", color: textMuted }}>{row.support}</td>
+                      <td style={{ padding: "16px 20px", textAlign: "right", fontWeight: 800, color: textPrimary, fontSize: "15px" }}>
+                        {row.price === "Null" ? (
+                          <span style={{ color: textMuted }}>Free</span>
+                        ) : row.price === "According To Features" ? (
+                          <span style={{ fontSize: "12px", color: "#3b82f6" }}>Custom</span>
+                        ) : (
+                          <span>₹{row.price}<span style={{ fontSize: "11px", fontWeight: 500, color: textMuted }}>/mo</span></span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </>
       )}
 
       {/* Contact Modal */}

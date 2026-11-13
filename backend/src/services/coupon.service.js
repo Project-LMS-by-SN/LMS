@@ -1,11 +1,33 @@
 const models = require("../models");
 
-const VALID_COUPONS = ["PRO1", "PRO", "PRO1RUPEE", "SPECIAL1", "OFFER1"];
-
-const isProTier = (tier) => {
-  if (!tier) return false;
-  const upper = String(tier).toUpperCase();
-  return upper === "PRO_100" || upper === "PRO_200" || upper.includes("PRO");
+const VALID_COUPONS = {
+  PRO1: {
+    code: "PRO1",
+    tier: "PRO",
+    discountedPrice: 1,
+    durationMonths: 3,
+    durationDays: 90,
+    lockBilling: "quarterly",
+    description: "3 Months Pro subscription for just ₹1",
+  },
+  PRO: {
+    code: "PRO1",
+    tier: "PRO",
+    discountedPrice: 1,
+    durationMonths: 3,
+    durationDays: 90,
+    lockBilling: "quarterly",
+    description: "3 Months Pro subscription for just ₹1",
+  },
+  SPECIAL1: {
+    code: "PRO1",
+    tier: "PRO",
+    discountedPrice: 1,
+    durationMonths: 3,
+    durationDays: 90,
+    lockBilling: "quarterly",
+    description: "3 Months Pro subscription for just ₹1",
+  },
 };
 
 const normalizeCoupon = (code) => {
@@ -16,9 +38,12 @@ const normalizeCoupon = (code) => {
 const hasUserUsedCoupon = async (userId, couponCode) => {
   if (!userId) return false;
   try {
+    const normalized = normalizeCoupon(couponCode);
     const count = await models.CouponUsage.countDocuments({
       userId: Number(userId),
-      couponCode: { $in: VALID_COUPONS },
+      couponCode: normalized === "PRO1" || normalized === "PRO" || normalized === "SPECIAL1"
+        ? { $in: ["PRO1", "PRO", "SPECIAL1"] }
+        : normalized,
     });
     return count > 0;
   } catch (err) {
@@ -27,41 +52,49 @@ const hasUserUsedCoupon = async (userId, couponCode) => {
   }
 };
 
-const validateCoupon = async (userId, couponCode, tier) => {
+const validateCoupon = async (userId, couponCode, tier, billing = "monthly") => {
   const normalized = normalizeCoupon(couponCode);
+  if (!normalized) {
+    return { valid: false, message: "Please enter a coupon code" };
+  }
 
-  if (!normalized || !VALID_COUPONS.includes(normalized)) {
+  const coupon = VALID_COUPONS[normalized];
+  if (!coupon) {
     return {
       valid: false,
-      message: "Invalid coupon code. Please enter a valid coupon (e.g. PRO1).",
+      message: "Invalid coupon code. Please check and try again.",
     };
   }
 
-  // Check if target tier is a PRO plan
-  if (tier && !isProTier(tier)) {
-    return {
-      valid: false,
-      message: "Coupon PRO1 is only applicable on Pro plans (Basic Pro 100 & Pro 200).",
-    };
+  // Check tier requirement if coupon is restricted to a tier
+  if (coupon.tier && tier) {
+    const requestedTier = String(tier).toUpperCase();
+    if (requestedTier !== coupon.tier) {
+      return {
+        valid: false,
+        message: `Coupon ${coupon.code} is only valid for the ${coupon.tier} plan.`,
+      };
+    }
   }
 
-  // Check if user has already redeemed this coupon
-  const alreadyUsed = await hasUserUsedCoupon(userId, normalized);
+  // Check single-use per account
+  const alreadyUsed = await hasUserUsedCoupon(userId, coupon.code);
   if (alreadyUsed) {
     return {
       valid: false,
       alreadyUsed: true,
-      message: "This coupon has already been redeemed by your account. Each ID can only use it once.",
+      message: `Coupon ${coupon.code} has already been redeemed by your account. Single-use only.`,
     };
   }
 
   return {
     valid: true,
-    couponCode: "PRO1",
-    discountedPrice: 1,
-    durationMonths: 3,
-    durationDays: 90,
-    message: "Coupon PRO1 applied! 3 Months Pro subscription for just ₹1.",
+    couponCode: coupon.code,
+    discountedPrice: coupon.discountedPrice,
+    durationMonths: coupon.durationMonths,
+    durationDays: coupon.durationDays,
+    lockBilling: coupon.lockBilling,
+    message: `Coupon ${coupon.code} applied! ${coupon.description}.`,
   };
 };
 
@@ -72,7 +105,7 @@ const recordCouponUsage = async (userId, couponCode, tier, amount = 1) => {
     return await models.CouponUsage.create({
       userId: Number(userId),
       couponCode: normalized,
-      tier: tier || "PRO_100",
+      tier: tier || "PRO",
       amount: Number(amount) || 1,
     });
   } catch (err) {
@@ -83,9 +116,9 @@ const recordCouponUsage = async (userId, couponCode, tier, amount = 1) => {
 
 module.exports = {
   VALID_COUPONS,
-  isProTier,
   normalizeCoupon,
   hasUserUsedCoupon,
   validateCoupon,
   recordCouponUsage,
 };
+
