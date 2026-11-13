@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { FaEnvelope, FaKey, FaArrowLeft, FaRedo, FaCheckCircle } from "react-icons/fa";
 import api from "../api/axios";
 
@@ -8,8 +8,9 @@ const EMPTY_OTP = Array(OTP_LENGTH).fill("");
 
 const ForgotPassword = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [step, setStep] = useState("email"); // "email" | "otp"
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => searchParams.get("email") || "");
   const [otpDigits, setOtpDigits] = useState(EMPTY_OTP);
   const [error, setError] = useState("");
   const [infoMessage, setInfoMessage] = useState("");
@@ -401,7 +402,7 @@ const ForgotPassword = () => {
 
           <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1px solid #e2e8f0", textAlign: "center" }}>
             <Link
-              to="/login"
+              to={localStorage.getItem("lms_token") ? "/dashboard" : "/login"}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -412,7 +413,7 @@ const ForgotPassword = () => {
                 textDecoration: "none",
               }}
             >
-              <FaArrowLeft style={{ fontSize: "12px" }} /> Back to Login
+              <FaArrowLeft style={{ fontSize: "12px" }} /> {localStorage.getItem("lms_token") ? "Back to Dashboard" : "Back to Login"}
             </Link>
           </div>
         </div>

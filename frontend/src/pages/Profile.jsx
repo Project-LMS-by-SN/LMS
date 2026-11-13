@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import api from "../api/axios";
-import { FaUserShield, FaEnvelope, FaUser, FaClock, FaCheckCircle, FaEdit, FaSave, FaTimes, FaPhone, FaMapMarkerAlt, FaBuilding, FaLock, FaKey, FaEye, FaEyeSlash, FaCopy, FaCheck, FaIdCard } from "react-icons/fa";
+import { FaUserShield, FaEnvelope, FaUser, FaClock, FaCheckCircle, FaEdit, FaSave, FaTimes, FaPhone, FaMapMarkerAlt, FaBuilding, FaLock, FaKey, FaEye, FaEyeSlash, FaCopy, FaCheck, FaIdCard, FaQuestionCircle } from "react-icons/fa";
 import { useTheme } from "../context/ThemeContext";
 
 const Profile = () => {
@@ -601,22 +602,44 @@ const Profile = () => {
               <h3 style={{ fontSize: "16px", fontWeight: 700, color: textPrimary, margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
                 <FaLock style={{ color: "#eab308" }} /> Password & Security
               </h3>
-              <p style={{ fontSize: "13px", color: textMuted, margin: "2px 0 0 0" }}>Update your account password securely</p>
+              <p style={{ fontSize: "13px", color: textMuted, margin: "2px 0 0 0" }}>Update your password or reset via email OTP</p>
             </div>
-            <button
-              type="button"
-              className={showPwSection ? "secondary-btn" : "primary-btn"}
-              onClick={() => {
-                setShowPwSection(!showPwSection);
-                setPwMsg(null);
-                setOldPassword("");
-                setNewPassword("");
-                setConfirmPassword("");
-              }}
-              style={{ fontSize: "13px", padding: "8px 16px", display: "flex", alignItems: "center", gap: "6px" }}
-            >
-              {showPwSection ? <FaTimes /> : <FaKey />} {showPwSection ? "Cancel" : "Change Password"}
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <Link
+                to={`/forgot-password?email=${encodeURIComponent(profile?.email || "")}`}
+                style={{
+                  fontSize: "13px",
+                  padding: "8px 14px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  textDecoration: "none",
+                  color: "#2563eb",
+                  background: darkMode ? "rgba(37,99,235,0.12)" : "#eff6ff",
+                  border: darkMode ? "1px solid rgba(59,130,246,0.3)" : "1px solid #bfdbfe",
+                  borderRadius: "8px",
+                  fontWeight: 600,
+                  transition: "all 0.2s",
+                }}
+                title="Forgot password? Reset via Email OTP"
+              >
+                <FaQuestionCircle /> Forgot Password?
+              </Link>
+              <button
+                type="button"
+                className={showPwSection ? "secondary-btn" : "primary-btn"}
+                onClick={() => {
+                  setShowPwSection(!showPwSection);
+                  setPwMsg(null);
+                  setOldPassword("");
+                  setNewPassword("");
+                  setConfirmPassword("");
+                }}
+                style={{ fontSize: "13px", padding: "8px 16px", display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                {showPwSection ? <FaTimes /> : <FaKey />} {showPwSection ? "Cancel" : "Change Password"}
+              </button>
+            </div>
           </div>
 
           {showPwSection && (
@@ -637,7 +660,16 @@ const Profile = () => {
               )}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
                 <div>
-                  <label style={{ fontSize: "13px", fontWeight: 600, color: textMuted, display: "block", marginBottom: "6px" }}>Current Password</label>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: textMuted }}>Current Password</label>
+                    <Link
+                      to={`/forgot-password?email=${encodeURIComponent(profile?.email || "")}`}
+                      style={{ fontSize: "12px", color: "#3b82f6", fontWeight: 600, textDecoration: "none" }}
+                      title="Reset your current password via Email OTP"
+                    >
+                      Forgot?
+                    </Link>
+                  </div>
                   <div style={{ position: "relative", width: "100%" }}>
                     <input
                       type={showOldPw ? "text" : "password"}

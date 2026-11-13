@@ -69,11 +69,7 @@ const App = () => {
           ) : <Login />
         } />
 
-        <Route path="/forgot-password" element={
-          isAuthenticated() ? (
-            mustChangePassword() ? <Navigate to="/change-password" replace /> : <Navigate to="/dashboard" replace />
-          ) : <ForgotPassword />
-        } />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
 
         <Route path="/reset-password" element={<ResetPassword />} />
 

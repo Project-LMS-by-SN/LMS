@@ -40,10 +40,6 @@ const getOwnerEmails = () => {
     .filter(Boolean);
 };
 
-const getDefaultOwnerPassword = () => {
-  return process.env.DEFAULT_OWNER_PASSWORD || "password@123";
-};
-
 // Seed default branch and admin user on startup
 // Run seedAdminUser only once per server process
 let seedAdminUserRan = false;
@@ -85,10 +81,12 @@ const seedAdminUser = async () => {
 
     await ensureAllBranchesHaveCode(mongoClient);
 
+    // Initial password hash for new accounts (only used if account does not exist)
+    const initialAdminHash = authUtil.hashPassword("password24");
+
     // 1. Seed admin@admin.com -> Branch 1
     const adminEmail = "admin@admin.com";
     const adminUser = await mongoClient.user.findFirst({ where: { email: adminEmail } });
-    const defaultAdminHash = authUtil.hashPassword(getDefaultOwnerPassword());
     if (adminUser) {
       await mongoClient.user.update({
         where: { id: adminUser.id },
@@ -97,16 +95,15 @@ const seedAdminUser = async () => {
           failedLoginAttempts: 0,
           lockedUntil: null,
           isActive: true,
-          passwordHash: defaultAdminHash,
         },
       });
-      console.log("🔓 admin@admin.com verified and linked to Branch 1 with password@123");
+      console.log("🔓 admin@admin.com verified and linked to Branch 1");
     } else {
       await mongoClient.user.create({
         data: {
           name: "Admin User",
           email: adminEmail,
-          passwordHash: adminHash,
+          passwordHash: initialAdminHash,
           role: "OWNER",
           isActive: true,
           mustChangePassword: false,
@@ -116,7 +113,7 @@ const seedAdminUser = async () => {
           subscriptionExpiry: null,
         },
       });
-      console.log("👤 admin@admin.com created with default FREE tier (upgrades require Razorpay payment)");
+      console.log("👤 admin@admin.com created with initial password");
     }
 
     // 2. Seed admin100@admin.com -> Branch 2
@@ -127,7 +124,7 @@ const seedAdminUser = async () => {
         data: {
           name: "Owner Pro 100",
           email: email100,
-          passwordHash: defaultAdminHash,
+          passwordHash: initialAdminHash,
           role: "OWNER",
           isActive: true,
           mustChangePassword: false,
@@ -137,7 +134,7 @@ const seedAdminUser = async () => {
           subscriptionExpiry: null,
         },
       });
-      console.log("👤 admin100@admin.com created with default password@123");
+      console.log("👤 admin100@admin.com created with initial password");
     } else {
       await mongoClient.user.update({
         where: { id: user100.id },
@@ -146,10 +143,9 @@ const seedAdminUser = async () => {
           failedLoginAttempts: 0,
           lockedUntil: null,
           isActive: true,
-          passwordHash: defaultAdminHash,
         },
       });
-      console.log("🔓 admin100@admin.com verified and linked to Branch 2 with password@123");
+      console.log("🔓 admin100@admin.com verified and linked to Branch 2");
     }
 
     // 3. Seed admin200@admin.com -> Branch 3
@@ -160,7 +156,7 @@ const seedAdminUser = async () => {
         data: {
           name: "Owner Pro 200",
           email: email200,
-          passwordHash: defaultAdminHash,
+          passwordHash: initialAdminHash,
           role: "OWNER",
           isActive: true,
           mustChangePassword: false,
@@ -170,7 +166,7 @@ const seedAdminUser = async () => {
           subscriptionExpiry: null,
         },
       });
-      console.log("👤 admin200@admin.com created with default password@123");
+      console.log("👤 admin200@admin.com created with initial password");
     } else {
       await mongoClient.user.update({
         where: { id: user200.id },
@@ -179,10 +175,9 @@ const seedAdminUser = async () => {
           failedLoginAttempts: 0,
           lockedUntil: null,
           isActive: true,
-          passwordHash: defaultAdminHash,
         },
       });
-      console.log("🔓 admin200@admin.com verified and linked to Branch 3 with password@123");
+      console.log("🔓 admin200@admin.com verified and linked to Branch 3");
     }
 
     // 4. Ensure each branch has default seats, shifts, and fee plans seeded
@@ -288,170 +283,25 @@ exports.login = async (req, res) => {
     if (!cleanEmail.includes("@")) {
       cleanEmail = `${cleanEmail}@admin.com`;
     }
-    const ownerEmails = getOwnerEmails();
-    const defaultPassword = getDefaultOwnerPassword();
-
-    // Check if email is in the owner whitelist
-    const isOwnerWhitelist = ownerEmails.includes(cleanEmail);
 
     const reqIp = getClientIp(req);
     const userAgentStr = req.headers["user-agent"] || "";
     const { os, browser } = parseUserAgent(userAgentStr);
     const reqDeviceId = deviceId || req.headers["x-device-id"] || "unknown_device";
 
-    // Helper to get device limit for user subscription tier
-    // Device limit dynamically queried from MongoDB Atlas via subscriptionPlanService
-
     // Look up user in the DB
     let user = await mongoClient.user.findFirst({ where: { email: cleanEmail, deletedAt: null } });
 
-    // Handle First Login flow for owner
     if (!user) {
-      if (isOwnerWhitelist) {
-        // Match default owner password strictly case-sensitive on first login
-        const isDefaultPasswordMatch = (password === defaultPassword);
-        if (isDefaultPasswordMatch) {
-          // Check duplicate prevention: prevent multiple owner signups from same computer/IP
-          const duplicateUser = await mongoClient.user.findFirst({
-            where: {
-              OR: [
-                { ipAddress: reqIp },
-                { deviceId: reqDeviceId }
-              ],
-              deletedAt: null
-            }
-          });
-
-          if (cleanEmail !== "admin@admin.com" && duplicateUser && duplicateUser.email !== cleanEmail) {
-            return res.status(403).json({
-              success: false,
-              message: "An account has already been registered from this device/IP. Please log in using your existing account."
-            });
-          }
-
-          // Free any stale deleted user holding this email so creation never fails with duplicate key error
-          const staleDeletedOwner = await mongoClient.user.findFirst({
-            where: { email: cleanEmail, deletedAt: { not: null } }
-          });
-          if (staleDeletedOwner) {
-            await mongoClient.user.update({
-              where: { id: staleDeletedOwner.id },
-              data: { email: `deleted_${Date.now()}_${staleDeletedOwner.email}` }
-            }).catch(() => {});
-          }
-
-          // Initialize owner account in the database
-          // Ensure default branch exists
-          await seedAdminUser();
-
-          // Create a new branch for this owner to isolate their data
-          const initialBranchName = `Branch - ${cleanEmail}`;
-          const newLibraryCode = await generateUniqueLibraryCode(initialBranchName, null, mongoClient);
-          const newBranch = await mongoClient.branch.create({
-            data: {
-              code: newLibraryCode,
-              name: initialBranchName,
-              address: "Default Address",
-              isActive: true,
-            },
-          });
-
-          user = await mongoClient.user.create({
-            data: {
-              name: "Owner",
-              email: cleanEmail,
-              passwordHash: authUtil.hashPassword(defaultPassword),
-              role: "OWNER",
-              isActive: true,
-              mustChangePassword: true,
-              branchId: newBranch.id,
-              isLoggedIn: true,
-              ipAddress: reqIp,
-              os,
-              browser,
-              deviceId: reqDeviceId,
-              subscriptionTier: "FREE"
-            },
-          });
-
-          // Create active user session
-          await mongoClient.userSession.upsert({
-            where: { deviceId: `${reqDeviceId}_${user.id}` },
-            update: {
-              userId: user.id,
-              isActive: true,
-              lastActive: new Date(),
-              ipAddress: reqIp,
-              os,
-              browser
-            },
-            create: {
-              userId: user.id,
-              deviceId: `${reqDeviceId}_${user.id}`,
-              isActive: true,
-              lastActive: new Date(),
-              ipAddress: reqIp,
-              os,
-              browser
-            }
-          });
-
-          // Log security event
-          await mongoClient.securityEvent.create({
-            data: {
-              eventType: "OWNER_FIRST_LOGIN",
-              email: cleanEmail,
-              userId: user.id,
-              ipAddress: reqIp,
-              userAgent: userAgentStr,
-            },
-          });
-
-          const token = authUtil.signToken({ id: user.id, email: user.email, role: user.role, deviceId: `${reqDeviceId}_${user.id}` });
-
-          let branchName = null;
-          let branchCode = null;
-          if (user.branchId) {
-            const branch = await mongoClient.branch.findUnique({ where: { id: user.branchId } });
-            branchName = branch ? branch.name : null;
-            branchCode = branch ? branch.code : null;
-          }
-
-          return res.json({
-            success: true,
-            token,
-            mustChangePassword: true,
-            user: {
-              id: user.id,
-              name: user.name,
-              email: user.email,
-              role: user.role,
-              subscriptionTier: user.subscriptionTier,
-              subscriptionExpiry: user.subscriptionExpiry,
-              branch_name: branchName,
-              branch_code: branchCode,
-              library_name: branchName,
-              library_code: branchCode,
-            },
-          });
-        } else {
-          // Log failed login event
-          await mongoClient.securityEvent.create({
-            data: {
-              eventType: "LOGIN_FAILED_WHITELIST",
-              email: cleanEmail,
-              ipAddress: reqIp,
-              userAgent: userAgentStr,
-            },
-          });
-          return res.status(401).json({
-            success: false,
-            message: "Invalid credentials."
-          });
-        }
-      } else {
-        return res.status(401).json({ success: false, message: "Invalid credentials" });
-      }
+      await mongoClient.securityEvent.create({
+        data: {
+          eventType: "LOGIN_FAILED_UNKNOWN_USER",
+          email: cleanEmail,
+          ipAddress: reqIp,
+          userAgent: userAgentStr,
+        },
+      }).catch(() => {});
+      return res.status(401).json({ success: false, message: "Invalid credentials." });
     }
 
     // Active check
@@ -493,27 +343,8 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Compare password hash
-    let valid = authUtil.comparePassword(password, user.passwordHash);
-
-    // Default password fallback applies STRICTLY to @admin.com domain accounts only!
-    // Other accounts (Gmail, etc.) retain their custom password permanently without auto-reset.
-    const isAdminDomain = cleanEmail.endsWith("@admin.com");
-    if (!valid && isAdminDomain) {
-      if (password === defaultPassword) {
-        valid = true;
-        try {
-          await mongoClient.user.update({
-            where: { id: user.id },
-            data: {
-              passwordHash: authUtil.hashPassword(defaultPassword),
-              failedLoginAttempts: 0,
-              lockedUntil: null,
-            },
-          });
-        } catch (_) {}
-      }
-    }
+    // Compare password hash strictly against stored hash
+    const valid = authUtil.comparePassword(password, user.passwordHash);
 
     if (!valid) {
       if (cleanEmail === "admin@admin.com") {
@@ -1535,7 +1366,7 @@ exports.forgotPassword = async (req, res) => {
         data: {
           name: "Owner",
           email: cleanEmail,
-          passwordHash: authUtil.hashPassword(getDefaultOwnerPassword()),
+          passwordHash: authUtil.hashPassword(crypto.randomBytes(32).toString("hex")),
           role: "OWNER",
           isActive: true,
           mustChangePassword: true,

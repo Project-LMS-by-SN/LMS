@@ -61,7 +61,6 @@ FRONTEND_URL="http://localhost:5173,http://localhost:3000"
 
 # Initial Library Owner Credentials
 OWNER_EMAILS=admin@admin.com,owner@gmail.com,admin100@admin.com,admin200@admin.com
-DEFAULT_OWNER_PASSWORD=Password123!
 JWT_SECRET=your_super_secret_jwt_key_here
 
 # Optional: Razorpay Payment Gateway (for SaaS subscriptions)
@@ -132,14 +131,14 @@ tests/
 
 ## 🔐 Default Credentials
 
-| Role | Email | Password |
-|---|---|---|
-| **Default Library Owner** | `admin@admin.com` | `Password123!` |
-| **Branch 2 Admin** | `admin100@admin.com` | `Password123!` |
-| **Branch 3 Admin** | `admin200@admin.com` | `Password123!` |
+| Role | Email |
+|---|---|
+| **Default Library Owner** | `admin@admin.com` |
+| **Branch 2 Admin** | `admin100@admin.com` |
+| **Branch 3 Admin** | `admin200@admin.com` |
 
 > [!TIP]
-> Additional owner emails listed in `OWNER_EMAILS` are automatically recognized and initialized with their own branch upon their first sign-in using `DEFAULT_OWNER_PASSWORD`.
+> Initial passwords are set at provisioning and must be updated or changed by the administrator.
 
 ---
 
