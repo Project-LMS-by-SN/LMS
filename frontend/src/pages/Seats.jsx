@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import api from "../api/axios";
 import { formatTime } from "../utils/timeUtils";
 import { useTheme } from "../context/ThemeContext";
-import { FaChair, FaPlus, FaTrash, FaToggleOn, FaToggleOff, FaTimes, FaSearch, FaInfoCircle, FaCheckCircle, FaExclamationTriangle, FaBolt, FaHashtag, FaCheck } from "react-icons/fa";
+import { FaChair, FaPlus, FaTrash, FaToggleOn, FaToggleOff, FaTimes, FaSearch, FaInfoCircle, FaCheckCircle, FaExclamationTriangle, FaHashtag, FaCheck } from "react-icons/fa";
 
 const parseSeatParts = (seatNumber = "") => {
   const trimmed = String(seatNumber || "").trim().toUpperCase();
@@ -630,7 +630,7 @@ const Seats = () => {
             {deleteMode ? <><FaTimes /> Cancel Delete</> : <><FaTrash /> Delete Seats</>}
           </button>
           <button className="primary-btn" onClick={handleOpenGenModal} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <FaBolt /> Add Seats (Batch)
+            <FaPlus /> Add Seats (Batch)
           </button>
         </div>
       </div>

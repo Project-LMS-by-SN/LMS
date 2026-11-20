@@ -3,7 +3,7 @@
 A production-grade, multi-tenant SaaS **Library Management System** built with **React 19 (Vite)** on the frontend and **Node.js (Express 5) + MongoDB (Mongoose)** on the backend. Designed specifically for modern study libraries, co-working reading halls, and multi-shift student study spaces.
 
 
-## ⚡ Getting Started
+## Getting Started
 
 ### Prerequisites
 - **Node.js**: v18.0.0 or higher (v20+ recommended)

@@ -6,6 +6,7 @@ const ExpiryModal = () => {
   const [show, setShow] = useState(false);
   const [daysLeft, setDaysLeft] = useState(null);
   const [isExpired, setIsExpired] = useState(false);
+  const [isStaff, setIsStaff] = useState(false);
 
   useEffect(() => {
     const user = (() => {
@@ -16,6 +17,9 @@ const ExpiryModal = () => {
     if (!user || !user.subscriptionTier || user.subscriptionTier === "FREE") return;
     if (!user.subscriptionExpiry) return;
 
+    // Suppress 7-day expiry warning popup if future plan is already queued/booked
+    if (user.pendingTier) return;
+
     const expiry = new Date(user.subscriptionExpiry);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -25,6 +29,7 @@ const ExpiryModal = () => {
     if (diff <= 7) {
       setDaysLeft(diff);
       setIsExpired(diff <= 0);
+      setIsStaff(user.role === "STAFF");
       setShow(true);
     }
   }, []);
@@ -69,36 +74,55 @@ const ExpiryModal = () => {
           </h2>
           <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: '14px', marginTop: '8px' }}>
             {isExpired
-              ? 'Your plan has expired. Renew now to continue using all features.'
+              ? (isStaff
+                  ? "Your library's subscription has expired. All operations are locked. Please contact the library owner to renew."
+                  : 'Your plan has expired. Renew now to continue using all features.')
               : `Your plan expires in ${daysLeft} day${daysLeft > 1 ? 's' : ''}. Renew now to avoid interruption.`
             }
           </p>
         </div>
         <div style={{ padding: '24px', textAlign: 'center' }}>
-          <Link
-            to={`${getRolePrefix()}/subscription`}
-            onClick={() => setShow(false)}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: '8px',
-              background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-              color: '#fff', padding: '12px 28px', borderRadius: '12px',
-              fontWeight: 600, fontSize: '15px', textDecoration: 'none',
-              marginBottom: '12px', transition: 'all 0.15s'
-            }}
-          >
-            Renew Now
-          </Link>
-          <br />
-          <button
-            onClick={() => setShow(false)}
-            style={{
-              background: 'none', border: 'none', color: '#94a3b8',
-              fontSize: '13px', cursor: 'pointer', padding: '8px 16px',
-              fontWeight: 500, marginTop: '4px'
-            }}
-          >
-            Maybe later
-          </button>
+          {isStaff ? (
+            <button
+              onClick={() => setShow(false)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                color: '#fff', padding: '12px 28px', borderRadius: '12px',
+                fontWeight: 600, fontSize: '15px', border: 'none', cursor: 'pointer',
+                transition: 'all 0.15s'
+              }}
+            >
+              Close
+            </button>
+          ) : (
+            <>
+              <Link
+                to={`${getRolePrefix()}/subscription`}
+                onClick={() => setShow(false)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '8px',
+                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                  color: '#fff', padding: '12px 28px', borderRadius: '12px',
+                  fontWeight: 600, fontSize: '15px', textDecoration: 'none',
+                  marginBottom: '12px', transition: 'all 0.15s'
+                }}
+              >
+                Renew Now
+              </Link>
+              <br />
+              <button
+                onClick={() => setShow(false)}
+                style={{
+                  background: 'none', border: 'none', color: '#94a3b8',
+                  fontSize: '13px', cursor: 'pointer', padding: '8px 16px',
+                  fontWeight: 500, marginTop: '4px'
+                }}
+              >
+                Maybe later
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

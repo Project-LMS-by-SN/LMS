@@ -518,8 +518,51 @@ exports.login = async (req, res) => {
     let effExpiry = user.subscriptionExpiry;
 
     if (user.role === "STAFF" && owner) {
+      const isExpired = !owner.subscriptionExpiry || new Date(owner.subscriptionExpiry) <= new Date();
+      if (isExpired && owner.pendingTier) {
+        const days = owner.pendingExpiryDays || 30;
+        const newExpiry = new Date();
+        newExpiry.setDate(newExpiry.getDate() + days);
+
+        await mongoClient.user.update({
+          where: { id: owner.id },
+          data: {
+            subscriptionTier: owner.pendingTier,
+            subscriptionExpiry: newExpiry,
+            pendingTier: null,
+            pendingExpiryDays: null,
+            updatedAt: new Date()
+          }
+        });
+        owner.subscriptionTier = owner.pendingTier;
+        owner.subscriptionExpiry = newExpiry;
+        owner.pendingTier = null;
+        owner.pendingExpiryDays = null;
+      }
       effTier = owner.subscriptionTier;
       effExpiry = owner.subscriptionExpiry;
+    } else if (user.role === "OWNER") {
+      const isExpired = !user.subscriptionExpiry || new Date(user.subscriptionExpiry) <= new Date();
+      if (isExpired && user.pendingTier) {
+        const days = user.pendingExpiryDays || 30;
+        const newExpiry = new Date();
+        newExpiry.setDate(newExpiry.getDate() + days);
+
+        await mongoClient.user.update({
+          where: { id: user.id },
+          data: {
+            subscriptionTier: user.pendingTier,
+            subscriptionExpiry: newExpiry,
+            pendingTier: null,
+            pendingExpiryDays: null,
+            updatedAt: new Date()
+          }
+        });
+        effTier = user.pendingTier;
+        effExpiry = newExpiry;
+        user.pendingTier = null;
+        user.pendingExpiryDays = null;
+      }
     }
 
     if (!effExpiry && effTier !== "FREE") {
@@ -543,6 +586,8 @@ exports.login = async (req, res) => {
         role: user.role,
         subscriptionTier: effTier,
         subscriptionExpiry: effExpiry,
+        pendingTier: user.role === "STAFF" ? (owner?.pendingTier || null) : (user.pendingTier || null),
+        pendingExpiryDays: user.role === "STAFF" ? (owner?.pendingExpiryDays || null) : (user.pendingExpiryDays || null),
         branch_name: branchName,
         branch_code: branchCode,
         library_name: branchName,
@@ -648,14 +693,39 @@ exports.getProfile = async (req, res) => {
 
     let effTier = user.subscriptionTier;
     let effExpiry = user.subscriptionExpiry;
+    let staffOwner = null;
 
     if (user.role === "STAFF") {
-      const owner = await mongoClient.user.findFirst({
+      staffOwner = await mongoClient.user.findFirst({
         where: { role: "OWNER", branchId: user.branchId || 1, deletedAt: null }
       });
-      if (owner) {
-        effTier = owner.subscriptionTier;
-        effExpiry = owner.subscriptionExpiry;
+      if (staffOwner) {
+        const isExpired = !staffOwner.subscriptionExpiry || new Date(staffOwner.subscriptionExpiry) <= new Date();
+        if (isExpired && staffOwner.pendingTier) {
+          const days = staffOwner.pendingExpiryDays || 30;
+          const newExpiry = new Date();
+          newExpiry.setDate(newExpiry.getDate() + days);
+
+          const activated = await mongoClient.user.updateMany({
+            where: { id: staffOwner.id, pendingTier: staffOwner.pendingTier },
+            data: {
+              subscriptionTier: staffOwner.pendingTier,
+              subscriptionExpiry: newExpiry,
+              pendingTier: null,
+              pendingExpiryDays: null,
+              updatedAt: new Date()
+            }
+          });
+
+          if (activated.count > 0) {
+            staffOwner.subscriptionTier = staffOwner.pendingTier;
+            staffOwner.subscriptionExpiry = newExpiry;
+          }
+          staffOwner.pendingTier = null;
+          staffOwner.pendingExpiryDays = null;
+        }
+        effTier = staffOwner.subscriptionTier;
+        effExpiry = staffOwner.subscriptionExpiry;
       }
     } else if (user.role === "OWNER") {
       const isExpired = !user.subscriptionExpiry || new Date(user.subscriptionExpiry) <= new Date();
@@ -724,8 +794,8 @@ exports.getProfile = async (req, res) => {
       isActive: user.isActive,
       subscriptionTier: effTier,
       subscriptionExpiry: effExpiry,
-      pendingTier: user.pendingTier,
-      pendingExpiryDays: user.pendingExpiryDays,
+      pendingTier: user.role === "STAFF" ? (staffOwner?.pendingTier || null) : user.pendingTier,
+      pendingExpiryDays: user.role === "STAFF" ? (staffOwner?.pendingExpiryDays || null) : user.pendingExpiryDays,
       createdAt: user.createdAt,
       branchId: user.branch ? user.branch.id : (user.branchId || 1),
       branch_id: user.branch ? user.branch.id : (user.branchId || 1),
@@ -1101,7 +1171,9 @@ exports.activatePendingPlan = async (req, res) => {
       success: true,
       message: `Plan ${activatedTier} activated successfully! Valid for ${days} days starting from today.`,
       subscriptionTier: activatedTier,
-      subscriptionExpiry: newExpiry
+      subscriptionExpiry: newExpiry,
+      pendingTier: null,
+      pendingExpiryDays: null,
     });
   } catch (error) {
     console.error("Activate pending plan error:", error);

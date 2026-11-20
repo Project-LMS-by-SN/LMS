@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaCheck, FaUsers, FaArrowRight, FaTimes, FaCalendarAlt, FaExclamationTriangle, FaReceipt, FaCheckCircle, FaCreditCard, FaShieldAlt, FaDownload, FaFileInvoice, FaExternalLinkAlt, FaTag } from "react-icons/fa";
+import { FaCheck, FaUsers, FaArrowRight, FaTimes, FaCalendarAlt, FaExclamationTriangle, FaReceipt, FaCheckCircle, FaCreditCard, FaShieldAlt, FaDownload, FaFileInvoice, FaExternalLinkAlt, FaTag, FaExchangeAlt } from "react-icons/fa";
 import { useTheme } from "../context/ThemeContext";
 import api from "../api/axios";
 import SubscriptionInvoiceModal from "../components/SubscriptionInvoiceModal";
@@ -223,20 +223,33 @@ const Subscription = () => {
             });
 
             if (verifyRes.data.success) {
-              alert(verifyRes.data.message || `Subscription upgraded successfully!`);
               const userStr = localStorage.getItem("lms_user");
-              if (userStr) {
-                const u = JSON.parse(userStr);
-                u.subscriptionTier = dbTier;
+              const u = userStr ? JSON.parse(userStr) : {};
+
+              if (verifyRes.data.isPendingActivation) {
+                u.pendingTier = verifyRes.data.pendingTier;
+                u.pendingExpiryDays = verifyRes.data.pendingExpiryDays;
+                u.subscriptionTier = verifyRes.data.subscriptionTier || u.subscriptionTier;
+                u.subscriptionExpiry = verifyRes.data.subscriptionExpiry || u.subscriptionExpiry;
+                localStorage.setItem("lms_user", JSON.stringify(u));
+                setActiveUser({ ...u });
+                setShowActivateConfirmModal(true);
+                loadSubscriptionHistory();
+              } else {
+                u.subscriptionTier = verifyRes.data.subscriptionTier || dbTier;
                 if (verifyRes.data.subscriptionExpiry) {
                   u.subscriptionExpiry = verifyRes.data.subscriptionExpiry;
                 }
+                u.pendingTier = null;
+                u.pendingExpiryDays = null;
                 localStorage.setItem("lms_user", JSON.stringify(u));
+                setActiveUser({ ...u });
+                alert(verifyRes.data.message || "Subscription activated successfully!");
+                window.location.reload();
               }
-              window.location.reload();
             }
           } catch (err) {
-            alert(err.response?.data?.message || "Signature verification failed.");
+            alert(err.response?.data?.message || "Payment signature verification failed.");
           }
         },
         prefill: { name: user.name || "", email: user.email || "" },
@@ -485,7 +498,7 @@ const Subscription = () => {
         </button>
       </div>
 
-      {/* Pending Purchased Plan Card */}
+      {/* Pending Queued Plan Banner */}
       {pendingTier && (
         <div style={{
           background: darkMode ? "rgba(245, 158, 11, 0.15)" : "linear-gradient(135deg, #fffbe6, #fef3c7)",
@@ -504,19 +517,19 @@ const Subscription = () => {
             <div style={{
               width: "48px", height: "48px", borderRadius: "12px",
               background: "#f59e0b", color: "white", display: "flex",
-              alignItems: "center", justifyContent: "center", fontSize: "22px"
+              alignItems: "center", justifyContent: "center", fontSize: "20px"
             }}>
-              &#9889;
+              <FaExchangeAlt />
             </div>
             <div>
               <div style={{ fontSize: "12px", textTransform: "uppercase", fontWeight: 700, color: darkMode ? "#fbbf24" : "#d97706", letterSpacing: "1px" }}>
-                Purchased Plan Ready for Activation
+                Plan in Queue — Ready to Activate
               </div>
               <h3 style={{ margin: "2px 0 0 0", fontSize: "18px", fontWeight: 800, color: darkMode ? "#fef3c7" : "#78350f" }}>
-                {pendingTier.replace("_", " ")} ({pendingExpiryDays || 30} Days)
+                Queued Plan: {pendingTier.replace("_", " ")} ({pendingExpiryDays || 30} Days)
               </h3>
               <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: darkMode ? "#fde68a" : "#92400e" }}>
-                Status: Pending Activation — Waiting for your manual activation
+                Active plan: <strong>{currentTier}</strong> ({daysLeft > 0 ? `${daysLeft} day${daysLeft === 1 ? "" : "s"} left` : "active"}). You can switch to this plan now, or let it auto-activate upon expiry.
               </p>
             </div>
           </div>
@@ -531,7 +544,7 @@ const Subscription = () => {
               display: "flex", alignItems: "center", gap: "8px"
             }}
           >
-            &#9889; Activate Plan Now
+            <FaExchangeAlt style={{ fontSize: "12px" }} /> Switch to {pendingTier.replace("_", " ")} Now
           </button>
         </div>
       )}
@@ -868,7 +881,7 @@ const Subscription = () => {
                     fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px",
                     boxShadow: "0 4px 10px rgba(16, 185, 129, 0.4)", display: "flex", alignItems: "center", gap: "4px"
                   }}>
-                    🎉 Coupon {appliedCoupon.code} Applied
+                    Coupon {appliedCoupon.code} Applied
                   </span>
                 )}
                 {!hasDiscount && current && (
@@ -926,7 +939,7 @@ const Subscription = () => {
                         borderRadius: "20px", fontSize: "11px", fontWeight: 700,
                         background: "rgba(16,185,129,0.15)", color: "#10b981", border: "1px solid rgba(16,185,129,0.3)"
                       }}>
-                        ⚡ Special Discount: ₹{price} Only
+                        Special Discount: ₹{price} Only
                       </span>
                     )}
                     {!hasDiscount && savings > 0 && (
@@ -1245,7 +1258,7 @@ const Subscription = () => {
 
 
 
-      {/* Confirm Plan Activation Modal */}
+      {/* Confirm Plan Switch / Activation Modal */}
       {showActivateConfirmModal && pendingTier && (
         <div style={{
           position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(4px)", zIndex: 1000,
@@ -1253,43 +1266,79 @@ const Subscription = () => {
         }}>
           <div style={{
             background: cardBg, border: `1px solid ${border}`, borderRadius: "20px",
-            padding: "28px", maxWidth: "440px", width: "100%", textAlign: "center",
+            padding: "32px 28px", maxWidth: "460px", width: "100%", textAlign: "center",
             boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)"
           }}>
             <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
-              <FaExclamationTriangle style={{ fontSize: "44px", color: "#f59e0b" }} />
+              <div style={{
+                width: "56px", height: "56px", borderRadius: "16px",
+                background: "rgba(245, 158, 11, 0.15)", color: "#f59e0b",
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px"
+              }}>
+                <FaExchangeAlt />
+              </div>
             </div>
-            <h3 style={{ fontSize: "19px", fontWeight: 700, color: textPrimary, marginBottom: "12px" }}>
-              Confirm Plan Activation
+            <h3 style={{ fontSize: "20px", fontWeight: 800, color: textPrimary, marginBottom: "10px" }}>
+              Switch to {pendingTier.replace("_", " ")} Plan
             </h3>
-            <p style={{ fontSize: "14px", color: textMuted, lineHeight: 1.5, marginBottom: "24px" }}>
-              Are you sure you want to activate <strong>{pendingTier.replace("_", " ")}</strong> now?
-              <br /><br />
-              <span style={{ color: "#f59e0b", fontWeight: 600 }}>Notice:</span> Activating this plan will immediately switch your active plan to {pendingTier.replace("_", " ")} for {pendingExpiryDays || 30} days starting today.
-            </p>
-            <div style={{ display: "flex", gap: "12px" }}>
-              <button
-                type="button"
-                onClick={() => setShowActivateConfirmModal(false)}
-                style={{
-                  flex: 1, padding: "12px 16px", borderRadius: "10px",
-                  border: `1px solid ${border}`, background: "transparent",
-                  color: textPrimary, fontWeight: 600, cursor: "pointer", fontSize: "14px"
-                }}
-              >
-                Cancel
-              </button>
+            <div style={{ fontSize: "13.5px", color: textMuted, lineHeight: 1.6, marginBottom: "24px", textAlign: "left" }}>
+              <p style={{ margin: "0 0 12px 0" }}>
+                You have purchased the <strong>{pendingTier.replace("_", " ")}</strong> plan ({pendingExpiryDays || 30} days), while your current <strong>{currentTier}</strong> plan still has <strong>{daysLeft > 0 ? `${daysLeft} days` : "active time"} remaining</strong>.
+              </p>
+              <div style={{
+                background: darkMode ? "rgba(15,23,42,0.6)" : "#f8fafc",
+                border: `1px solid ${border}`,
+                borderRadius: "10px",
+                padding: "12px",
+                marginBottom: "12px",
+                fontSize: "12.5px"
+              }}>
+                <div style={{ fontWeight: 700, color: textPrimary, marginBottom: "4px" }}>
+                  Option 1: Switch Now
+                </div>
+                <div style={{ color: textMuted }}>
+                  Immediately terminates current {currentTier} plan. Your new {pendingTier.replace("_", " ")} plan starts today for {pendingExpiryDays || 30} days.
+                </div>
+              </div>
+              <div style={{
+                background: darkMode ? "rgba(15,23,42,0.6)" : "#f8fafc",
+                border: `1px solid ${border}`,
+                borderRadius: "10px",
+                padding: "12px",
+                fontSize: "12.5px"
+              }}>
+                <div style={{ fontWeight: 700, color: textPrimary, marginBottom: "4px" }}>
+                  Option 2: Keep in Queue
+                </div>
+                <div style={{ color: textMuted }}>
+                  Keep using current {currentTier} plan until expiry. It will <strong>automatically activate</strong> once current plan reaches 0 days.
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               <button
                 type="button"
                 onClick={handleActivatePendingPlan}
                 disabled={actLoading}
                 style={{
-                  flex: 1, padding: "12px 16px", borderRadius: "10px",
+                  width: "100%", padding: "12px 18px", borderRadius: "10px",
                   border: "none", background: "linear-gradient(135deg, #10b981, #059669)",
-                  color: "white", fontWeight: 700, cursor: "pointer", fontSize: "14px"
+                  color: "white", fontWeight: 700, cursor: actLoading ? "not-allowed" : "pointer", fontSize: "14px",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
                 }}
               >
-                {actLoading ? "Activating..." : "Confirm & Activate Plan"}
+                {actLoading ? "Switching Plan..." : `Switch to ${pendingTier.replace("_", " ")} Now`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowActivateConfirmModal(false)}
+                style={{
+                  width: "100%", padding: "12px 18px", borderRadius: "10px",
+                  border: `1px solid ${border}`, background: "transparent",
+                  color: textMuted, fontWeight: 600, cursor: "pointer", fontSize: "14px"
+                }}
+              >
+                Keep in Queue (Auto-switch on Expiry)
               </button>
             </div>
           </div>

@@ -558,7 +558,7 @@ const getNotifications = async (req, res) => {
       expDate.setHours(0, 0, 0, 0);
       const diffDays = Math.ceil((expDate - now) / (1000 * 60 * 60 * 24));
 
-      if (diffDays <= 7) {
+      if (diffDays <= 7 && (!req.user.pendingTier || diffDays <= 0)) {
         libraryNotifications.push({
           type: "LIBRARY_PLAN",
           id: `lib-plan-${req.user.id}-${new Date().toISOString().slice(0, 10)}`,
@@ -566,7 +566,9 @@ const getNotifications = async (req, res) => {
           plan_name: req.user.subscriptionTier,
           days_remaining: diffDays,
           message: diffDays <= 0
-            ? "Your library subscription has expired. Please renew your plan."
+            ? (req.user.role === "STAFF"
+                ? "Your library's subscription has expired. All operations are locked. Please contact the library owner to renew."
+                : "Your library subscription has expired. Please renew your plan.")
             : `Your library subscription (${req.user.subscriptionTier}) is expiring in ${diffDays} day${diffDays === 1 ? "" : "s"}.`,
           created_at: new Date().toISOString(),
         });

@@ -227,7 +227,17 @@ const verifySignature = async (req, res) => {
     const notesCoupon = order.notes?.couponCode || req.body?.couponCode;
 
     const existingUser = await mongoClient.user.findUnique({ where: { id: req.user.id } });
-    const isSameTier = existingUser && existingUser.subscriptionTier === effectiveTier;
+    let targetUser = existingUser;
+    if (existingUser && existingUser.role === "STAFF") {
+      const owner = await mongoClient.user.findFirst({
+        where: { role: "OWNER", branchId: existingUser.branchId || 1, deletedAt: null }
+      });
+      if (owner) {
+        targetUser = owner;
+      }
+    }
+
+    const isSameTier = targetUser && targetUser.subscriptionTier === effectiveTier;
 
     let daysToAdd = 30;
     if (notesCoupon && String(notesCoupon).toUpperCase() === "PRO1") {
@@ -243,33 +253,112 @@ const verifySignature = async (req, res) => {
     }
 
     if (notesCoupon) {
-      await couponService.recordCouponUsage(req.user.id, notesCoupon, effectiveTier, order.amount / 100);
+      await couponService.recordCouponUsage(req.user.id, notesCoupon, effectiveTier, order.amount / 100, targetUser?.branchId);
+      if (targetUser && targetUser.id !== req.user.id) {
+        await couponService.recordCouponUsage(targetUser.id, notesCoupon, effectiveTier, order.amount / 100, targetUser.branchId);
+      }
     }
 
-    // If renewing the same active tier, extend from current expiry date
-    const baseDate = (isSameTier && existingUser?.subscriptionExpiry && new Date(existingUser.subscriptionExpiry) > new Date())
-      ? new Date(existingUser.subscriptionExpiry)
-      : new Date();
-    baseDate.setDate(baseDate.getDate() + daysToAdd);
-    const expiryDate = baseDate;
+    const hasActivePaidPlan = targetUser &&
+      targetUser.subscriptionTier !== "FREE" &&
+      targetUser.subscriptionTier !== "STARTER" &&
+      targetUser.subscriptionExpiry &&
+      new Date(targetUser.subscriptionExpiry) > new Date();
 
-    await mongoClient.user.update({
-      where: { id: req.user.id },
-      data: {
-        subscriptionTier: effectiveTier,
-        subscriptionExpiry: expiryDate,
-        pendingTier: null,
-        pendingExpiryDays: null
+    let isPendingActivation = false;
+    let finalTier = targetUser?.subscriptionTier || "FREE";
+    let finalExpiry = targetUser?.subscriptionExpiry || null;
+    let newPendingTier = null;
+    let newPendingExpiryDays = null;
+    let expiryDateForHistory = null;
+
+    if (isSameTier) {
+      // 1. Same tier renewal: extend from current expiry date if active, or from today if expired
+      const baseDate = hasActivePaidPlan ? new Date(targetUser.subscriptionExpiry) : new Date();
+      baseDate.setDate(baseDate.getDate() + daysToAdd);
+      finalExpiry = baseDate;
+      finalTier = effectiveTier;
+      expiryDateForHistory = finalExpiry;
+
+      await mongoClient.user.update({
+        where: { id: targetUser.id },
+        data: {
+          subscriptionTier: finalTier,
+          subscriptionExpiry: finalExpiry,
+        }
+      });
+      if (req.user.id !== targetUser.id) {
+        await mongoClient.user.update({
+          where: { id: req.user.id },
+          data: {
+            subscriptionTier: finalTier,
+            subscriptionExpiry: finalExpiry,
+          }
+        });
       }
-    });
+    } else if (hasActivePaidPlan) {
+      // 2. Different tier change while having active remaining days:
+      // DO NOT terminate or overwrite active tier! Put newly purchased plan in queue!
+      isPendingActivation = true;
+      newPendingTier = effectiveTier;
+      newPendingExpiryDays = daysToAdd;
+      finalTier = targetUser.subscriptionTier;
+      finalExpiry = targetUser.subscriptionExpiry;
+
+      await mongoClient.user.update({
+        where: { id: targetUser.id },
+        data: {
+          pendingTier: newPendingTier,
+          pendingExpiryDays: newPendingExpiryDays,
+        }
+      });
+      if (req.user.id !== targetUser.id) {
+        await mongoClient.user.update({
+          where: { id: req.user.id },
+          data: {
+            pendingTier: newPendingTier,
+            pendingExpiryDays: newPendingExpiryDays,
+          }
+        });
+      }
+    } else {
+      // 3. User was on FREE plan or current plan has already expired:
+      // Direct activation immediately
+      const baseDate = new Date();
+      baseDate.setDate(baseDate.getDate() + daysToAdd);
+      finalExpiry = baseDate;
+      finalTier = effectiveTier;
+      expiryDateForHistory = finalExpiry;
+
+      await mongoClient.user.update({
+        where: { id: targetUser.id },
+        data: {
+          subscriptionTier: finalTier,
+          subscriptionExpiry: finalExpiry,
+          pendingTier: null,
+          pendingExpiryDays: null,
+        }
+      });
+      if (req.user.id !== targetUser.id) {
+        await mongoClient.user.update({
+          where: { id: req.user.id },
+          data: {
+            subscriptionTier: finalTier,
+            subscriptionExpiry: finalExpiry,
+            pendingTier: null,
+            pendingExpiryDays: null,
+          }
+        });
+      }
+    }
 
     await mongoClient.securityEvent.create({
       data: {
-        eventType: "RAZORPAY_SUBSCRIPTION_ACTIVATED",
+        eventType: isPendingActivation ? "RAZORPAY_PLAN_QUEUED" : "RAZORPAY_SUBSCRIPTION_ACTIVATED",
         email: existingUser.email,
         userId: existingUser.id,
         ipAddress: req.ip || "unknown",
-        userAgent: `Razorpay Payment ID: ${razorpay_payment_id} | Order: ${razorpay_order_id} | Tier: ${effectiveTier} | Coupon: ${notesCoupon || 'none'}`,
+        userAgent: `Razorpay Payment ID: ${razorpay_payment_id} | Order: ${razorpay_order_id} | Tier: ${effectiveTier} | Queued: ${isPendingActivation} | Coupon: ${notesCoupon || 'none'}`,
       }
     }).catch(() => {});
 
@@ -278,15 +367,31 @@ const verifySignature = async (req, res) => {
       orderId: razorpay_order_id,
       paymentId: razorpay_payment_id,
       status: "COMPLETED",
-      subscriptionExpiry: expiryDate
+      subscriptionExpiry: expiryDateForHistory
     });
+
+    if (isPendingActivation) {
+      return res.json({
+        success: true,
+        message: `Payment successful! Your new ${effectiveTier} plan (${daysToAdd} days) is now queued. You can switch to it now or let it activate automatically when your current ${existingUser.subscriptionTier} plan expires.`,
+        subscriptionTier: finalTier,
+        subscriptionExpiry: finalExpiry,
+        pendingTier: newPendingTier,
+        pendingExpiryDays: newPendingExpiryDays,
+        isPendingActivation: true,
+      });
+    }
 
     return res.json({
       success: true,
-      message: `Payment successful! Upgraded to ${effectiveTier} plan.`,
-      subscriptionTier: effectiveTier,
-      subscriptionExpiry: expiryDate,
-      isPendingActivation: false
+      message: isSameTier
+        ? `Payment successful! Your ${effectiveTier} plan has been renewed.`
+        : `Payment successful! Upgraded to ${effectiveTier} plan.`,
+      subscriptionTier: finalTier,
+      subscriptionExpiry: finalExpiry,
+      pendingTier: null,
+      pendingExpiryDays: null,
+      isPendingActivation: false,
     });
   } catch (error) {
     console.error("Razorpay signature verification error:", error);

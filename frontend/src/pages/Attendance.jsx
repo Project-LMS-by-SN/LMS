@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
-import { FaCreditCard, FaCamera, FaSearch, FaDownload, FaBolt, FaExclamationTriangle, FaCheckCircle, FaTimes, FaCopy, FaCheck } from "react-icons/fa";
+import { FaCreditCard, FaCamera, FaSearch, FaDownload, FaInfoCircle, FaQrcode, FaExclamationTriangle, FaCheckCircle, FaTimes, FaCopy, FaCheck } from "react-icons/fa";
 import QRCodeLib from "qrcode";
 import { Html5Qrcode } from "html5-qrcode";
 import CustomDatePicker from "../components/CustomDatePicker";
@@ -784,7 +784,7 @@ const Attendance = () => {
         fontSize: "13px",
         marginBottom: "20px"
       }}>
-        <FaBolt style={{ color: "#3b82f6", flexShrink: 0 }} />
+        <FaInfoCircle style={{ color: "#3b82f6", flexShrink: 0 }} />
         <span>
           <strong>Note:</strong> Attendance records are maintained for <strong>30 days</strong>. Data older than 30 days is automatically cleared.
         </span>
@@ -1071,7 +1071,7 @@ const Attendance = () => {
 
                   <form onSubmit={(e) => { e.preventDefault(); handleQRScan(simulatedCode); setSimulatedCode(""); }}>
                     <label style={{ fontSize: "12px", fontWeight: 600, color: textSecondary, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-                      <FaBolt style={{ color: "#eab308" }} /> Scan Barcode / Enter Student Code for Instant Check-In/Out:
+                      <FaQrcode style={{ color: "#3b82f6" }} /> Scan Barcode / Enter Student Code for Instant Check-In/Out:
                     </label>
                     <div style={{ display: "flex", gap: "8px" }}>
                       <input

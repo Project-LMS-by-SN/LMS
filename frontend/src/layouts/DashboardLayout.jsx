@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation, Link } from "react-router-dom";
 import api from "../api/axios";
 
 import NotificationBell from "../components/NotificationBell";
@@ -26,7 +26,8 @@ import {
   FaSignOutAlt,
   FaPhoneAlt,
   FaSyncAlt,
-  FaHeadset
+  FaHeadset,
+  FaExclamationTriangle
 } from "react-icons/fa";
 
 const DashboardLayout = () => {
@@ -100,6 +101,16 @@ const DashboardLayout = () => {
   };
   const daysLeft = getDaysRemaining();
   const isExpired = user.subscriptionTier !== "FREE" && daysLeft !== null && daysLeft <= 0;
+
+  const location = useLocation();
+  const operationalPaths = [
+    "students", "seats", "attendance", "admission", "collect-fee",
+    "payments", "expenses", "shifts", "fee-plans", "reports"
+  ];
+  const isCurrentRouteLocked = isExpired && operationalPaths.some(p => {
+    const parts = location.pathname.toLowerCase().split("/").filter(Boolean);
+    return parts.includes(p);
+  });
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
@@ -210,24 +221,31 @@ const DashboardLayout = () => {
           )}
 
           <div className="sidebar-category">Operations</div>
-          <NavLink to={`${prefix}/attendance`} onClick={() => setIsSidebarOpen(false)}>
-            <FaClipboardCheck style={{ fontSize: "16px", minWidth: "18px" }} /> Attendance
-            {isExpired && (
-              <span style={{ fontSize: '10px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', marginLeft: 'auto' }}>Expired</span>
-            )}
-          </NavLink>
-          <NavLink to={`${prefix}/admission`} onClick={() => setIsSidebarOpen(false)}>
-            <FaUserPlus style={{ fontSize: "16px", minWidth: "18px" }} /> Admission
-            {isExpired && (
-              <span style={{ fontSize: '10px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', marginLeft: 'auto' }}>Expired</span>
-            )}
-          </NavLink>
-          <NavLink to={`${prefix}/collect-fee`} onClick={() => setIsSidebarOpen(false)}>
-            <FaCreditCard style={{ fontSize: "16px", minWidth: "18px" }} /> Collect Fee
-            {isExpired && (
-              <span style={{ fontSize: '10px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', marginLeft: 'auto' }}>Expired</span>
-            )}
-          </NavLink>
+          {isExpired ? (
+            <>
+              <span className="sidebar-disabled-link" style={{ color: '#cbd5e1', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', fontWeight: 600, cursor: 'not-allowed', margin: '2px 0', borderRadius: '8px', opacity: 0.6, pointerEvents: 'none' }}>
+                <FaClipboardCheck style={{ fontSize: "16px", minWidth: "18px" }} /> Attendance <span style={{ fontSize: '10px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', marginLeft: 'auto' }}>Expired</span>
+              </span>
+              <span className="sidebar-disabled-link" style={{ color: '#cbd5e1', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', fontWeight: 600, cursor: 'not-allowed', margin: '2px 0', borderRadius: '8px', opacity: 0.6, pointerEvents: 'none' }}>
+                <FaUserPlus style={{ fontSize: "16px", minWidth: "18px" }} /> Admission <span style={{ fontSize: '10px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', marginLeft: 'auto' }}>Expired</span>
+              </span>
+              <span className="sidebar-disabled-link" style={{ color: '#cbd5e1', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', fontWeight: 600, cursor: 'not-allowed', margin: '2px 0', borderRadius: '8px', opacity: 0.6, pointerEvents: 'none' }}>
+                <FaCreditCard style={{ fontSize: "16px", minWidth: "18px" }} /> Collect Fee <span style={{ fontSize: '10px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', marginLeft: 'auto' }}>Expired</span>
+              </span>
+            </>
+          ) : (
+            <>
+              <NavLink to={`${prefix}/attendance`} onClick={() => setIsSidebarOpen(false)}>
+                <FaClipboardCheck style={{ fontSize: "16px", minWidth: "18px" }} /> Attendance
+              </NavLink>
+              <NavLink to={`${prefix}/admission`} onClick={() => setIsSidebarOpen(false)}>
+                <FaUserPlus style={{ fontSize: "16px", minWidth: "18px" }} /> Admission
+              </NavLink>
+              <NavLink to={`${prefix}/collect-fee`} onClick={() => setIsSidebarOpen(false)}>
+                <FaCreditCard style={{ fontSize: "16px", minWidth: "18px" }} /> Collect Fee
+              </NavLink>
+            </>
+          )}
 
           {user.role === "OWNER" && (
             isExpired ? (
@@ -303,17 +321,19 @@ const DashboardLayout = () => {
           )}
 
           <div className="sidebar-category">System</div>
-          <NavLink to={`${prefix}/subscription`} onClick={() => setIsSidebarOpen(false)}>
-            <FaCreditCard style={{ fontSize: "16px", minWidth: "18px" }} /> Subscription
-            {isExpired && (
-              <span style={{ fontSize: '10px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', marginLeft: 'auto', fontWeight: 700 }}>Expired</span>
-            )}
-            {!isExpired && daysLeft !== null && (
-              <span style={{ fontSize: '10px', background: daysLeft <= 7 ? '#fffbeb' : '#f0fdf4', color: daysLeft <= 7 ? '#d97706' : '#16a34a', padding: '2px 6px', borderRadius: '4px', marginLeft: 'auto', fontWeight: 700 }}>
-                {daysLeft}d left
-              </span>
-            )}
-          </NavLink>
+          {user.role !== "STAFF" && (
+            <NavLink to={`${prefix}/subscription`} onClick={() => setIsSidebarOpen(false)}>
+              <FaCreditCard style={{ fontSize: "16px", minWidth: "18px" }} /> Subscription
+              {isExpired && (
+                <span style={{ fontSize: '10px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', marginLeft: 'auto', fontWeight: 700 }}>Expired</span>
+              )}
+              {!isExpired && daysLeft !== null && (
+                <span style={{ fontSize: '10px', background: daysLeft <= 7 ? '#fffbeb' : '#f0fdf4', color: daysLeft <= 7 ? '#d97706' : '#16a34a', padding: '2px 6px', borderRadius: '4px', marginLeft: 'auto', fontWeight: 700 }}>
+                  {daysLeft}d left
+                </span>
+              )}
+            </NavLink>
+          )}
           <NavLink to={`${prefix}/settings`} onClick={() => setIsSidebarOpen(false)}>
             <FaCog style={{ fontSize: "16px", minWidth: "18px" }} /> Settings
           </NavLink>
@@ -492,7 +512,89 @@ const DashboardLayout = () => {
           </div>
         </header>
 
-        <Outlet />
+        {isCurrentRouteLocked ? (
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "60vh",
+            padding: "40px 20px",
+            textAlign: "center"
+          }}>
+            <div style={{
+              width: "72px",
+              height: "72px",
+              borderRadius: "50%",
+              background: "#fee2e2",
+              color: "#dc2626",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "32px",
+              marginBottom: "18px",
+              boxShadow: "0 10px 25px -5px rgba(220, 38, 38, 0.2)"
+            }}>
+              <FaExclamationTriangle />
+            </div>
+            <h2 style={{ fontSize: "22px", fontWeight: 800, color: darkMode ? "#f87171" : "#991b1b", marginBottom: "8px" }}>
+              Subscription Expired
+            </h2>
+            <p style={{
+              fontSize: "14px",
+              color: darkMode ? "#cbd5e1" : "#475569",
+              maxWidth: "500px",
+              lineHeight: 1.6,
+              marginBottom: "24px"
+            }}>
+              {user.role === "STAFF"
+                ? "Your library's subscription has expired. All operations and management modules are temporarily locked. Please contact your library administrator or owner to renew the subscription."
+                : "Your subscription plan has expired. To access this module and resume library operations, please renew your subscription."
+              }
+            </p>
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "center" }}>
+              {user.role !== "STAFF" && (
+                <Link
+                  to={`${prefix}/subscription`}
+                  style={{
+                    background: "linear-gradient(135deg, #dc2626, #b91c1c)",
+                    color: "#fff",
+                    padding: "10px 24px",
+                    borderRadius: "10px",
+                    fontWeight: 600,
+                    fontSize: "14px",
+                    textDecoration: "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    boxShadow: "0 4px 12px rgba(220, 38, 38, 0.25)"
+                  }}
+                >
+                  <FaCreditCard /> Renew Subscription
+                </Link>
+              )}
+              <Link
+                to={`${prefix}/dashboard`}
+                style={{
+                  background: darkMode ? "#334155" : "#f1f5f9",
+                  color: darkMode ? "#f1f5f9" : "#334155",
+                  padding: "10px 22px",
+                  borderRadius: "10px",
+                  fontWeight: 600,
+                  fontSize: "14px",
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px"
+                }}
+              >
+                <FaHome /> Back to Dashboard
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <Outlet />
+        )}
       </main>
 
       {/* Modern Mobile Bottom Navigation Bar (Hidden on Desktop via CSS) */}
@@ -504,30 +606,51 @@ const DashboardLayout = () => {
           <FaHome className="bottom-nav-icon" />
           <span>Home</span>
         </NavLink>
-        <NavLink
-          to={`${prefix}/students`}
-          onClick={() => {
-            window.dispatchEvent(new Event("reset-students-view"));
-          }}
-          className={({ isActive }) => `mobile-bottom-nav-item ${isActive ? "active" : ""}`}
-        >
-          <FaUsers className="bottom-nav-icon" />
-          <span>Students</span>
-        </NavLink>
-        <NavLink
-          to={`${prefix}/seats`}
-          className={({ isActive }) => `mobile-bottom-nav-item ${isActive ? "active" : ""}`}
-        >
-          <FaChair className="bottom-nav-icon" />
-          <span>Seats</span>
-        </NavLink>
-        <NavLink
-          to={`${prefix}/attendance`}
-          className={({ isActive }) => `mobile-bottom-nav-item ${isActive ? "active" : ""}`}
-        >
-          <FaClipboardCheck className="bottom-nav-icon" />
-          <span>Attendance</span>
-        </NavLink>
+        {isExpired ? (
+          <span className="mobile-bottom-nav-item disabled" style={{ opacity: 0.4, cursor: "not-allowed", pointerEvents: "none" }} title="Subscription Expired">
+            <FaUsers className="bottom-nav-icon" />
+            <span>Students</span>
+          </span>
+        ) : (
+          <NavLink
+            to={`${prefix}/students`}
+            onClick={() => {
+              window.dispatchEvent(new Event("reset-students-view"));
+            }}
+            className={({ isActive }) => `mobile-bottom-nav-item ${isActive ? "active" : ""}`}
+          >
+            <FaUsers className="bottom-nav-icon" />
+            <span>Students</span>
+          </NavLink>
+        )}
+        {isExpired ? (
+          <span className="mobile-bottom-nav-item disabled" style={{ opacity: 0.4, cursor: "not-allowed", pointerEvents: "none" }} title="Subscription Expired">
+            <FaChair className="bottom-nav-icon" />
+            <span>Seats</span>
+          </span>
+        ) : (
+          <NavLink
+            to={`${prefix}/seats`}
+            className={({ isActive }) => `mobile-bottom-nav-item ${isActive ? "active" : ""}`}
+          >
+            <FaChair className="bottom-nav-icon" />
+            <span>Seats</span>
+          </NavLink>
+        )}
+        {isExpired ? (
+          <span className="mobile-bottom-nav-item disabled" style={{ opacity: 0.4, cursor: "not-allowed", pointerEvents: "none" }} title="Subscription Expired">
+            <FaClipboardCheck className="bottom-nav-icon" />
+            <span>Attendance</span>
+          </span>
+        ) : (
+          <NavLink
+            to={`${prefix}/attendance`}
+            className={({ isActive }) => `mobile-bottom-nav-item ${isActive ? "active" : ""}`}
+          >
+            <FaClipboardCheck className="bottom-nav-icon" />
+            <span>Attendance</span>
+          </NavLink>
+        )}
         <button
           type="button"
           className="mobile-bottom-nav-item mobile-bottom-more-btn"

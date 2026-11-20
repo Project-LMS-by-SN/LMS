@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { FaUsers, FaUserCheck, FaChair, FaClipboardCheck, FaExclamationTriangle, FaTimes, FaUserPlus, FaBolt, FaClock } from "react-icons/fa";
+import { FaUsers, FaUserCheck, FaChair, FaClipboardCheck, FaExclamationTriangle, FaTimes, FaUserPlus, FaThLarge, FaClock } from "react-icons/fa";
 import api from "../api/axios";
 import SeatAvailability from "../components/SeatAvailability";
 import { useTheme } from "../context/ThemeContext";
@@ -66,7 +66,7 @@ const Dashboard = () => {
 
   const daysLeft = getDaysRemaining();
   const isExpired = daysLeft !== null && daysLeft <= 0;
-  const isExpiringSoon = daysLeft !== null && daysLeft > 0 && daysLeft <= 7;
+  const isExpiringSoon = daysLeft !== null && daysLeft > 0 && daysLeft <= 7 && !user.pendingTier;
 
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
   const [selectedShift, setSelectedShift] = useState(null);
@@ -204,12 +204,37 @@ const Dashboard = () => {
           })()}
         </div>
         <div className="welcome-right welcome-actions" style={{ display: 'flex', gap: '10px' }}>
-          <Link to={`${prefix}/attendance`} className="welcome-add-btn" style={{ background: '#2563eb' }}>
-            <FaClipboardCheck /> Mark Attendance
-          </Link>
-          <Link to={`${prefix}/admission`} className="welcome-add-btn">
-            <FaUserPlus /> Add Student
-          </Link>
+          {isExpired ? (
+            <>
+              <button
+                type="button"
+                disabled
+                className="welcome-add-btn"
+                style={{ background: '#94a3b8', cursor: 'not-allowed', opacity: 0.6 }}
+                title="Subscription Expired - Operations are locked"
+              >
+                <FaClipboardCheck /> Mark Attendance
+              </button>
+              <button
+                type="button"
+                disabled
+                className="welcome-add-btn"
+                style={{ background: '#94a3b8', cursor: 'not-allowed', opacity: 0.6 }}
+                title="Subscription Expired - Operations are locked"
+              >
+                <FaUserPlus /> Add Student
+              </button>
+            </>
+          ) : (
+            <>
+              <Link to={`${prefix}/attendance`} className="welcome-add-btn" style={{ background: '#2563eb' }}>
+                <FaClipboardCheck /> Mark Attendance
+              </Link>
+              <Link to={`${prefix}/admission`} className="welcome-add-btn">
+                <FaUserPlus /> Add Student
+              </Link>
+            </>
+          )}
         </div>
       </div>
 
@@ -232,26 +257,33 @@ const Dashboard = () => {
             </div>
             <div>
               <h4 style={{ fontSize: '15px', fontWeight: 700, color: darkMode ? '#fca5a5' : '#991b1b', margin: 0 }}>Subscription Expired!</h4>
-              <p style={{ fontSize: '13px', color: darkMode ? '#f87171' : '#b91c1c', margin: '2px 0 0 0' }}>Your plan expired on <strong>{formatExpiryDate(user.subscriptionExpiry)}</strong>. Renew now to continue using all features.</p>
+              <p style={{ fontSize: '13px', color: darkMode ? '#f87171' : '#b91c1c', margin: '2px 0 0 0' }}>
+                {user.role === "STAFF"
+                  ? <>Your library&apos;s subscription expired on <strong>{formatExpiryDate(user.subscriptionExpiry)}</strong>. All operations are locked. Please contact the library owner to renew.</>
+                  : <>Your plan expired on <strong>{formatExpiryDate(user.subscriptionExpiry)}</strong>. Renew now to continue using all features.</>
+                }
+              </p>
             </div>
           </div>
-          <Link to={`${prefix}/subscription`} style={{
-            background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
-            color: '#fff',
-            padding: '10px 20px',
-            borderRadius: '10px',
-            fontWeight: 600,
-            fontSize: '14px',
-            textDecoration: 'none',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-            transition: 'all 0.15s'
-          }}>
-            Renew Now
-          </Link>
+          {user.role !== "STAFF" && (
+            <Link to={`${prefix}/subscription`} style={{
+              background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+              color: '#fff',
+              padding: '10px 20px',
+              borderRadius: '10px',
+              fontWeight: 600,
+              fontSize: '14px',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              transition: 'all 0.15s'
+            }}>
+              Renew Now
+            </Link>
+          )}
         </div>
       )}
 
@@ -298,7 +330,7 @@ const Dashboard = () => {
 
       <section className="stats-grid dashboard-stats">
         {statsCards.map((card, i) => {
-          const isClickable = ["total_students", "active_students", "expired", "suspended", "expiring_soon", "today_present", "unpaid"].includes(card.key);
+          const isClickable = !isExpired && ["total_students", "active_students", "expired", "suspended", "expiring_soon", "today_present", "unpaid"].includes(card.key);
           return (
             <div 
               className="stats-card" 
@@ -333,7 +365,7 @@ const Dashboard = () => {
       {!isExpired && (
       <div style={{ marginBottom: '24px' }}>
         <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <FaBolt style={{ color: '#eab308', fontSize: '18px' }} /> Quick Actions
+          <FaThLarge style={{ color: '#3b82f6', fontSize: '16px' }} /> Quick Actions
         </h3>
         <div className="responsive-grid-4 quick-actions-grid" style={{ display: 'grid', gap: '16px' }}>
           {isOwner && (

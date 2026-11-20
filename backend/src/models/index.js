@@ -350,6 +350,7 @@ const couponUsageSchema = new mongoose.Schema(
   {
     id: { type: Number, unique: true, index: true },
     userId: { type: Number, required: true, index: true },
+    branchId: { type: Number, default: null, index: true },
     couponCode: { type: String, required: true },
     tier: { type: String, required: true },
     amount: { type: Number, default: 0 },

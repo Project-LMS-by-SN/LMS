@@ -195,7 +195,10 @@ module.exports = async (req, res, next) => {
       mustChangePassword: user.mustChangePassword,
       deviceId: decoded.deviceId,
       branchId: user.branchId || 1,
-      subscriptionTier: user.subscriptionTier,
+      subscriptionTier: effectiveTier,
+      subscriptionExpiry: effectiveExpiry,
+      pendingTier: planHolder?.pendingTier || null,
+      pendingExpiryDays: planHolder?.pendingExpiryDays || null,
     };
     next();
   } catch (error) {

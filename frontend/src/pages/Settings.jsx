@@ -561,7 +561,7 @@ const Settings = () => {
                   background: "#f59e0b", color: "white", display: "flex",
                   alignItems: "center", justifyContent: "center", fontSize: "18px"
                 }}>
-                  &#9889;
+                  <FaCalendarAlt />
                 </div>
                 <div>
                   <div style={{ fontSize: "11px", textTransform: "uppercase", fontWeight: 700, color: "#d97706", letterSpacing: "1px" }}>
@@ -585,7 +585,7 @@ const Settings = () => {
                   cursor: "pointer", boxShadow: "0 4px 10px rgba(245,158,11,0.3)"
                 }}
               >
-                &#9889; Activate Plan Now
+                Activate Plan Now
               </button>
             </div>
           )}
