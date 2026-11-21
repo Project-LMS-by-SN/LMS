@@ -20,6 +20,7 @@ router.post("/activate-pending-plan", userController.activatePendingPlan);
 // Staff management routes
 router.get("/staff", userController.getStaff);
 router.post("/staff", userController.createStaff);
+router.put("/staff/:id", userController.updateStaff);
 router.put("/staff/:id/password", userController.changeStaffPassword);
 router.delete("/staff/:id", userController.deleteStaff);
 

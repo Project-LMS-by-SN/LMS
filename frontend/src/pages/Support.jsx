@@ -303,8 +303,8 @@ const Support = () => {
 
   return (
     <div
+      className="page support-page"
       style={{
-        padding: "24px",
         maxWidth: "1350px",
         margin: "0 auto",
         minHeight: "100%",
@@ -314,6 +314,7 @@ const Support = () => {
     >
       {/* Hero Header */}
       <div
+        className="support-hero-header"
         style={{
           background: darkMode
             ? "linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98))"
@@ -356,7 +357,7 @@ const Support = () => {
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <div className="support-hero-actions" style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
             <a
               href={`tel:${SUPPORT_PHONE}`}
               style={{
@@ -420,6 +421,7 @@ const Support = () => {
 
         {/* Compact Contact Details Strip (Call, Gmail, WhatsApp) */}
         <div
+          className="support-contacts-grid"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",

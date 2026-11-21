@@ -61,7 +61,7 @@ const userSchema = new mongoose.Schema(
     id: { type: Number, unique: true, index: true },
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash: { type: String, required: true },
+    passwordHash: { type: String, default: null },
     role: { type: String, enum: ["OWNER", "STAFF"], default: "STAFF" },
     isActive: { type: Boolean, default: true },
     branchId: { type: Number, default: null, index: true },

@@ -4,6 +4,8 @@ import api from "../api/axios";
 import EasyTimeInput from "../components/EasyTimeInput";
 import { formatTime, calculateDuration, timeToMinutes } from "../utils/timeUtils";
 import { useSubmitLock } from "../hooks/useSubmitLock";
+import { useTheme } from "../context/ThemeContext";
+import { FaClock, FaEdit, FaTrash, FaPlus } from "react-icons/fa";
 
 const doShiftTimesOverlap = (start1, end1, start2, end2) => {
   const s1 = timeToMinutes(start1);
@@ -33,6 +35,11 @@ const emptyForm = {
 const Shifts = () => {
   const userObj = JSON.parse(localStorage.getItem("lms_user") || "{}");
   const isOwner = userObj.role === "OWNER";
+  const { darkMode } = useTheme();
+  const textPrimary = darkMode ? "#f1f5f9" : "#1e293b";
+  const textMuted = darkMode ? "#94a3b8" : "#64748b";
+  const border = darkMode ? "#334155" : "#e2e8f0";
+  const cardBg = darkMode ? "#1e293b" : "#ffffff";
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [editingShiftId, setEditingShiftId] = useState(null);
@@ -271,7 +278,8 @@ const Shifts = () => {
         </div>
       )}
 
-      <div className="table-card">
+      {/* Desktop Table View */}
+      <div className="shifts-desktop-table table-card">
         <table>
           <thead>
             <tr>
@@ -338,6 +346,101 @@ const Shifts = () => {
 
         {shifts.length === 0 && (
           <p className="empty-text">{isLoading && shifts.length === 0 ? "Loading shifts..." : "No shifts found"}</p>
+        )}
+      </div>
+
+      {/* Mobile Cards View */}
+      <div className="shifts-mobile-cards">
+        {shifts.map((shift) => {
+          const start12 = formatTime(shift.start_time, "12hr");
+          const end12 = formatTime(shift.end_time, "12hr");
+          const duration = calculateDuration(shift.start_time, shift.end_time);
+
+          return (
+            <div key={shift.id} className="shift-card-item">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{
+                    width: "36px", height: "36px", borderRadius: "10px",
+                    background: darkMode ? "rgba(59, 130, 246, 0.15)" : "#eff6ff",
+                    color: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: "16px", flexShrink: 0
+                  }}>
+                    <FaClock />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: textPrimary }}>
+                      {shift.shift_name}
+                    </h4>
+                    <span style={{ fontSize: "12px", color: textMuted }}>
+                      {duration ? `${duration} duration` : "Shift timing"}
+                    </span>
+                  </div>
+                </div>
+
+                <span className={shift.is_active ? "status-badge" : "danger-badge"} style={{ fontSize: "11px", padding: "3px 10px", borderRadius: "999px" }}>
+                  {shift.is_active ? "ACTIVE" : "INACTIVE"}
+                </span>
+              </div>
+
+              <div style={{
+                background: darkMode ? "#0f172a" : "#f8fafc",
+                border: `1px solid ${border}`,
+                borderRadius: "10px",
+                padding: "10px 14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "10px"
+              }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <span style={{ fontSize: "10.5px", color: textMuted, textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.5px" }}>Start</span>
+                  <span style={{ fontSize: "13.5px", fontWeight: 700, color: textPrimary }}>{start12}</span>
+                </div>
+
+                <div style={{ color: textMuted, fontSize: "13px", fontWeight: 600 }}>➔</div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px", alignItems: "flex-end" }}>
+                  <span style={{ fontSize: "10.5px", color: textMuted, textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.5px" }}>End</span>
+                  <span style={{ fontSize: "13.5px", fontWeight: 700, color: textPrimary }}>{end12}</span>
+                </div>
+              </div>
+
+              {isOwner && (
+                <div className="shift-card-actions">
+                  <button
+                    type="button"
+                    className="edit-btn"
+                    onClick={() => openEditForm(shift)}
+                  >
+                    <FaEdit /> Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="delete-btn"
+                    disabled={isDeleting}
+                    onClick={() => handleDelete(shift.id)}
+                  >
+                    <FaTrash /> {isDeleting ? "..." : "Delete"}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {shifts.length === 0 && (
+          <div style={{ textAlign: "center", padding: "32px 16px", background: cardBg, borderRadius: "14px", border: `1px solid ${border}` }}>
+            <FaClock style={{ fontSize: "36px", color: textMuted, marginBottom: "10px", opacity: 0.5 }} />
+            <p style={{ margin: 0, fontSize: "14px", color: textMuted }}>
+              {isLoading && shifts.length === 0 ? "Loading shifts..." : "No shifts added yet"}
+            </p>
+            {isOwner && (
+              <button className="primary-btn" onClick={openAddForm} style={{ marginTop: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <FaPlus /> Add First Shift
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

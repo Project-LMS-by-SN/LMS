@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const mongoClient = require("../config/mongoClient");
+const { connectDB } = require("../config/db");
 const authUtil = require("../utils/auth");
 const cache = require("../utils/cache");
 const { generateUniqueLibraryCode, ensureAllBranchesHaveCode } = require("../utils/libraryCode");
@@ -518,7 +519,7 @@ exports.login = async (req, res) => {
     let effExpiry = user.subscriptionExpiry;
 
     if (user.role === "STAFF" && owner) {
-      const isExpired = !owner.subscriptionExpiry || new Date(owner.subscriptionExpiry) <= new Date();
+      const isExpired = owner.subscriptionTier !== "FREE" && (!owner.subscriptionExpiry || new Date(owner.subscriptionExpiry) <= new Date());
       if (isExpired && owner.pendingTier) {
         const days = owner.pendingExpiryDays || 30;
         const newExpiry = new Date();
@@ -542,7 +543,7 @@ exports.login = async (req, res) => {
       effTier = owner.subscriptionTier;
       effExpiry = owner.subscriptionExpiry;
     } else if (user.role === "OWNER") {
-      const isExpired = !user.subscriptionExpiry || new Date(user.subscriptionExpiry) <= new Date();
+      const isExpired = user.subscriptionTier !== "FREE" && (!user.subscriptionExpiry || new Date(user.subscriptionExpiry) <= new Date());
       if (isExpired && user.pendingTier) {
         const days = user.pendingExpiryDays || 30;
         const newExpiry = new Date();
@@ -700,7 +701,7 @@ exports.getProfile = async (req, res) => {
         where: { role: "OWNER", branchId: user.branchId || 1, deletedAt: null }
       });
       if (staffOwner) {
-        const isExpired = !staffOwner.subscriptionExpiry || new Date(staffOwner.subscriptionExpiry) <= new Date();
+        const isExpired = staffOwner.subscriptionTier !== "FREE" && (!staffOwner.subscriptionExpiry || new Date(staffOwner.subscriptionExpiry) <= new Date());
         if (isExpired && staffOwner.pendingTier) {
           const days = staffOwner.pendingExpiryDays || 30;
           const newExpiry = new Date();
@@ -728,7 +729,7 @@ exports.getProfile = async (req, res) => {
         effExpiry = staffOwner.subscriptionExpiry;
       }
     } else if (user.role === "OWNER") {
-      const isExpired = !user.subscriptionExpiry || new Date(user.subscriptionExpiry) <= new Date();
+      const isExpired = user.subscriptionTier !== "FREE" && (!user.subscriptionExpiry || new Date(user.subscriptionExpiry) <= new Date());
       if (isExpired && user.pendingTier) {
         const days = user.pendingExpiryDays || 30;
         const newExpiry = new Date();
@@ -1356,6 +1357,65 @@ exports.deleteStaff = async (req, res) => {
   }
 };
 
+// PUT /api/users/staff/:id
+exports.updateStaff = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== "OWNER") {
+      return res.status(403).json({ success: false, message: "Forbidden: Only owners can manage staff" });
+    }
+
+    const owner = await mongoClient.user.findUnique({
+      where: { id: req.user.id }
+    });
+    if (!owner) {
+      return res.status(404).json({ success: false, message: "Owner not found" });
+    }
+
+    const { id } = req.params;
+    const staffId = parseInt(id);
+    const { name, email } = req.body;
+
+    const staff = await mongoClient.user.findFirst({
+      where: { id: staffId, role: "STAFF", branchId: owner.branchId || 1, deletedAt: null }
+    });
+
+    if (!staff) {
+      return res.status(404).json({ success: false, message: "Staff member not found" });
+    }
+
+    const updateData = {};
+    if (name && name.trim()) updateData.name = name.trim();
+    if (email && email.trim() && email.trim().toLowerCase() !== staff.email.toLowerCase()) {
+      const existingEmail = await mongoClient.user.findFirst({
+        where: { email: email.trim().toLowerCase(), deletedAt: null, id: { not: staffId } }
+      });
+      if (existingEmail) {
+        return res.status(409).json({ success: false, message: "Email already in use" });
+      }
+      updateData.email = email.trim().toLowerCase();
+    }
+
+    const updated = await mongoClient.user.update({
+      where: { id: staffId },
+      data: updateData
+    });
+
+    return res.json({
+      success: true,
+      message: "Staff member updated successfully",
+      data: {
+        id: updated.id,
+        name: updated.name,
+        email: updated.email,
+        isActive: updated.isActive
+      }
+    });
+  } catch (error) {
+    console.error("Update staff error:", error);
+    return res.status(500).json({ success: false, message: "Failed to update staff member" });
+  }
+};
+
 exports.seedAdminUser = seedAdminUser;
 
 // Escape plain text before interpolating into HTML email templates
@@ -1381,17 +1441,28 @@ exports.forgotPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: "Please enter a valid email address" });
     }
 
+    if (connectDB) {
+      await connectDB().catch(() => {});
+    }
+
     let user = await mongoClient.user.findFirst({
       where: { email: cleanEmail, deletedAt: null },
     });
 
     const isWhitelistedOwner = !user && getOwnerEmails().includes(cleanEmail);
 
-    // Avoid user enumeration for unknown or inactive emails
-    if ((!user && !isWhitelistedOwner) || (user && !user.isActive)) {
-      return res.json({
-        success: true,
-        message: "If an account exists with this email, a 6-digit OTP has been sent.",
+    // Only registered emails (or whitelisted owners) can receive OTP
+    if (!user && !isWhitelistedOwner) {
+      return res.status(404).json({
+        success: false,
+        message: "This email address is not registered. Please enter a registered email address.",
+      });
+    }
+
+    if (user && !user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "This account is inactive or disabled. Please contact your administrator.",
       });
     }
 
@@ -1464,15 +1535,20 @@ exports.forgotPassword = async (req, res) => {
     const otpHash = authUtil.hashOtp(user.id, otp);
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
+    const updatePayload = {
+      passwordResetOtpHash: otpHash,
+      passwordResetOtpExpiry: otpExpiry,
+      passwordResetOtpAttempts: 0,
+      passwordResetToken: null,
+      passwordResetExpiry: null,
+    };
+    if (!user.passwordHash) {
+      updatePayload.passwordHash = authUtil.hashPassword(crypto.randomBytes(32).toString("hex"));
+    }
+
     await mongoClient.user.update({
       where: { id: user.id },
-      data: {
-        passwordResetOtpHash: otpHash,
-        passwordResetOtpExpiry: otpExpiry,
-        passwordResetOtpAttempts: 0,
-        passwordResetToken: null,
-        passwordResetExpiry: null,
-      },
+      data: updatePayload,
     });
 
     const safeName = escapeHtml(user.name || "User");
@@ -1532,7 +1608,7 @@ exports.forgotPassword = async (req, res) => {
       }).catch(() => {});
       return res.status(500).json({
         success: false,
-        message: "Failed to send OTP email. Please verify your email or try again later.",
+        message: sendErr.message || "Failed to send OTP email. Please verify your email or try again later.",
       });
     }
 
@@ -1548,11 +1624,11 @@ exports.forgotPassword = async (req, res) => {
 
     return res.json({
       success: true,
-      message: "If an account exists with this email, a 6-digit OTP has been sent.",
+      message: "A 6-digit OTP has been sent to your registered email address.",
     });
   } catch (error) {
     console.error("Forgot password error:", error);
-    return res.status(500).json({ success: false, message: "Failed to send verification OTP." });
+    return res.status(500).json({ success: false, message: error.message || "Failed to send verification OTP." });
   }
 };
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { formatTime } from "../utils/timeUtils";
-import { FaSearch, FaTimes, FaWallet, FaReceipt, FaDownload, FaWhatsapp } from "react-icons/fa";
+import { FaSearch, FaTimes, FaWallet, FaReceipt, FaDownload, FaWhatsapp, FaHashtag, FaClock } from "react-icons/fa";
 import { SiGmail } from "react-icons/si";
 import { generateStudentInvoicePdf, sendInvoiceOnWhatsApp, sendInvoiceOnGmail } from "../utils/studentInvoicePdf";
 import CustomDatePicker from "../components/CustomDatePicker";
@@ -142,7 +142,7 @@ const Payments = () => {
   }
 
   return (
-    <div className="page">
+    <div className="page" style={{ paddingBottom: "120px" }}>
       {/* Page Title */}
       <div className="page-title-row" style={{ marginBottom: "20px" }}>
         <div>
@@ -156,12 +156,12 @@ const Payments = () => {
       </div>
 
       {/* Top Search & Date Filters Row */}
-      <div style={{ display: "flex", gap: "14px", marginBottom: "20px", flexWrap: "wrap", alignItems: "center" }}>
+      <div className="payments-filter-bar" style={{ display: "flex", gap: "14px", marginBottom: "20px", flexWrap: "wrap", alignItems: "center" }}>
         {/* Payment Live Search Input */}
-        <div style={{
+        <div className="payments-search-input" style={{
           display: "flex", alignItems: "center", gap: "10px",
           background: inputBg, border: `1px solid ${border}`, borderRadius: "10px",
-          padding: "8px 14px", flex: 1, minWidth: "280px", maxWidth: "460px",
+          padding: "8px 14px", flex: 1, minWidth: "260px", maxWidth: "460px",
         }}>
           <FaSearch style={{ color: textMuted, fontSize: "14px" }} />
           <input
@@ -182,7 +182,7 @@ const Payments = () => {
         </div>
 
         {/* Date Filter Pills */}
-        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginLeft: "auto", alignItems: "center" }}>
+        <div className="payments-date-pills" style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginLeft: "auto", alignItems: "center" }}>
           {DATE_FILTERS.map(f => (
             <button
               key={f.value}
@@ -212,7 +212,7 @@ const Payments = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="stats-grid" style={{ display: "grid", gridTemplateColumns: user.role !== "STAFF" ? "1fr 1fr" : "1fr", gap: "16px", marginBottom: "24px" }}>
+      <div className="stats-grid payments-stats-grid" style={{ display: "grid", gridTemplateColumns: user.role !== "STAFF" ? "1fr 1fr" : "1fr", gap: "16px", marginBottom: "24px" }}>
         <div className="stats-card" style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "12px", padding: "18px 20px" }}>
           <div>
             <p style={{ color: textMuted, fontSize: "13px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.4px" }}>Total Payments Recorded</p>
@@ -229,7 +229,7 @@ const Payments = () => {
         )}
       </div>
 
-      {/* Payment History Table */}
+      {/* Payment History Table & Mobile Cards */}
       <div className="table-card" style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "14px", padding: "20px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
           <h3 style={{ color: textPrimary, fontSize: "16px", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
@@ -242,157 +242,292 @@ const Payments = () => {
           )}
         </div>
 
-        <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ borderBottom: `2px solid ${border}`, textAlign: "left", fontSize: "12px", color: textMuted, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              <th style={{ padding: "10px 12px" }}>Invoice</th>
-              <th style={{ padding: "10px 12px" }}>Student Member</th>
-              <th style={{ padding: "10px 12px" }}>Code</th>
-              <th style={{ padding: "10px 12px" }}>Mode</th>
-              <th style={{ padding: "10px 12px" }}>Reference / Reason</th>
-              <th style={{ padding: "10px 12px" }}>Amount</th>
-              <th style={{ padding: "10px 12px" }}>Date</th>
-              <th style={{ padding: "10px 12px", textAlign: "center" }}>Receipt / Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredPayments.map((payment) => (
-              <tr key={payment.id} style={{ borderBottom: `1px solid ${border}`, fontSize: "14px" }}>
-                <td style={{ padding: "12px" }}>
-                  <strong style={{ color: textPrimary, fontWeight: 700 }}>{payment.invoice_no}</strong>
-                </td>
-                <td style={{ padding: "12px", color: textPrimary, fontWeight: 600 }}>{payment.full_name || "N/A"}</td>
-                <td style={{ padding: "12px", color: textMuted }}>{payment.student_code || "N/A"}</td>
-                <td style={{ padding: "12px" }}>
-                  <span style={{
-                    fontSize: "11px", fontWeight: 700,
-                    background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
-                    color: "#2563eb", padding: "3px 8px", borderRadius: "6px", display: "inline-block",
-                  }}>
-                    {payment.mode_name}
-                  </span>
-                </td>
-                <td style={{ padding: "12px" }}>
-                  {payment.utr_number && (
-                    <div style={{ fontSize: "12px", color: textMuted }}>UTR: {payment.utr_number}</div>
-                  )}
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: payment.remarks?.includes("Admission") ? "#2563eb" : "#16a34a" }}>
-                    {payment.remarks || "(Fee Renewal)"}
-                  </span>
-                </td>
-                <td style={{ padding: "12px" }}>
-                  <strong style={{ color: "#16a34a", fontSize: "15px", fontWeight: 800 }}>+₹{payment.amount_received}</strong>
-                </td>
-                <td style={{ padding: "12px", color: textMuted, fontSize: "13px" }}>
-                  <div style={{ fontWeight: 600, color: textPrimary }}>
-                    {payment.payment_date ? payment.payment_date.split(" ")[0] : ""}
-                  </div>
-                  <div style={{ fontSize: "11px", color: textMuted, marginTop: "2px" }}>
-                    {formatTime(payment.payment_date ? payment.payment_date.split(" ").slice(1).join(" ") : "", "12hr")}
-                  </div>
-                </td>
-                <td style={{ padding: "12px", textAlign: "center" }}>
-                  <div style={{ display: "flex", gap: "6px", justifyContent: "center", alignItems: "center", flexWrap: "nowrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => generateStudentInvoicePdf(payment, user)}
-                      title="Download PDF Invoice"
-                      aria-label="Download PDF Invoice"
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: "6px 9px",
-                        borderRadius: "6px",
-                        border: "1px solid #3b82f6",
-                        background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
-                        color: "#2563eb",
-                        fontSize: "13px",
-                        fontWeight: "600",
-                        cursor: "pointer",
-                        whiteSpace: "nowrap",
-                        transition: "all 0.15s",
-                      }}
-                      onMouseOver={(e) => {
-                        e.currentTarget.style.background = "#2563eb";
-                        e.currentTarget.style.color = "#ffffff";
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.background = darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff";
-                        e.currentTarget.style.color = "#2563eb";
-                      }}
-                    >
-                      <FaDownload style={{ fontSize: "13px" }} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => sendInvoiceOnWhatsApp(payment, payment.mobile, user)}
-                      title="Send Invoice to Student on WhatsApp"
-                      aria-label="Send Invoice to Student on WhatsApp"
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: "6px 9px",
-                        borderRadius: "6px",
-                        border: "1px solid #16a34a",
-                        background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
-                        color: "#16a34a",
-                        fontSize: "14px",
-                        fontWeight: "600",
-                        cursor: "pointer",
-                        whiteSpace: "nowrap",
-                        transition: "all 0.15s",
-                      }}
-                      onMouseOver={(e) => {
-                        e.currentTarget.style.background = "#16a34a";
-                        e.currentTarget.style.color = "#ffffff";
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.background = darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4";
-                        e.currentTarget.style.color = "#16a34a";
-                      }}
-                    >
-                      <FaWhatsapp style={{ fontSize: "14px" }} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => sendInvoiceOnGmail(payment, payment.email, user)}
-                      title="Send Invoice via Gmail"
-                      aria-label="Send Invoice via Gmail"
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: "6px 9px",
-                        borderRadius: "6px",
-                        border: "1px solid #ea4335",
-                        background: darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2",
-                        color: "#ea4335",
-                        fontSize: "13px",
-                        fontWeight: "600",
-                        cursor: "pointer",
-                        whiteSpace: "nowrap",
-                        transition: "all 0.15s",
-                      }}
-                      onMouseOver={(e) => {
-                        e.currentTarget.style.background = "#ea4335";
-                        e.currentTarget.style.color = "#ffffff";
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.background = darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2";
-                        e.currentTarget.style.color = "#ea4335";
-                      }}
-                    >
-                      <SiGmail style={{ fontSize: "13px" }} />
-                    </button>
-                  </div>
-                </td>
+        {/* Desktop Table View */}
+        <div className="payments-desktop-table" style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ borderBottom: `2px solid ${border}`, textAlign: "left", fontSize: "12px", color: textMuted, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                <th style={{ padding: "10px 12px" }}>Invoice</th>
+                <th style={{ padding: "10px 12px" }}>Student Member</th>
+                <th style={{ padding: "10px 12px" }}>Code</th>
+                <th style={{ padding: "10px 12px" }}>Mode</th>
+                <th style={{ padding: "10px 12px" }}>Reference / Reason</th>
+                <th style={{ padding: "10px 12px" }}>Amount</th>
+                <th style={{ padding: "10px 12px" }}>Date</th>
+                <th style={{ padding: "10px 12px", textAlign: "center" }}>Receipt / Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filteredPayments.map((payment) => (
+                <tr key={payment.id} style={{ borderBottom: `1px solid ${border}`, fontSize: "14px" }}>
+                  <td style={{ padding: "12px" }}>
+                    <strong style={{ color: textPrimary, fontWeight: 700 }}>{payment.invoice_no}</strong>
+                  </td>
+                  <td style={{ padding: "12px", color: textPrimary, fontWeight: 600 }}>{payment.full_name || "N/A"}</td>
+                  <td style={{ padding: "12px", color: textMuted }}>{payment.student_code || "N/A"}</td>
+                  <td style={{ padding: "12px" }}>
+                    <span style={{
+                      fontSize: "11px", fontWeight: 700,
+                      background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
+                      color: "#2563eb", padding: "3px 8px", borderRadius: "6px", display: "inline-block",
+                    }}>
+                      {payment.mode_name}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px" }}>
+                    {payment.utr_number && (
+                      <div style={{ fontSize: "12px", color: textMuted }}>UTR: {payment.utr_number}</div>
+                    )}
+                    <span style={{ fontSize: "12px", fontWeight: 600, color: payment.remarks?.includes("Admission") ? "#2563eb" : "#16a34a" }}>
+                      {payment.remarks || "(Fee Renewal)"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px" }}>
+                    <strong style={{ color: "#16a34a", fontSize: "15px", fontWeight: 800 }}>+₹{payment.amount_received}</strong>
+                  </td>
+                  <td style={{ padding: "12px", color: textMuted, fontSize: "13px" }}>
+                    <div style={{ fontWeight: 600, color: textPrimary }}>
+                      {payment.payment_date ? payment.payment_date.split(" ")[0] : ""}
+                    </div>
+                    <div style={{ fontSize: "11px", color: textMuted, marginTop: "2px" }}>
+                      {formatTime(payment.payment_date ? payment.payment_date.split(" ").slice(1).join(" ") : "", "12hr")}
+                    </div>
+                  </td>
+                  <td style={{ padding: "12px", textAlign: "center" }}>
+                    <div style={{ display: "flex", gap: "6px", justifyContent: "center", alignItems: "center", flexWrap: "nowrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => generateStudentInvoicePdf(payment, user)}
+                        title="Download PDF Invoice"
+                        aria-label="Download PDF Invoice"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "6px 9px",
+                          borderRadius: "6px",
+                          border: "1px solid #3b82f6",
+                          background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
+                          color: "#2563eb",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                          transition: "all 0.15s",
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.background = "#2563eb";
+                          e.currentTarget.style.color = "#ffffff";
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.background = darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff";
+                          e.currentTarget.style.color = "#2563eb";
+                        }}
+                      >
+                        <FaDownload style={{ fontSize: "13px" }} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => sendInvoiceOnWhatsApp(payment, payment.mobile, user)}
+                        title="Send Invoice to Student on WhatsApp"
+                        aria-label="Send Invoice to Student on WhatsApp"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "6px 9px",
+                          borderRadius: "6px",
+                          border: "1px solid #16a34a",
+                          background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
+                          color: "#16a34a",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                          transition: "all 0.15s",
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.background = "#16a34a";
+                          e.currentTarget.style.color = "#ffffff";
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.background = darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4";
+                          e.currentTarget.style.color = "#16a34a";
+                        }}
+                      >
+                        <FaWhatsapp style={{ fontSize: "14px" }} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => sendInvoiceOnGmail(payment, payment.email, user)}
+                        title="Send Invoice via Gmail"
+                        aria-label="Send Invoice via Gmail"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "6px 9px",
+                          borderRadius: "6px",
+                          border: "1px solid #ea4335",
+                          background: darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2",
+                          color: "#ea4335",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                          transition: "all 0.15s",
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.background = "#ea4335";
+                          e.currentTarget.style.color = "#ffffff";
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.background = darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2";
+                          e.currentTarget.style.color = "#ea4335";
+                        }}
+                      >
+                        <SiGmail style={{ fontSize: "13px" }} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile Payment Cards View (Styled identically to recent payments) */}
+        <div className="payments-mobile-cards">
+          {filteredPayments.map((p) => (
+            <div
+              key={p.id}
+              className="payment-card-item"
+              style={{
+                background: darkMode ? "#0f172a" : "#f8fafc",
+                border: `1px solid ${border}`,
+                borderRadius: "10px",
+                padding: "12px 14px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "12px",
+                transition: "all 0.15s",
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0, paddingRight: "10px" }}>
+                <div style={{
+                  fontWeight: 700, color: textPrimary, fontSize: "14px",
+                  display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap",
+                }}>
+                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {p.full_name || "Member"}
+                  </span>
+                  <span style={{ fontSize: "11px", color: textMuted, fontWeight: 500 }}>
+                    ({p.student_code || "N/A"})
+                  </span>
+                </div>
+                <div style={{ fontSize: "12px", color: textMuted, marginTop: "2px", display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <FaHashtag style={{ fontSize: "10px" }} /> {p.invoice_no}
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <FaClock style={{ fontSize: "10px" }} />
+                    {p.payment_date ? p.payment_date.split(" ")[0] : ""}
+                    <span style={{ fontSize: "11px", marginLeft: "4px", color: textMuted }}>
+                      {formatTime(p.payment_date ? p.payment_date.split(" ").slice(1).join(" ") : "", "12hr")}
+                    </span>
+                  </span>
+                  {(p.remarks || p.utr_number) && (
+                    <span style={{ fontSize: "11px", marginTop: "1px", color: p.remarks?.includes("Admission") ? "#2563eb" : "#16a34a", fontWeight: 600 }}>
+                      {p.remarks || "(Fee Renewal)"} {p.utr_number ? `· UTR: ${p.utr_number}` : ""}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div style={{
+                flexShrink: 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-end",
+                justifyContent: "center",
+                gap: "6px",
+              }}>
+                <div style={{ fontSize: "15px", fontWeight: 800, color: "#16a34a", lineHeight: 1 }}>
+                  +₹{p.amount_received}
+                </div>
+                <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-end" }}>
+                  <span style={{
+                    fontSize: "10px", fontWeight: 700, textTransform: "uppercase",
+                    background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
+                    color: "#2563eb", padding: "2px 6px", borderRadius: "4px", display: "inline-block",
+                  }}>
+                    {p.mode_name || "Cash"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => generateStudentInvoicePdf(p, user)}
+                    title="Download PDF Invoice"
+                    aria-label="Download PDF Invoice"
+                    style={{
+                      background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
+                      border: "1px solid #3b82f6",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      color: "#2563eb",
+                      padding: "3px 6px",
+                      fontSize: "11px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <FaDownload />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => sendInvoiceOnWhatsApp(p, p.mobile, user)}
+                    title="Send on WhatsApp"
+                    aria-label="Send on WhatsApp"
+                    style={{
+                      background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
+                      border: "1px solid #16a34a",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      color: "#16a34a",
+                      padding: "3px 6px",
+                      fontSize: "12px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <FaWhatsapp />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => sendInvoiceOnGmail(p, p.email, user)}
+                    title="Send via Gmail"
+                    aria-label="Send via Gmail"
+                    style={{
+                      background: darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2",
+                      border: "1px solid #ea4335",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      color: "#ea4335",
+                      padding: "3px 6px",
+                      fontSize: "11px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <SiGmail />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
 
         {filteredPayments.length === 0 && (

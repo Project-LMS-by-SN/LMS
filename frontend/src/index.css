@@ -349,6 +349,9 @@ body.dark .main-content::-webkit-scrollbar-thumb:hover {
 
 .welcome-right {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .welcome-add-btn {
@@ -375,6 +378,11 @@ body.dark .main-content::-webkit-scrollbar-thumb:hover {
 }
 
 /* ---------- Quick Action Cards ---------- */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
 .quick-action-card {
   transition: all 0.15s;
 }
@@ -2544,7 +2552,9 @@ body.dark button[style*="background: rgb(241, 245, 249)"] {
   }
 
   .quick-actions-grid {
-    grid-template-columns: 1fr !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
   }
 
   .responsive-grid-1-1 {
@@ -2606,12 +2616,18 @@ body.dark button[style*="background: rgb(241, 245, 249)"] {
   }
 
   .welcome-actions {
-    flex-direction: column !important;
+    flex-direction: row !important;
+    display: flex !important;
+    width: 100% !important;
+    gap: 10px !important;
   }
 
-  .welcome-actions a {
-    width: 100%;
-    justify-content: center;
+  .welcome-actions a,
+  .welcome-actions button {
+    flex: 1 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    justify-content: center !important;
   }
 
   /* Revenue chart tighter on small phones */
@@ -3117,6 +3133,72 @@ body.dark .time-24-subtext {
 .seats-summary-grid {
   grid-template-columns: repeat(4, 1fr);
 }
+.payments-desktop-table {
+  display: block;
+}
+.payments-mobile-cards {
+  display: none;
+}
+.attendance-desktop-table {
+  display: block;
+}
+.attendance-mobile-cards {
+  display: none;
+}
+.profile-payments-desktop {
+  display: block;
+}
+.profile-payments-mobile {
+  display: none;
+}
+.student-profile-desktop {
+  display: grid;
+}
+.student-profile-mobile {
+  display: none;
+}
+.shifts-desktop-table {
+  display: block;
+}
+.shifts-mobile-cards {
+  display: none;
+}
+.fee-plans-desktop-table {
+  display: block;
+}
+.fee-plans-mobile-cards {
+  display: none;
+}
+.staff-desktop-table {
+  display: block;
+}
+.staff-mobile-cards {
+  display: none;
+}
+.seats-bar-desktop {
+  display: flex !important;
+}
+.seats-bar-mobile {
+  display: none !important;
+}
+.seats-mobile-note {
+  display: none !important;
+}
+.seats-filters-container {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+  align-items: flex-end;
+}
+.seats-filters-floor-room {
+  display: flex;
+  gap: 12px;
+  flex: 2;
+}
+.seats-filters-search {
+  flex: 1;
+  max-width: 260px;
+}
 
 /* ==========================================================================
    MOBILE RESPONSIVE SYSTEM (@media max-width: 768px)
@@ -3128,8 +3210,11 @@ body.dark .time-24-subtext {
   .admin-layout {
     height: 100vh;
     height: 100dvh;
-    overflow: hidden;
-    position: relative;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    position: relative !important;
+    width: 100% !important;
   }
 
   .sidebar {
@@ -3195,30 +3280,33 @@ body.dark .time-24-subtext {
   }
 
   .main-content {
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
+    height: auto !important;
     width: 100% !important;
-    height: 100% !important;
-    height: 100dvh !important;
-    min-width: 0 !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
     -webkit-overflow-scrolling: touch !important;
-    padding-bottom: 78px !important;
+    padding-bottom: 0 !important;
+    margin-bottom: 0 !important;
   }
 
-  /* Page & Dashboard Padding */
-  .page, .dashboard {
-    padding: 14px 12px 32px 12px !important;
+  /* Page & Dashboard Padding (Clean aesthetic margin, no huge blank gap) */
+  .page, .dashboard, .admission-page {
+    padding: 14px 12px 18px 12px !important;
+    min-height: auto !important;
   }
 
-  /* Modern Mobile Bottom Navigation Bar */
+  /* Modern Mobile Bottom Navigation Bar (Docked at bottom of flex layout) */
   .mobile-bottom-nav {
     display: flex !important;
-    position: fixed !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    height: 60px !important;
-    background: rgba(255, 255, 255, 0.94) !important;
+    position: relative !important;
+    bottom: auto !important;
+    left: auto !important;
+    right: auto !important;
+    flex-shrink: 0 !important;
+    height: 58px !important;
+    background: rgba(255, 255, 255, 0.98) !important;
     backdrop-filter: blur(20px) !important;
     -webkit-backdrop-filter: blur(20px) !important;
     border-top: 1px solid rgba(226, 232, 240, 0.8) !important;
@@ -3227,7 +3315,7 @@ body.dark .time-24-subtext {
     align-items: center !important;
     padding: 4px 6px !important;
     padding-bottom: max(4px, env(safe-area-inset-bottom)) !important;
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06) !important;
+    box-shadow: 0 -3px 12px rgba(0, 0, 0, 0.05) !important;
   }
 
   body.dark .mobile-bottom-nav {
@@ -3289,22 +3377,9 @@ body.dark .time-24-subtext {
     gap: 8px !important;
   }
 
-  .topbar-title-wrap {
-    display: flex !important;
-    align-items: center !important;
-    min-width: 0 !important;
-    overflow: hidden !important;
-  }
-
+  .topbar-title-wrap,
   .topbar-mobile-brand {
-    display: block !important;
-    font-size: 14px !important;
-    font-weight: 700 !important;
-    color: #1e293b !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    max-width: 110px !important;
+    display: none !important;
   }
 
   body.dark .topbar-mobile-brand {
@@ -3376,15 +3451,18 @@ body.dark .time-24-subtext {
   .welcome-right, .welcome-actions {
     width: 100% !important;
     display: flex !important;
-    gap: 8px !important;
+    flex-direction: column !important;
+    gap: 10px !important;
   }
 
+  .welcome-actions .welcome-add-btn,
   .welcome-add-btn {
-    flex: 1 !important;
+    width: 100% !important;
     justify-content: center !important;
-    font-size: 13px !important;
-    padding: 10px 12px !important;
-    min-height: 40px !important;
+    font-size: 13.5px !important;
+    padding: 12px 14px !important;
+    min-height: 44px !important;
+    box-sizing: border-box !important;
   }
 
   /* Dashboard Stats Grids (Clean 2x2 grid) */
@@ -3441,6 +3519,353 @@ body.dark .time-24-subtext {
   .collect-fee-layout {
     grid-template-columns: 1fr !important;
     gap: 16px !important;
+    padding-bottom: 30px !important;
+  }
+
+  /* Payments Page Mobile Views & Cards */
+  .payments-desktop-table {
+    display: none !important;
+  }
+  .payments-mobile-cards {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+  .profile-payments-desktop {
+    display: none !important;
+  }
+  .profile-payments-mobile {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+  .student-profile-desktop {
+    display: none !important;
+  }
+  .student-profile-mobile {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 16px !important;
+  }
+
+  /* Shifts & Fee Plans Mobile Responsive */
+  .shifts-desktop-table {
+    display: none !important;
+  }
+  .shifts-mobile-cards {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+  .fee-plans-desktop-table {
+    display: none !important;
+  }
+  .fee-plans-mobile-cards {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .shift-card-item,
+  .fee-plan-card-item {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  body.dark .shift-card-item,
+  body.dark .fee-plan-card-item {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  }
+
+  .shift-card-actions,
+  .fee-plan-card-actions {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .shift-card-actions button,
+  .fee-plan-card-actions button {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 8px;
+    min-height: 38px;
+  }
+
+  .fee-plan-mobile-tabs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .fee-plan-mobile-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .fee-plan-mobile-tab-btn {
+    flex: 1 0 auto;
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #64748b;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+  }
+
+  body.dark .fee-plan-mobile-tab-btn {
+    background: #1e293b;
+    border-color: #334155;
+    color: #94a3b8;
+  }
+
+  .fee-plan-mobile-tab-btn.active {
+    background: #2563eb !important;
+    border-color: #2563eb !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+  }
+
+  /* Staff Mobile Responsive */
+  .staff-desktop-table {
+    display: none !important;
+  }
+  .staff-mobile-cards {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+  .staff-card-item {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+  body.dark .staff-card-item {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  }
+  .staff-card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .staff-card-actions button {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    border-radius: 8px;
+    min-height: 38px;
+  }
+
+  /* Support Page Mobile */
+  .support-page {
+    padding: 14px 12px 18px 12px !important;
+  }
+  .support-hero-header {
+    padding: 18px 14px !important;
+    border-radius: 14px !important;
+    margin-bottom: 16px !important;
+  }
+  .support-hero-header h1 {
+    font-size: 20px !important;
+  }
+  .support-hero-actions {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    gap: 8px !important;
+    margin-top: 14px !important;
+  }
+  .support-hero-actions a {
+    width: 100% !important;
+    justify-content: center !important;
+    font-size: 13.5px !important;
+    padding: 11px 14px !important;
+    box-sizing: border-box !important;
+  }
+  .support-contacts-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    padding-top: 14px !important;
+  }
+  .student-profile-tabs .student-profile-tab,
+  .student-profile-subtabs .student-profile-tab {
+    font-size: 12.5px !important;
+    padding: 8px 4px !important;
+    gap: 4px !important;
+  }
+  .student-profile-actions {
+    gap: 8px !important;
+  }
+  .profile-action-btn {
+    font-size: 12.5px !important;
+    padding: 10px 6px !important;
+    gap: 4px !important;
+  }
+  .payments-filter-bar {
+    gap: 10px !important;
+  }
+  .payments-search-input {
+    min-width: 100% !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+  .payments-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+  .payments-stats-grid .stats-card {
+    padding: 14px 16px !important;
+  }
+
+  /* Attendance Page Mobile Styles */
+  .attendance-desktop-table {
+    display: none !important;
+  }
+  .attendance-mobile-cards {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+  .attendance-mode-tabs {
+    gap: 8px !important;
+    width: 100% !important;
+  }
+  .attendance-mode-tab {
+    flex: 1 !important;
+    text-align: center !important;
+    padding: 10px 8px !important;
+    font-size: 13.5px !important;
+    justify-content: center !important;
+    display: inline-flex !important;
+    align-items: center !important;
+  }
+  .attendance-shift-card {
+    min-width: 100% !important;
+  }
+  .attendance-action-btn-lg {
+    width: 100% !important;
+    height: 48px !important;
+    font-size: 16px !important;
+    justify-content: center !important;
+  }
+  .attendance-right-panel {
+    order: -1 !important;
+    width: 100% !important;
+    margin-bottom: 12px !important;
+  }
+
+  /* Seats Floating Bar Mobile Sheet */
+  .seats-floating-bar {
+    bottom: 75px !important;
+    width: calc(100% - 24px) !important;
+    max-width: 440px !important;
+    padding: 14px 16px !important;
+    border-radius: 14px !important;
+    z-index: 9999 !important;
+  }
+  .seats-bar-desktop {
+    display: none !important;
+  }
+  .seats-bar-mobile {
+    display: flex !important;
+  }
+  .seats-mobile-note {
+    display: flex !important;
+  }
+  .seats-filters-container {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+    margin-bottom: 12px !important;
+  }
+  .seats-filters-floor-room {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+    width: 100% !important;
+  }
+  .seats-filters-search {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .seats-showing-count {
+    margin-left: 0 !important;
+    align-self: flex-start !important;
+  }
+
+  /* Quick Actions Mobile (2x2 Grid) */
+  .quick-actions-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  /* Admission Page Mobile */
+  .admission-page {
+    padding-bottom: 18px !important;
+  }
+  .admission-page .form-card {
+    padding: 16px 14px !important;
+    border-radius: 14px !important;
+    margin-bottom: 16px !important;
+  }
+  .admission-page .student-form {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 14px !important;
+  }
+  .admission-page .form-group {
+    width: 100% !important;
+    grid-column: span 1 !important;
+  }
+  .admission-page .form-actions {
+    width: 100% !important;
+    margin-bottom: 24px !important;
+  }
+  .admission-page .form-actions .primary-btn {
+    width: 100% !important;
+    min-height: 48px !important;
+    font-size: 15px !important;
+    justify-content: center !important;
+  }
+  .admission-page .page-title-row button {
+    width: 100% !important;
+    justify-content: center !important;
   }
 
   /* Form & Page Responsive Grids */

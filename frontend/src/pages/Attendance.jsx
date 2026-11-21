@@ -689,7 +689,7 @@ const Attendance = () => {
   const textSecondary = darkMode ? "#94a3b8" : "#64748b";
 
   return (
-    <div className="page">
+    <div className="page" style={{ paddingBottom: "120px" }}>
       <div className="page-title-row">
         <div>
           <h1>Attendance</h1>
@@ -791,7 +791,7 @@ const Attendance = () => {
       </div>
 
       {/* 2. Attendance Mode Tabs */}
-      <div style={{
+      <div className="attendance-mode-tabs" style={{
         display: "flex",
         gap: "12px",
         marginBottom: "20px",
@@ -799,6 +799,7 @@ const Attendance = () => {
         paddingBottom: "12px"
       }}>
         <button
+          className="attendance-mode-tab"
           onClick={() => {
             setAttendanceMode("manual");
             setError("");
@@ -820,6 +821,7 @@ const Attendance = () => {
           <FaSearch style={{ marginRight: "6px", verticalAlign: "middle" }} /> Manual Attendance
         </button>
         <button
+          className="attendance-mode-tab"
           onClick={() => {
             setAttendanceMode("qr");
             setError("");
@@ -951,11 +953,11 @@ const Attendance = () => {
                 </p>
                 
                 {/* QR Code Container */}
-                <div style={{ padding: "20px", background: "white", border: `2px solid ${borderColor}`, borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ padding: "16px", background: "white", border: `2px solid ${borderColor}`, borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center", maxWidth: "100%", boxSizing: "border-box" }}>
                   {qrDataUrl ? (
-                    <img src={qrDataUrl} alt="Library Attendance QR Code" style={{ width: "280px", height: "280px", borderRadius: "8px" }} />
+                    <img src={qrDataUrl} alt="Library Attendance QR Code" className="qr-code-image" style={{ width: "240px", maxWidth: "100%", height: "auto", aspectRatio: "1/1", borderRadius: "8px" }} />
                   ) : (
-                    <div style={{ width: "280px", height: "280px", display: "flex", alignItems: "center", justifyContent: "center", color: textSecondary }}>Generating QR...</div>
+                    <div style={{ width: "240px", height: "240px", display: "flex", alignItems: "center", justifyContent: "center", color: textSecondary }}>Generating QR...</div>
                   )}
                 </div>
 
@@ -1073,14 +1075,14 @@ const Attendance = () => {
                     <label style={{ fontSize: "12px", fontWeight: 600, color: textSecondary, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
                       <FaQrcode style={{ color: "#3b82f6" }} /> Scan Barcode / Enter Student Code for Instant Check-In/Out:
                     </label>
-                    <div style={{ display: "flex", gap: "8px" }}>
+                    <div className="attendance-scanner-row" style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                       <input
                         type="text"
                         placeholder="e.g. STD00001"
                         value={simulatedCode}
                         onChange={(e) => setSimulatedCode(e.target.value)}
                         style={{
-                          flex: 1, padding: "8px 12px", borderRadius: "8px",
+                          flex: "1 1 140px", minWidth: "120px", padding: "8px 12px", borderRadius: "8px",
                           border: `1px solid ${borderColor}`, background: cardBg, color: textPrimary, fontSize: "14px", outline: "none"
                         }}
                       />
@@ -1256,6 +1258,7 @@ const Attendance = () => {
                         return (
                           <div
                             key={a.shift_id}
+                            className="attendance-shift-card"
                             onClick={() => setSelectedShiftId(a.shift_id)}
                             style={{
                               padding: "10px 16px", borderRadius: "8px", cursor: "pointer",
@@ -1352,28 +1355,49 @@ const Attendance = () => {
                         }
 
                         if (selectedAss && !selectedAtt) {
-                          return <button type="button" className="primary-btn" disabled={attendanceBusy} onClick={handleCheckIn}>{attendanceBusy ? "Checking In..." : "IN"}</button>;
+                          return (
+                            <button
+                              type="button"
+                              className="primary-btn attendance-action-btn-lg"
+                              disabled={attendanceBusy}
+                              onClick={handleCheckIn}
+                              style={{ padding: "10px 24px", fontSize: "15px", fontWeight: 700 }}
+                            >
+                              {attendanceBusy ? "Checking In..." : "IN (Mark Present)"}
+                            </button>
+                          );
                         }
 
                         if (selectedAss && selectedAtt && !selectedAtt.check_out_time) {
                           return (
-                            <>
+                            <div style={{ display: "flex", gap: "12px", alignItems: "center", width: "100%", flexWrap: "wrap" }}>
                               <div className="profile-info-group">
                                 <div className="profile-info-label">Checked In At</div>
                                 <div className="profile-info-value" style={{ color: "#15803d" }}>
                                   {formatTime(selectedAtt.check_in_time, "12hr")}
                                 </div>
                               </div>
-                              <button type="button" className="primary-btn" disabled={attendanceBusy} onClick={handleCheckOut} style={{ background: "linear-gradient(135deg,#f97316,#ea580c)" }}>
-                                {attendanceBusy ? "Checking Out..." : "OUT"}
+                              <button
+                                type="button"
+                                className="primary-btn attendance-action-btn-lg"
+                                disabled={attendanceBusy}
+                                onClick={handleCheckOut}
+                                style={{
+                                  background: "linear-gradient(135deg,#f97316,#ea580c)",
+                                  padding: "10px 24px",
+                                  fontSize: "15px",
+                                  fontWeight: 700
+                                }}
+                              >
+                                {attendanceBusy ? "Checking Out..." : "OUT (Check Out)"}
                               </button>
-                            </>
+                            </div>
                           );
                         }
 
                         if (selectedAss && selectedAtt?.check_out_time) {
                           return (
-                            <div style={{ display: "flex", gap: "12px" }}>
+                            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
                               <div className="profile-info-group">
                                 <div className="profile-info-label">Checked In</div>
                                 <div className="profile-info-value" style={{ color: "#15803d" }}>
@@ -1400,24 +1424,117 @@ const Attendance = () => {
               </div>
 
               {/* Attendance History */}
-              <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}` }}>
+              <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, padding: "16px" }}>
                 <h3 style={{ marginBottom: "16px", fontSize: "16px", color: textPrimary }}>
                   Attendance History ({studentData.student?.full_name})
                   <span style={{ fontSize: "13px", fontWeight: 400, color: textSecondary, marginLeft: "8px" }}>
                     ({studentHistory.length} records in past 30 days)
                   </span>
                 </h3>
-                <table>
+
+                {/* Desktop Table View */}
+                <div className="attendance-desktop-table" style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ color: textSecondary }}>
+                        <th>Date</th><th>Shift</th><th>Seat</th><th>Check In</th><th>Check Out</th><th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody style={{ color: textPrimary }}>
+                      {studentHistory.map((a) => (
+                        <tr key={a.id} style={{ borderBottom: `1px solid ${borderColor}` }}>
+                          <td>{a.attendance_date}</td>
+                          <td style={{ fontWeight: 500 }}>{a.shift_name}</td>
+                          <td>{a.seat_number || "—"}</td>
+                          <td style={{ color: a.check_in_time ? "#16a34a" : textSecondary, fontWeight: a.check_in_time ? 600 : 400 }}>
+                            {formatTime(a.check_in_time, "12hr") || "—"}
+                          </td>
+                          <td style={{ color: a.check_out_time ? "#ea580c" : textSecondary, fontWeight: a.check_out_time ? 600 : 400 }}>
+                            {formatTime(a.check_out_time, "12hr") || "—"}
+                          </td>
+                          <td><span className={a.status === "PRESENT" ? "status-badge" : "danger-badge"}>{a.status}</span></td>
+                        </tr>
+                      ))}
+                      {studentHistory.length === 0 && (
+                        <tr><td colSpan={6} className="empty-text" style={{ color: textSecondary }}>No attendance records found for this student</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Cards View */}
+                <div className="attendance-mobile-cards">
+                  {studentHistory.map((a) => (
+                    <div
+                      key={a.id}
+                      style={{
+                        background: darkMode ? "#0f172a" : "#f8fafc",
+                        border: `1px solid ${borderColor}`,
+                        borderRadius: "10px",
+                        padding: "12px 14px",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: "14px", color: textPrimary }}>
+                          {a.shift_name} {a.seat_number ? `· Seat: ${a.seat_number}` : ""}
+                        </div>
+                        <div style={{ fontSize: "12px", color: textSecondary, marginTop: "2px" }}>
+                          {a.attendance_date}
+                        </div>
+                        <div style={{ fontSize: "12px", display: "flex", gap: "8px", marginTop: "4px" }}>
+                          <span style={{ color: a.check_in_time ? "#16a34a" : textSecondary, fontWeight: 600 }}>
+                            In: {formatTime(a.check_in_time, "12hr") || "—"}
+                          </span>
+                          <span style={{ color: a.check_out_time ? "#ea580c" : textSecondary, fontWeight: 600 }}>
+                            Out: {formatTime(a.check_out_time, "12hr") || "—"}
+                          </span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className={a.status === "PRESENT" ? "status-badge" : "danger-badge"} style={{ fontSize: "11px", padding: "3px 8px" }}>
+                          {a.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {studentHistory.length === 0 && (
+                    <p className="empty-text" style={{ color: textSecondary, textAlign: "center", padding: "20px" }}>No attendance records found for this student</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* 3. Global Attendance Log List */}
+          {!studentData && (
+            <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, padding: "16px" }}>
+              <h3 style={{ marginBottom: "16px", fontSize: "16px", color: textPrimary }}>
+                All Attendance Logs
+                <span style={{ fontSize: "13px", fontWeight: 400, color: textSecondary, marginLeft: "8px" }}>
+                  ({startDate} to {endDate} · {filteredAttendanceList.length} records)
+                </span>
+              </h3>
+
+              {/* Desktop Table View */}
+              <div className="attendance-desktop-table" style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ color: textSecondary }}>
-                      <th>Date</th><th>Shift</th><th>Seat</th><th>Check In</th><th>Check Out</th><th>Status</th>
+                      <th>Date</th><th>Student</th><th>Shift</th><th>Seat</th><th>Check In</th><th>Check Out</th><th>Status</th>
                     </tr>
                   </thead>
                   <tbody style={{ color: textPrimary }}>
-                    {studentHistory.map((a) => (
+                    {filteredAttendanceList.slice(0, 150).map(a => (
                       <tr key={a.id} style={{ borderBottom: `1px solid ${borderColor}` }}>
                         <td>{a.attendance_date}</td>
-                        <td style={{ fontWeight: 500 }}>{a.shift_name}</td>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{a.full_name}</div>
+                          <div style={{ fontSize: "11px", color: textSecondary }}>{a.student_code}</div>
+                        </td>
+                        <td>{a.shift_name}</td>
                         <td>{a.seat_number || "—"}</td>
                         <td style={{ color: a.check_in_time ? "#16a34a" : textSecondary, fontWeight: a.check_in_time ? 600 : 400 }}>
                           {formatTime(a.check_in_time, "12hr") || "—"}
@@ -1428,54 +1545,61 @@ const Attendance = () => {
                         <td><span className={a.status === "PRESENT" ? "status-badge" : "danger-badge"}>{a.status}</span></td>
                       </tr>
                     ))}
-                    {studentHistory.length === 0 && (
-                      <tr><td colSpan={6} className="empty-text" style={{ color: textSecondary }}>No attendance records found for this student</td></tr>
+                    {filteredAttendanceList.length === 0 && (
+                      <tr><td colSpan={7} className="empty-text" style={{ color: textSecondary }}>No attendance records in this period</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
-            </>
-          )}
 
-          {/* 3. Global Attendance Log List */}
-          {!studentData && (
-            <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}` }}>
-              <h3 style={{ marginBottom: "16px", fontSize: "16px", color: textPrimary }}>
-                All Attendance Logs
-                <span style={{ fontSize: "13px", fontWeight: 400, color: textSecondary, marginLeft: "8px" }}>
-                  ({startDate} to {endDate} · {filteredAttendanceList.length} records)
-                </span>
-              </h3>
-              <table>
-                <thead>
-                  <tr style={{ color: textSecondary }}>
-                    <th>Date</th><th>Student</th><th>Shift</th><th>Seat</th><th>Check In</th><th>Check Out</th><th>Status</th>
-                  </tr>
-                </thead>
-                <tbody style={{ color: textPrimary }}>
-                  {filteredAttendanceList.slice(0, 150).map(a => (
-                    <tr key={a.id} style={{ borderBottom: `1px solid ${borderColor}` }}>
-                      <td>{a.attendance_date}</td>
-                      <td>
-                        <div style={{ fontWeight: 600 }}>{a.full_name}</div>
-                        <div style={{ fontSize: "11px", color: textSecondary }}>{a.student_code}</div>
-                      </td>
-                      <td>{a.shift_name}</td>
-                      <td>{a.seat_number || "—"}</td>
-                      <td style={{ color: a.check_in_time ? "#16a34a" : textSecondary, fontWeight: a.check_in_time ? 600 : 400 }}>
-                        {formatTime(a.check_in_time, "12hr") || "—"}
-                      </td>
-                      <td style={{ color: a.check_out_time ? "#ea580c" : textSecondary, fontWeight: a.check_out_time ? 600 : 400 }}>
-                        {formatTime(a.check_out_time, "12hr") || "—"}
-                      </td>
-                      <td><span className={a.status === "PRESENT" ? "status-badge" : "danger-badge"}>{a.status}</span></td>
-                    </tr>
-                  ))}
-                  {filteredAttendanceList.length === 0 && (
-                    <tr><td colSpan={7} className="empty-text" style={{ color: textSecondary }}>No attendance records in this period</td></tr>
-                  )}
-                </tbody>
-              </table>
+              {/* Mobile Cards View */}
+              <div className="attendance-mobile-cards">
+                {filteredAttendanceList.slice(0, 150).map(a => (
+                  <div
+                    key={a.id}
+                    style={{
+                      background: darkMode ? "#0f172a" : "#f8fafc",
+                      border: `1px solid ${borderColor}`,
+                      borderRadius: "10px",
+                      padding: "12px 14px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                        <span style={{ fontWeight: 700, fontSize: "14px", color: textPrimary }}>
+                          {a.full_name}
+                        </span>
+                        <span style={{ fontSize: "11px", color: textSecondary, fontWeight: 500 }}>
+                          ({a.student_code})
+                        </span>
+                      </div>
+                      <div style={{ fontSize: "12px", color: textSecondary, marginTop: "2px" }}>
+                        {a.attendance_date} · <strong style={{ color: textPrimary }}>{a.shift_name}</strong> {a.seat_number ? `(Seat ${a.seat_number})` : ""}
+                      </div>
+                      <div style={{ fontSize: "12px", display: "flex", gap: "8px", marginTop: "4px" }}>
+                        <span style={{ color: a.check_in_time ? "#16a34a" : textSecondary, fontWeight: 600 }}>
+                          In: {formatTime(a.check_in_time, "12hr") || "—"}
+                        </span>
+                        <span style={{ color: a.check_out_time ? "#ea580c" : textSecondary, fontWeight: 600 }}>
+                          Out: {formatTime(a.check_out_time, "12hr") || "—"}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ flexShrink: 0, textAlign: "right" }}>
+                      <span className={a.status === "PRESENT" ? "status-badge" : "danger-badge"} style={{ fontSize: "11px", padding: "3px 8px" }}>
+                        {a.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {filteredAttendanceList.length === 0 && (
+                  <p className="empty-text" style={{ color: textSecondary, textAlign: "center", padding: "20px" }}>No attendance records in this period</p>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1484,11 +1608,16 @@ const Attendance = () => {
         <div className="attendance-right-panel" style={{ width: "300px", flexShrink: 0 }}>
           <div
             className="form-card"
-            style={{ cursor: "pointer", padding: "16px 20px", background: cardBg, border: `1px solid ${borderColor}` }}
+            style={{ cursor: "pointer", padding: "14px 18px", background: cardBg, border: `1px solid ${borderColor}` }}
             onClick={() => setShowActivePanel(!showActivePanel)}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ fontSize: "15px", margin: 0, color: textPrimary }}>In Library</h3>
+              <h3 style={{ fontSize: "15px", margin: 0, color: textPrimary, display: "flex", alignItems: "center", gap: "8px" }}>
+                <span>In Library</span>
+                <span style={{ fontSize: "11px", color: textSecondary, fontWeight: 500 }}>
+                  {showActivePanel ? "▲ Hide" : "▼ View Active"}
+                </span>
+              </h3>
               <span className="status-badge" style={{ fontSize: "13px" }}>{activeCheckIns.length}</span>
             </div>
           </div>

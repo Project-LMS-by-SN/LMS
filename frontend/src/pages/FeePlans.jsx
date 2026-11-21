@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "../api/axios";
 import { useTheme } from "../context/ThemeContext";
 import { useSubmitLock } from "../hooks/useSubmitLock";
+import { FaMoneyCheckAlt, FaEdit, FaTrash, FaPlus } from "react-icons/fa";
 
 const emptyForm = {
   plan_name: "",
@@ -15,8 +16,12 @@ const FeePlans = () => {
   const { darkMode } = useTheme();
   const queryClient = useQueryClient();
   const textPrimary = darkMode ? "#f1f5f9" : "#1e293b";
+  const textMuted = darkMode ? "#94a3b8" : "#64748b";
+  const border = darkMode ? "#334155" : "#e2e8f0";
+  const cardBg = darkMode ? "#1e293b" : "#ffffff";
   const userObj = JSON.parse(localStorage.getItem("lms_user") || "{}");
   const isOwner = !userObj.role || userObj.role === "OWNER";
+  const [mobilePlanTab, setMobilePlanTab] = useState("RESERVED");
   const [showForm, setShowForm] = useState(false);
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
@@ -176,6 +181,13 @@ const FeePlans = () => {
   const reservedPlans = feePlans.filter(p => p.plan_type === "RESERVED");
   const unreservedPlans = feePlans.filter(p => p.plan_type === "UNRESERVED");
   const registrationPlans = feePlans.filter(p => p.plan_type === "REGISTRATION");
+
+  const activeMobilePlans =
+    mobilePlanTab === "RESERVED"
+      ? reservedPlans
+      : mobilePlanTab === "UNRESERVED"
+      ? unreservedPlans
+      : registrationPlans;
 
   const renderReservedTable = (plans, emptyMsg) => {
     return (
@@ -506,7 +518,8 @@ const FeePlans = () => {
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+      {/* Desktop Table View */}
+      <div className="fee-plans-desktop-table" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
         <div className="table-card">
           <h3 style={{ color: textPrimary, fontSize: "16px", marginBottom: "16px", fontWeight: 600 }}>Reserved Fee Plans</h3>
           {renderReservedTable(reservedPlans, "No fee plans found")}
@@ -521,6 +534,133 @@ const FeePlans = () => {
           <h3 style={{ color: textPrimary, fontSize: "16px", marginBottom: "16px", fontWeight: 600 }}>Registration Fee Plans</h3>
           {renderRegistrationTable(registrationPlans, "No plan added")}
         </div>
+      </div>
+
+      {/* Mobile Cards View */}
+      <div className="fee-plans-mobile-cards">
+        {/* Category Pill Tabs */}
+        <div className="fee-plan-mobile-tabs">
+          <button
+            type="button"
+            className={`fee-plan-mobile-tab-btn ${mobilePlanTab === "RESERVED" ? "active" : ""}`}
+            onClick={() => setMobilePlanTab("RESERVED")}
+          >
+            Reserved ({reservedPlans.length})
+          </button>
+          <button
+            type="button"
+            className={`fee-plan-mobile-tab-btn ${mobilePlanTab === "UNRESERVED" ? "active" : ""}`}
+            onClick={() => setMobilePlanTab("UNRESERVED")}
+          >
+            Unreserved ({unreservedPlans.length})
+          </button>
+          <button
+            type="button"
+            className={`fee-plan-mobile-tab-btn ${mobilePlanTab === "REGISTRATION" ? "active" : ""}`}
+            onClick={() => setMobilePlanTab("REGISTRATION")}
+          >
+            Registration ({registrationPlans.length})
+          </button>
+        </div>
+
+        {activeMobilePlans.map((plan) => (
+          <div key={plan.id} className="fee-plan-card-item">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "4px" }}>
+                  <h4 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: textPrimary }}>
+                    {plan.plan_name}
+                  </h4>
+                  {plan.is_allocated && (
+                    <span
+                      title={`Allocated to ${plan.allocated_count || 1} student(s)`}
+                      style={{
+                        fontSize: "10.5px",
+                        fontWeight: 600,
+                        padding: "2px 8px",
+                        borderRadius: "999px",
+                        background: darkMode ? "rgba(59, 130, 246, 0.2)" : "#eff6ff",
+                        color: darkMode ? "#93c5fd" : "#1d4ed8",
+                        border: `1px solid ${darkMode ? "rgba(59, 130, 246, 0.35)" : "#bfdbfe"}`
+                      }}
+                    >
+                      Allocated ({plan.allocated_count || 1})
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: "12.5px", color: textMuted, display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span>
+                    {plan.plan_type === "REGISTRATION" ? "One-time Registration" : `⏳ ${plan.duration_days} Days`}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ fontSize: "18px", fontWeight: 800, color: "#16a34a" }}>
+                  ₹{plan.amount}
+                </div>
+                <span className={plan.is_active ? "status-badge" : "danger-badge"} style={{ fontSize: "10.5px", padding: "2px 8px", borderRadius: "999px", display: "inline-block", marginTop: "4px" }}>
+                  {plan.is_active ? "ACTIVE" : "INACTIVE"}
+                </span>
+              </div>
+            </div>
+
+            {isOwner && (
+              <div className="fee-plan-card-actions">
+                <button
+                  type="button"
+                  className="edit-btn"
+                  onClick={() => openEditForm(plan)}
+                >
+                  <FaEdit /> Edit
+                </button>
+                <button
+                  type="button"
+                  className={plan.is_active ? "deactivate-btn" : "edit-btn"}
+                  style={!plan.is_active ? { background: "#22c55e", color: "white" } : {}}
+                  disabled={isRowBusy}
+                  onClick={() => handleToggleStatus(plan)}
+                >
+                  {plan.is_active ? "Deactivate" : "Activate"}
+                </button>
+                {plan.plan_type !== "REGISTRATION" && (
+                  <button
+                    type="button"
+                    className="delete-btn"
+                    disabled={Boolean(plan.is_allocated) || isRowBusy}
+                    title={plan.is_allocated ? "Allocated to students - cannot delete" : "Delete plan"}
+                    style={plan.is_allocated ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
+                    onClick={() => handleDelete(plan)}
+                  >
+                    <FaTrash /> Delete
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {activeMobilePlans.length === 0 && (
+          <div style={{ textAlign: "center", padding: "32px 16px", background: cardBg, borderRadius: "14px", border: `1px solid ${border}` }}>
+            <FaMoneyCheckAlt style={{ fontSize: "36px", color: textMuted, marginBottom: "10px", opacity: 0.5 }} />
+            <p style={{ margin: 0, fontSize: "14px", color: textMuted }}>
+              No {mobilePlanTab.toLowerCase()} fee plans found
+            </p>
+            {isOwner && (
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={() => {
+                  setFormData({ ...emptyForm, plan_type: mobilePlanTab });
+                  setShowForm(true);
+                }}
+                style={{ marginTop: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+              >
+                <FaPlus /> Add {mobilePlanTab === "REGISTRATION" ? "Registration" : mobilePlanTab.charAt(0) + mobilePlanTab.slice(1).toLowerCase()} Plan
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

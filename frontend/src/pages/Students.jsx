@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSubmitLock } from "../hooks/useSubmitLock";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FaSearch, FaTimes, FaTrash, FaCreditCard, FaClock, FaCalendarAlt, FaArrowLeft, FaEdit, FaWhatsapp, FaCheckCircle, FaTimesCircle, FaDownload } from "react-icons/fa";
+import { FaSearch, FaTimes, FaTrash, FaCreditCard, FaClock, FaCalendarAlt, FaArrowLeft, FaEdit, FaWhatsapp, FaCheckCircle, FaTimesCircle, FaDownload, FaUser, FaSyncAlt, FaHashtag, FaBan, FaToggleOn } from "react-icons/fa";
 import { SiGmail } from "react-icons/si";
 import {
   generateStudentInvoicePdf,
@@ -111,6 +111,7 @@ const Students = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [profileData, setProfileData] = useState(null);
   const [profileTab, setProfileTab] = useState("payment");
+  const [profileDetailTab, setProfileDetailTab] = useState("personal");
   const [chatInput, setChatInput] = useState("");
   const [chatTemplate, setChatTemplate] = useState("expiry_reminder");
   const [showMsgModal, setShowMsgModal] = useState(false);
@@ -182,6 +183,7 @@ const Students = () => {
   const closeProfile = useCallback(() => {
     setSelectedStudent(null);
     setProfileData(null);
+    setProfileDetailTab("personal");
     if (searchParams.get("student_code") || searchParams.get("studentCode") || searchParams.get("student_id") || searchParams.get("id")) {
       setSearchParams({}, { replace: true });
     }
@@ -194,6 +196,7 @@ const Students = () => {
     setCurrentViewYear(new Date().getFullYear());
     setCurrentViewMonth(new Date().getMonth());
     setProfileTab("payment");
+    setProfileDetailTab("personal");
     setChatInput("");
     setChatTemplate("expiry_reminder");
     try {
@@ -525,8 +528,1009 @@ const Students = () => {
   const textMuted = darkMode ? "#94a3b8" : "#64748b";
 
   if (selectedStudent) {
+    const renderProfileCard = (isMobile) => (
+      <div
+        style={{
+          background: "linear-gradient(135deg, #1e293b, #0f172a)",
+          padding: isMobile ? "24px 20px" : "32px",
+          color: "white",
+          borderRadius: "16px",
+          boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? "16px" : "20px", flexWrap: "wrap" }}>
+          <div
+            style={{
+              width: isMobile ? "72px" : "80px",
+              height: isMobile ? "72px" : "80px",
+              minWidth: isMobile ? "72px" : "80px",
+              minHeight: isMobile ? "72px" : "80px",
+              borderRadius: "50%",
+              aspectRatio: "1 / 1",
+              flexShrink: 0,
+              background: "linear-gradient(135deg, #3b82f6, #1d4ed8)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: isMobile ? "26px" : "30px",
+              fontWeight: "bold",
+              color: "white",
+              textTransform: "uppercase",
+              overflow: "hidden",
+            }}
+          >
+            {profileData?.profile_photo_url ? (
+              <img
+                src={profileData.profile_photo_url}
+                alt="Profile"
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            ) : (
+              getInitials(profileData?.full_name)
+            )}
+          </div>
+          <div style={{ flex: 1, minWidth: "200px" }}>
+            <h2 style={{ margin: 0, fontSize: isMobile ? "22px" : "24px", color: "#ffffff" }}>{profileData?.full_name}</h2>
+            <p style={{ margin: "4px 0", opacity: 0.8, fontSize: isMobile ? "13px" : "14px", color: "#cbd5e1" }}>
+              Code: {profileData?.student_code} | Reg No: {profileData?.reg_no || "N/A"}
+            </p>
+            {(() => {
+              const graceInfo = getGraceExpiredInfo(profileData);
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
+                  <span
+                    className="status-badge"
+                    style={{
+                      background:
+                        profileData?.account_status === "ACTIVE"
+                          ? "rgba(34,197,94,0.2)"
+                          : profileData?.account_status === "SUSPENDED"
+                          ? "rgba(249,115,22,0.2)"
+                          : "rgba(239,68,68,0.2)",
+                      color:
+                        profileData?.account_status === "ACTIVE"
+                          ? "#4ade80"
+                          : profileData?.account_status === "SUSPENDED"
+                          ? "#fb923c"
+                          : "#fca5a5",
+                      display: "inline-block",
+                    }}
+                  >
+                    {getStatusText(profileData?.account_status)}
+                  </span>
+                  {graceInfo && (
+                    <span
+                      className="status-badge"
+                      style={{
+                        background: "rgba(244,63,94,0.22)",
+                        color: "#fda4af",
+                        display: "inline-block",
+                      }}
+                    >
+                      Grace Period ({graceInfo.daysOverdue}d overdue) · Attendance Allowed
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      </div>
+    );
+
+    const renderPersonalDetails = () => (
+      <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
+        <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "16px", fontWeight: "700" }}>Personal Details</h3>
+        <div className="responsive-grid-1-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+          <div className="profile-info-group">
+            <div className="profile-info-label">Admission Date</div>
+            <div className="profile-info-value" style={{ color: textPrimary, fontWeight: 600 }}>{formatDate(profileData?.admission_date) || "N/A"}</div>
+          </div>
+          <div className="profile-info-group">
+            <div className="profile-info-label">Mobile Number</div>
+            <div className="profile-info-value" style={{ color: textPrimary }}>{profileData?.mobile}</div>
+          </div>
+          <div className="profile-info-group">
+            <div className="profile-info-label">Email (Gmail)</div>
+            <div className="profile-info-value" style={{ color: textPrimary, wordBreak: "break-all" }}>{profileData?.email || "N/A"}</div>
+          </div>
+          <div className="profile-info-group">
+            <div className="profile-info-label">Gender</div>
+            <div className="profile-info-value" style={{ color: textPrimary }}>{profileData?.gender}</div>
+          </div>
+          <div className="profile-info-group">
+            <div className="profile-info-label">Date of Birth</div>
+            <div className="profile-info-value" style={{ color: textPrimary }}>{profileData?.dob || "N/A"}</div>
+          </div>
+          <div className="profile-info-group">
+            <div className="profile-info-label">Aadhar Number</div>
+            <div className="profile-info-value" style={{ color: textPrimary }}>{profileData?.aadhar_number || "N/A"}</div>
+          </div>
+          <div className="profile-info-group" style={{ gridColumn: "span 2" }}>
+            <div className="profile-info-label">Address</div>
+            <div className="profile-info-value" style={{ color: textPrimary }}>{profileData?.address || "N/A"}</div>
+          </div>
+        </div>
+      </div>
+    );
+
+    const renderSeatReassignmentAlert = () => (
+      (profileData?.seat_reassignment_needed || (
+        profileData?.account_status === "ACTIVE" &&
+        profileData?.validity?.access_type === "RESERVED" &&
+        profileData?.shift_assignments?.length > 0 &&
+        !profileData?.shift_assignments.some(sa => Boolean(sa.seat_number || sa.seat_id))
+      )) ? (
+        <div style={{
+          background: darkMode ? "rgba(245, 158, 11, 0.14)" : "#fffbeb",
+          border: "1px solid #f59e0b",
+          borderRadius: "12px",
+          padding: "14px 18px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "12px",
+          flexWrap: "wrap",
+        }}>
+          <div>
+            <div style={{ fontSize: "13px", fontWeight: 700, color: darkMode ? "#fde68a" : "#92400e" }}>
+              Seat was reassigned. Please allocate a new seat.
+            </div>
+            <div style={{ fontSize: "12px", color: darkMode ? "#fcd34d" : "#a16207", marginTop: "2px" }}>
+              Member is Active with Floating / Unassigned seat status.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => openEditForm("assignment")}
+            style={{
+              padding: "7px 14px",
+              borderRadius: "8px",
+              border: "none",
+              background: "#d97706",
+              color: "#ffffff",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Allocate Seat
+          </button>
+        </div>
+      ) : null
+    );
+
+    const renderShiftSeatInfo = () => (
+      profileData?.shift_assignments && profileData.shift_assignments.length > 0 ? (() => {
+        const sortedAssignments = [...profileData.shift_assignments].sort((a, b) =>
+          (a.start_time || "").localeCompare(b.start_time || "")
+        );
+
+        return (
+          <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
+            <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "16px", fontWeight: "700", display: "flex", alignItems: "center", gap: "8px" }}>
+              <FaClock /> Shift &amp; Seat Information
+            </h3>
+            {sortedAssignments.map((sa, idx) => (
+              <div
+                key={idx}
+                className="responsive-grid-1-1"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "16px",
+                  marginBottom: idx < sortedAssignments.length - 1 ? "16px" : 0,
+                  paddingBottom: idx < sortedAssignments.length - 1 ? "16px" : 0,
+                  borderBottom: idx < sortedAssignments.length - 1 ? `1px solid ${borderColor}` : "none",
+                }}
+              >
+                <div className="profile-info-group">
+                  <div className="profile-info-label">Shift {idx + 1}</div>
+                  <div className="profile-info-value" style={{ color: textPrimary }}>{sa.shift_name}</div>
+                </div>
+                <div className="profile-info-group">
+                  <div className="profile-info-label">Timing</div>
+                  <div className="profile-info-value" style={{ color: textPrimary }}>
+                    {formatTime(sa.start_time, "12hr")} - {formatTime(sa.end_time, "12hr")}
+                  </div>
+                </div>
+                <div className="profile-info-group" style={{ gridColumn: "span 2" }}>
+                  <div className="profile-info-label">Seat Assignment</div>
+                  <div className="profile-info-value" style={{ color: !sa.seat_number && profileData?.validity?.access_type === "RESERVED" && profileData?.account_status === "ACTIVE" ? "#d97706" : textPrimary }}>
+                    {sa.seat_number 
+                      ? `Seat ${sa.seat_number} (Floor ${sa.floor || 'N/A'}, Room ${sa.room || 'N/A'})` 
+                      : (profileData?.validity?.access_type === "RESERVED"
+                          ? (profileData?.account_status === "ACTIVE" ? "Floating / Unassigned (Allocate a new seat)" : "Unassigned / Released")
+                          : "Unreserved")}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })() : (
+        <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
+          <p style={{ color: textSecondary, textAlign: "center", margin: 0 }}>No shift or seat assigned to this member.</p>
+        </div>
+      )
+    );
+
+    const renderValidityInfo = () => (
+      profileData?.validity ? (
+        <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
+          <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "16px", fontWeight: "700", display: "flex", alignItems: "center", gap: "8px" }}>
+            <FaCalendarAlt /> Validity Information
+          </h3>
+          <div className="responsive-grid-1-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+            <div className="profile-info-group">
+              <div className="profile-info-label">Plan</div>
+              <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.validity.plan_name || "N/A"}</div>
+            </div>
+            <div className="profile-info-group">
+              <div className="profile-info-label">Duration</div>
+              <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.validity.duration_days || "N/A"} days</div>
+            </div>
+            <div className="profile-info-group">
+              <div className="profile-info-label">Start Date</div>
+              <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.validity.start_date}</div>
+            </div>
+            <div className="profile-info-group">
+              <div className="profile-info-label">End Date</div>
+              <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.validity.end_date}</div>
+            </div>
+            <div className="profile-info-group">
+              <div className="profile-info-label">Access Type</div>
+              <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.validity.access_type}</div>
+            </div>
+            <div className="profile-info-group">
+              <div className="profile-info-label">Total Amount</div>
+              <div className="profile-info-value" style={{ color: textPrimary }}>₹{profileData.validity.total_amount}</div>
+            </div>
+          </div>
+        </div>
+      ) : null
+    );
+
+    const renderDesktopActionButtons = () => (
+      <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
+        <button
+          className="secondary-btn"
+          style={{
+            background: "#eff6ff",
+            color: "#2563eb",
+            borderColor: "#dbeafe",
+            fontWeight: 600,
+            padding: "10px 16px",
+            borderRadius: "10px",
+            whiteSpace: "nowrap",
+          }}
+          onClick={openEditForm}
+        >
+          <FaEdit style={{ marginRight: "6px" }} /> Edit Profile
+        </button>
+        {isOwner && (() => {
+          const showActivate = canManuallyActivateMember(profileData);
+          return (
+          <>
+            <button
+              className="secondary-btn"
+              style={{
+                background: showActivate ? "#f0fdf4" : "#fffbeb",
+                color: showActivate ? "#16a34a" : "#d97706",
+                borderColor: showActivate ? "#dcfce7" : "#fef3c7",
+                fontWeight: 600,
+                padding: "10px 16px",
+                borderRadius: "10px",
+                whiteSpace: "nowrap",
+              }}
+              title={
+                showActivate
+                  ? "Activate member"
+                  : profileData?.account_status === "SUSPENDED" || profileData?.account_status === "INACTIVE"
+                  ? "Suspended/Inactive members become Active only after clearing fees in Collect Fee. Click to disable member."
+                  : "Disable member"
+              }
+              disabled={studentActionBusy}
+              onClick={handleToggleStatus}
+            >
+              {showActivate ? "Activate Member" : "Disable Member"}
+            </button>
+            <button
+              className="secondary-btn"
+              style={{
+                background: "#fef2f2",
+                color: "#dc2626",
+                borderColor: "#fca5a5",
+                fontWeight: 600,
+                padding: "10px 16px",
+                borderRadius: "10px",
+                whiteSpace: "nowrap",
+              }}
+              disabled={studentActionBusy}
+              onClick={handleDeleteAdmission}
+            >
+              <FaTrash style={{ marginRight: "6px" }} /> Delete Admission
+            </button>
+          </>
+          );
+        })()}
+      </div>
+    );
+
+    const renderMobileActionButtons = () => (
+      <div className="student-profile-actions" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
+        <button
+          type="button"
+          className="profile-action-btn edit"
+          style={{
+            background: darkMode ? "rgba(37,99,235,0.18)" : "#eff6ff",
+            color: "#2563eb",
+            border: "1px solid #bfdbfe",
+            fontWeight: 650,
+            padding: "11px 10px",
+            borderRadius: "10px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            fontSize: "13px",
+            transition: "all 0.15s",
+          }}
+          onClick={() => openEditForm("personal")}
+        >
+          <FaEdit /> <span>Edit</span>
+        </button>
+        {(() => {
+          const showActivate = canManuallyActivateMember(profileData);
+          return (
+            <button
+              type="button"
+              className="profile-action-btn disable"
+              style={{
+                background: showActivate ? (darkMode ? "rgba(22,163,74,0.18)" : "#f0fdf4") : (darkMode ? "rgba(217,119,6,0.18)" : "#fffbeb"),
+                color: showActivate ? "#16a34a" : "#d97706",
+                border: `1px solid ${showActivate ? "#bbf7d0" : "#fef3c7"}`,
+                fontWeight: 650,
+                padding: "11px 10px",
+                borderRadius: "10px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "6px",
+                fontSize: "13px",
+                transition: "all 0.15s",
+              }}
+              title={
+                showActivate
+                  ? "Activate member"
+                  : profileData?.account_status === "SUSPENDED" || profileData?.account_status === "INACTIVE"
+                  ? "Suspended/Inactive members become Active only after clearing fees in Collect Fee. Click to disable member."
+                  : "Disable member"
+              }
+              disabled={studentActionBusy}
+              onClick={handleToggleStatus}
+            >
+              {showActivate ? <FaToggleOn /> : <FaBan />} <span>{showActivate ? "Activate" : "Disable"}</span>
+            </button>
+          );
+        })()}
+        <button
+          type="button"
+          className="profile-action-btn delete"
+          style={{
+            background: darkMode ? "rgba(220,38,38,0.18)" : "#fef2f2",
+            color: "#dc2626",
+            border: "1px solid #fca5a5",
+            fontWeight: 650,
+            padding: "11px 10px",
+            borderRadius: "10px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            fontSize: "13px",
+            transition: "all 0.15s",
+          }}
+          disabled={studentActionBusy}
+          onClick={handleDeleteAdmission}
+        >
+          <FaTrash /> <span>Delete</span>
+        </button>
+      </div>
+    );
+
+    const renderAttendanceContent = () => (
+      <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
+        <style>{`
+          .attendance-calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+          }
+          .calendar-day-header {
+            text-align: center;
+            font-weight: bold;
+            font-size: 12px;
+            color: #64748b;
+            padding: 6px 0;
+          }
+          .calendar-cell {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justifyContent: center;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+          .calendar-cell.padding {
+            color: #cbd5e1;
+            cursor: not-allowed;
+            background: transparent;
+          }
+          body.dark .calendar-cell.padding {
+            color: #475569;
+          }
+          .calendar-cell.no-record {
+            background: #f1f5f9;
+            color: #64748b;
+          }
+          body.dark .calendar-cell.no-record {
+            background: #1e293b;
+            color: #94a3b8;
+          }
+          .calendar-cell.present {
+            background: #22c55e !important;
+            color: #ffffff !important;
+            box-shadow: 0 4px 6px -1px rgba(34, 197, 94, 0.3);
+          }
+          .calendar-cell.absent {
+            background: #ef4444 !important;
+            color: #ffffff !important;
+            box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.3);
+          }
+          .calendar-tooltip {
+            visibility: hidden;
+            width: 140px;
+            background-color: #1e293b;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 8px 12px;
+            position: absolute;
+            z-index: 100;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.2s, visibility 0.2s;
+            font-size: 11px;
+            line-height: 1.4;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            pointer-events: none;
+            border: 1px solid #334155;
+          }
+          .calendar-cell:hover .calendar-tooltip {
+            visibility: visible;
+            opacity: 1;
+          }
+        `}</style>
+
+        <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+          <FaCalendarAlt /> Attendance History Calendar
+        </h3>
+
+        <div style={{
+          fontSize: "12px",
+          color: darkMode ? "#93c5fd" : "#1e40af",
+          background: darkMode ? "rgba(59, 130, 246, 0.1)" : "#eff6ff",
+          border: `1px solid ${darkMode ? "rgba(59, 130, 246, 0.2)" : "#bfdbfe"}`,
+          padding: "6px 12px",
+          borderRadius: "6px",
+          marginBottom: "14px"
+        }}>
+          <strong>Note:</strong> Attendance logs are saved for <strong>30 days</strong>.
+        </div>
+
+        {/* Month switcher */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (currentViewMonth === 0) {
+                setCurrentViewMonth(11);
+                setCurrentViewYear((prev) => prev - 1);
+              } else {
+                setCurrentViewMonth((prev) => prev - 1);
+              }
+            }}
+            style={{
+              background: "none",
+              border: `1px solid ${borderColor}`,
+              padding: "4px 10px",
+              borderRadius: "6px",
+              cursor: "pointer",
+              color: textPrimary,
+              fontSize: "14px",
+              fontWeight: "bold",
+            }}
+          >
+            &lt;
+          </button>
+          <span style={{ fontWeight: "bold", fontSize: "15px", color: textPrimary }}>
+            {MONTHS[currentViewMonth]} {currentViewYear}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (currentViewMonth === 11) {
+                setCurrentViewMonth(0);
+                setCurrentViewYear((prev) => prev + 1);
+              } else {
+                setCurrentViewMonth((prev) => prev + 1);
+              }
+            }}
+            style={{
+              background: "none",
+              border: `1px solid ${borderColor}`,
+              padding: "4px 10px",
+              borderRadius: "6px",
+              cursor: "pointer",
+              color: textPrimary,
+              fontSize: "14px",
+              fontWeight: "bold",
+            }}
+          >
+            &gt;
+          </button>
+        </div>
+
+        <div className="attendance-calendar-grid">
+          {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => (
+            <div key={day} className="calendar-day-header">
+              {day}
+            </div>
+          ))}
+
+          {(() => {
+            const firstDayIdx = new Date(currentViewYear, currentViewMonth, 1).getDay();
+            const totalDays = new Date(currentViewYear, currentViewMonth + 1, 0).getDate();
+            const prevTotalDays = new Date(currentViewYear, currentViewMonth, 0).getDate();
+
+            const cells = [];
+            for (let i = firstDayIdx - 1; i >= 0; i--) {
+              cells.push({ day: prevTotalDays - i, isCurrentMonth: false });
+            }
+            for (let d = 1; d <= totalDays; d++) {
+              cells.push({ day: d, isCurrentMonth: true });
+            }
+
+            return cells.map((cell, idx) => {
+              if (!cell.isCurrentMonth) {
+                return (
+                  <div key={`prev-${idx}`} className="calendar-cell padding">
+                    {cell.day}
+                  </div>
+                );
+              }
+
+              const monthStr = String(currentViewMonth + 1).padStart(2, "0");
+              const dayStr = String(cell.day).padStart(2, "0");
+              const dateKey = `${currentViewYear}-${monthStr}-${dayStr}`;
+
+              const record = profileData?.attendance?.find((att) => {
+                const recDate = att.attendance_date?.split("T")[0];
+                return recDate === dateKey;
+              });
+
+              let cellClass = "calendar-cell no-record";
+              let tooltipContent = (
+                <div className="calendar-tooltip">
+                  <strong>{dateKey}</strong>
+                  <br />
+                  No Record
+                </div>
+              );
+
+              if (record) {
+                if (record.status === "PRESENT") {
+                  cellClass = "calendar-cell present";
+                  tooltipContent = (
+                    <div className="calendar-tooltip" style={{ background: "#15803d", borderColor: "#166534" }}>
+                      <strong>{dateKey}</strong>
+                      <br />
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}><FaCheckCircle /> Present</span>
+                      <br />
+                      In: {record.check_in_time ? formatTime(record.check_in_time, "12hr") : "—"}
+                      <br />
+                      Out: {record.check_out_time ? formatTime(record.check_out_time, "12hr") : "—"}
+                    </div>
+                  );
+                } else if (record.status === "ABSENT") {
+                  cellClass = "calendar-cell absent";
+                  tooltipContent = (
+                    <div className="calendar-tooltip" style={{ background: "#b91c1c", borderColor: "#991b1b" }}>
+                      <strong>{dateKey}</strong>
+                      <br />
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}><FaTimesCircle /> Absent</span>
+                    </div>
+                  );
+                }
+              }
+
+              return (
+                <div key={`curr-${cell.day}`} className={cellClass}>
+                  {cell.day}
+                  {tooltipContent}
+                </div>
+              );
+            });
+          })()}
+        </div>
+      </div>
+    );
+
+    const renderPaymentContent = (isMobile) => (
+      <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
+        <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "16px", fontWeight: "700" }}>Payment History</h3>
+        {profileData?.payments && profileData.payments.length > 0 ? (
+          isMobile ? (
+            /* Mobile Cards View */
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {profileData.payments.map((p) => (
+                <div
+                  key={p.id}
+                  style={{
+                    background: darkMode ? "#0f172a" : "#f8fafc",
+                    border: `1px solid ${borderColor}`,
+                    borderRadius: "10px",
+                    padding: "12px 14px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0, paddingRight: "10px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px" }}>
+                      <span style={{ fontSize: "13px", fontWeight: 700, color: textPrimary, display: "flex", alignItems: "center", gap: "4px" }}>
+                        <FaHashtag style={{ fontSize: "10px" }} /> {p.invoice_no || "N/A"}
+                      </span>
+                      <span style={{ fontWeight: 700, color: "#16a34a", fontSize: "14px" }}>
+                        +₹{Number(p.amount_received || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "11.5px", color: textSecondary, marginTop: "4px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <span className="status-badge" style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6", padding: "2px 6px", fontSize: "10.5px" }}>
+                        {p.mode_name}
+                      </span>
+                      <span>{p.payment_date ? p.payment_date.split(" ")[0] : ""}</span>
+                      <span>{formatTime(p.payment_date ? p.payment_date.split(" ").slice(1).join(" ") : "", "12hr")}</span>
+                    </div>
+                    {(p.remarks || p.utr_number) && (
+                      <div style={{ fontSize: "11px", marginTop: "3px", color: p.remarks?.includes("Admission") ? "#2563eb" : "#16a34a", fontWeight: 600 }}>
+                        {p.remarks || "Fee Renewal"}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center", flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => generateStudentInvoicePdf({
+                        ...p,
+                        full_name: profileData.full_name,
+                        student_code: profileData.student_code,
+                        mobile: profileData.mobile,
+                        email: profileData.email,
+                        plan_name: profileData.validity?.plan_name || null,
+                        start_date: profileData.validity?.start_date || null,
+                        end_date: profileData.validity?.end_date || null,
+                      }, loggedInUser)}
+                      title="Download PDF Invoice"
+                      style={{
+                        width: "32px", height: "32px", borderRadius: "6px",
+                        border: "1px solid #3b82f6", background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
+                        color: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                      }}
+                    >
+                      <FaDownload style={{ fontSize: "12px" }} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sendInvoiceOnWhatsApp({
+                        ...p,
+                        full_name: profileData.full_name,
+                        student_code: profileData.student_code,
+                        mobile: profileData.mobile,
+                        email: profileData.email,
+                        plan_name: profileData.validity?.plan_name || null,
+                        start_date: profileData.validity?.start_date || null,
+                        end_date: profileData.validity?.end_date || null,
+                      }, profileData.mobile, loggedInUser)}
+                      title="Send on WhatsApp"
+                      style={{
+                        width: "32px", height: "32px", borderRadius: "6px",
+                        border: "1px solid #16a34a", background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
+                        color: "#16a34a", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                      }}
+                    >
+                      <FaWhatsapp style={{ fontSize: "13px" }} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sendInvoiceOnGmail({
+                        ...p,
+                        full_name: profileData.full_name,
+                        student_code: profileData.student_code,
+                        mobile: profileData.mobile,
+                        email: profileData.email,
+                        plan_name: profileData.validity?.plan_name || null,
+                        start_date: profileData.validity?.start_date || null,
+                        end_date: profileData.validity?.end_date || null,
+                      }, profileData.email, loggedInUser)}
+                      title="Send via Gmail"
+                      style={{
+                        width: "32px", height: "32px", borderRadius: "6px",
+                        border: "1px solid #ea4335", background: darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2",
+                        color: "#ea4335", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                      }}
+                    >
+                      <SiGmail style={{ fontSize: "12px" }} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            /* Desktop Table View */
+            <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "250px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${borderColor}`, color: textSecondary, fontSize: "12px" }}>
+                    <th style={{ padding: "10px 12px", textAlign: "left" }}>Invoice No</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right" }}>Amount</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left" }}>Mode</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left" }}>Reference / Remark</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left" }}>Payment Date</th>
+                    <th style={{ padding: "10px 12px", textAlign: "center" }}>Receipt / Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profileData.payments.map((p) => (
+                    <tr key={p.id} style={{ borderBottom: `1px solid ${borderColor}`, color: textPrimary }}>
+                      <td style={{ padding: "12px 10px" }}>{p.invoice_no || "N/A"}</td>
+                      <td style={{ padding: "12px 10px", textAlign: "right", fontWeight: 700, color: "#16a34a" }}>
+                        ₹{Number(p.amount_received || 0).toLocaleString()}
+                      </td>
+                      <td style={{ padding: "12px 10px" }}>
+                        <span className="status-badge" style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>
+                          {p.mode_name}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 10px" }}>
+                        <span style={{ fontWeight: 600, color: p.remarks?.includes("Admission") ? "#2563eb" : "#16a34a", fontSize: "13px" }}>
+                          {p.remarks || "(Fee Renewal)"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 10px", color: textSecondary, fontSize: "13px" }}>
+                        <div style={{ fontWeight: 600, color: textPrimary }}>
+                          {p.payment_date ? p.payment_date.split(" ")[0] : ""}
+                        </div>
+                        <div style={{ fontSize: "11px", color: textSecondary, marginTop: "2px" }}>
+                          {formatTime(p.payment_date ? p.payment_date.split(" ").slice(1).join(" ") : "", "12hr")}
+                        </div>
+                      </td>
+                      <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                        <div style={{ display: "flex", gap: "6px", justifyContent: "center", alignItems: "center", flexWrap: "nowrap" }}>
+                          <button
+                            type="button"
+                            onClick={() => generateStudentInvoicePdf({
+                              ...p,
+                              full_name: profileData.full_name,
+                              student_code: profileData.student_code,
+                              mobile: profileData.mobile,
+                              email: profileData.email,
+                              plan_name: profileData.validity?.plan_name || null,
+                              start_date: profileData.validity?.start_date || null,
+                              end_date: profileData.validity?.end_date || null,
+                            }, loggedInUser)}
+                            title="Download PDF Invoice"
+                            aria-label="Download PDF Invoice"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              padding: "5px 8px",
+                              borderRadius: "6px",
+                              border: "1px solid #3b82f6",
+                              background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
+                              color: "#2563eb",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                              transition: "all 0.15s",
+                            }}
+                          >
+                            <FaDownload style={{ fontSize: "12px" }} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => sendInvoiceOnWhatsApp({
+                              ...p,
+                              full_name: profileData.full_name,
+                              student_code: profileData.student_code,
+                              mobile: profileData.mobile,
+                              email: profileData.email,
+                              plan_name: profileData.validity?.plan_name || null,
+                              start_date: profileData.validity?.start_date || null,
+                              end_date: profileData.validity?.end_date || null,
+                            }, profileData.mobile, loggedInUser)}
+                            title="Send Invoice on WhatsApp"
+                            aria-label="Send Invoice on WhatsApp"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              padding: "5px 8px",
+                              borderRadius: "6px",
+                              border: "1px solid #16a34a",
+                              background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
+                              color: "#16a34a",
+                              fontSize: "13px",
+                              fontWeight: "600",
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                              transition: "all 0.15s",
+                            }}
+                          >
+                            <FaWhatsapp style={{ fontSize: "13px" }} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => sendInvoiceOnGmail({
+                              ...p,
+                              full_name: profileData.full_name,
+                              student_code: profileData.student_code,
+                              mobile: profileData.mobile,
+                              email: profileData.email,
+                              plan_name: profileData.validity?.plan_name || null,
+                              start_date: profileData.validity?.start_date || null,
+                              end_date: profileData.validity?.end_date || null,
+                            }, profileData.email, loggedInUser)}
+                            title="Send Invoice via Gmail"
+                            aria-label="Send Invoice via Gmail"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              padding: "5px 8px",
+                              borderRadius: "6px",
+                              border: "1px solid #ea4335",
+                              background: darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2",
+                              color: "#ea4335",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                              transition: "all 0.15s",
+                            }}
+                          >
+                            <SiGmail style={{ fontSize: "12px" }} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        ) : (
+          <p style={{ color: textSecondary, textAlign: "center", padding: "20px" }}>No payments recorded</p>
+        )}
+      </div>
+    );
+
+    const renderWhatsAppContent = () => (
+      <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
+        <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "16px", fontWeight: "700", display: "flex", alignItems: "center", gap: "8px" }}>
+          <FaWhatsapp style={{ color: "#25D660" }} /> Send WhatsApp Message
+        </h3>
+
+        {/* Template Selector */}
+        <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
+          {[
+            { key: "expiry_reminder", label: "Expiry Reminder", color: "#f59e0b" },
+            { key: "expired", label: "Already Expired", color: "#ef4444" },
+            { key: "custom", label: "Custom Message", color: "#3b82f6" },
+          ].map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setChatTemplate(t.key)}
+              style={{
+                padding: "8px 16px", borderRadius: "20px", fontSize: "13px", fontWeight: 600,
+                cursor: "pointer", border: `2px solid ${chatTemplate === t.key ? t.color : borderColor}`,
+                background: chatTemplate === t.key ? `${t.color}15` : "transparent",
+                color: chatTemplate === t.key ? t.color : textSecondary,
+                transition: "all 0.15s",
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Student Info */}
+        <div style={{
+          background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "12px", padding: "14px 18px",
+          border: `1px solid ${borderColor}`, marginBottom: "16px",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <div>
+            <div style={{ fontSize: "14px", fontWeight: 700, color: textPrimary }}>{profileData?.full_name}</div>
+            <div style={{ fontSize: "12px", color: textSecondary }}>{profileData?.student_code} · {profileData?.mobile || "No mobile"}</div>
+          </div>
+          <div style={{ fontSize: "12px", color: textSecondary }}>
+            {profileData?.validity?.plan_name} · Expires: {profileData?.validity?.end_date || "N/A"}
+          </div>
+        </div>
+
+        {/* Message Preview */}
+        <div style={{
+          background: darkMode ? "#1e293b" : "#ffffff",
+          border: `1px solid ${borderColor}`, borderRadius: "12px", padding: "16px",
+          marginBottom: "16px", minHeight: "100px",
+        }}>
+          <div style={{ fontSize: "11px", fontWeight: 700, color: textSecondary, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+            Message Preview
+          </div>
+          {chatTemplate === "custom" ? (
+            <textarea
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="Type your custom message here..."
+              rows={5}
+              style={{
+                width: "100%", resize: "vertical", padding: "12px", borderRadius: "8px",
+                border: `1px solid ${borderColor}`, background: darkMode ? "#0f172a" : "#f8fafc",
+                color: textPrimary, fontSize: "14px", lineHeight: "1.5", boxSizing: "border-box",
+                fontFamily: "inherit",
+              }}
+            />
+          ) : (
+            <div style={{ fontSize: "14px", lineHeight: "1.6", color: textPrimary, whiteSpace: "pre-wrap" }}>
+              {getWhatsAppMessage()}
+            </div>
+          )}
+        </div>
+
+        {/* Send Button */}
+        <button
+          onClick={handleSendWhatsApp}
+          style={{
+            width: "100%", padding: "14px 24px", borderRadius: "12px", border: "none",
+            background: "#25D660", color: "#fff", fontWeight: 700, fontSize: "15px",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = "#20bd5a"}
+          onMouseLeave={(e) => e.currentTarget.style.background = "#25D660"}
+        >
+          <FaWhatsapp style={{ fontSize: "20px" }} /> Send on WhatsApp
+        </button>
+      </div>
+    );
+
     return (
-      <div className="page">
+      <div className="page" style={{ paddingBottom: "120px" }}>
         {/* Back Button */}
         <div style={{ marginBottom: "24px" }}>
           <button
@@ -557,908 +1561,211 @@ const Students = () => {
             Loading profile...
           </div>
         ) : profileData ? (
-          <div className="responsive-grid-1-1-2" style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: "24px", alignItems: "start" }}>
-            {/* Left Column: Personal info, Validity, Shift & Seat, Action buttons */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-              {/* Profile Card */}
-              <div
-                style={{
-                  background: "linear-gradient(135deg, #1e293b, #0f172a)",
-                  padding: "32px",
-                  color: "white",
-                  borderRadius: "16px",
-                  boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-                  <div
-                    style={{
-                      width: "80px",
-                      height: "80px",
-                      minWidth: "80px",
-                      minHeight: "80px",
-                      borderRadius: "50%",
-                      aspectRatio: "1 / 1",
-                      flexShrink: 0,
-                      background: "linear-gradient(135deg, #3b82f6, #1d4ed8)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "30px",
-                      fontWeight: "bold",
-                      color: "white",
-                      textTransform: "uppercase",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {profileData.profile_photo_url ? (
-                      <img
-                        src={profileData.profile_photo_url}
-                        alt="Profile"
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                      />
-                    ) : (
-                      getInitials(profileData.full_name)
-                    )}
-                  </div>
-                  <div>
-                    <h2 style={{ margin: 0, fontSize: "24px", color: "#ffffff" }}>{profileData.full_name}</h2>
-                    <p style={{ margin: "4px 0", opacity: 0.8, fontSize: "14px", color: "#cbd5e1" }}>
-                      Code: {profileData.student_code} | Reg No: {profileData.reg_no || "N/A"}
-                    </p>
-                    {(() => {
-                      const graceInfo = getGraceExpiredInfo(profileData);
-                      return (
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
-                          <span
-                            className="status-badge"
-                            style={{
-                              background:
-                                profileData.account_status === "ACTIVE"
-                                  ? "rgba(34,197,94,0.2)"
-                                  : profileData.account_status === "SUSPENDED"
-                                  ? "rgba(249,115,22,0.2)"
-                                  : "rgba(239,68,68,0.2)",
-                              color:
-                                profileData.account_status === "ACTIVE"
-                                  ? "#4ade80"
-                                  : profileData.account_status === "SUSPENDED"
-                                  ? "#fb923c"
-                                  : "#fca5a5",
-                              display: "inline-block",
-                            }}
-                          >
-                            {getStatusText(profileData.account_status)}
-                          </span>
-                          {graceInfo && (
-                            <span
-                              className="status-badge"
-                              style={{
-                                background: "rgba(244,63,94,0.22)",
-                                color: "#fda4af",
-                                display: "inline-block",
-                              }}
-                            >
-                              Grace Period ({graceInfo.daysOverdue}d overdue) · Attendance Allowed
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
+          <>
+            {/* Desktop View (> 768px): Exact Original 2-Column Layout */}
+            <div className="student-profile-desktop responsive-grid-1-1-2" style={{ gridTemplateColumns: "1fr 1.2fr", gap: "24px", alignItems: "start" }}>
+              {/* Left Column */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+                {renderProfileCard(false)}
+                {renderPersonalDetails()}
+                {renderSeatReassignmentAlert()}
+                {renderShiftSeatInfo()}
+                {renderDesktopActionButtons()}
               </div>
 
-              {/* Personal Details Card */}
-              <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
-                <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "16px", fontWeight: "700" }}>Personal Details</h3>
-                <div className="responsive-grid-1-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                  <div className="profile-info-group">
-                    <div className="profile-info-label">Admission Date</div>
-                    <div className="profile-info-value" style={{ color: textPrimary, fontWeight: 600 }}>{formatDate(profileData.admission_date) || "N/A"}</div>
-                  </div>
-                  <div className="profile-info-group">
-                    <div className="profile-info-label">Mobile Number</div>
-                    <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.mobile}</div>
-                  </div>
-                  <div className="profile-info-group">
-                    <div className="profile-info-label">Email (Gmail)</div>
-                    <div className="profile-info-value" style={{ color: textPrimary, wordBreak: "break-all" }}>{profileData.email || "N/A"}</div>
-                  </div>
-                  <div className="profile-info-group">
-                    <div className="profile-info-label">Gender</div>
-                    <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.gender}</div>
-                  </div>
-                  <div className="profile-info-group">
-                    <div className="profile-info-label">Date of Birth</div>
-                    <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.dob || "N/A"}</div>
-                  </div>
-                  <div className="profile-info-group">
-                    <div className="profile-info-label">Aadhar Number</div>
-                    <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.aadhar_number || "N/A"}</div>
-                  </div>
-                  <div className="profile-info-group" style={{ gridColumn: "span 2" }}>
-                    <div className="profile-info-label">Address</div>
-                    <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.address || "N/A"}</div>
-                  </div>
-                </div>
-              </div>
-
-
-
-              {/* Floating / Seat Reassignment Prompt for Reactivated Reserved Members */}
-              {(profileData.seat_reassignment_needed || (
-                profileData.account_status === "ACTIVE" &&
-                profileData.validity?.access_type === "RESERVED" &&
-                profileData.shift_assignments?.length > 0 &&
-                !profileData.shift_assignments.some(sa => Boolean(sa.seat_number || sa.seat_id))
-              )) && (
-                <div style={{
-                  background: darkMode ? "rgba(245, 158, 11, 0.14)" : "#fffbeb",
-                  border: "1px solid #f59e0b",
-                  borderRadius: "12px",
-                  padding: "14px 18px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: "12px",
-                  flexWrap: "wrap",
-                }}>
-                  <div>
-                    <div style={{ fontSize: "13px", fontWeight: 700, color: darkMode ? "#fde68a" : "#92400e" }}>
-                      Seat was reassigned. Please allocate a new seat.
-                    </div>
-                    <div style={{ fontSize: "12px", color: darkMode ? "#fcd34d" : "#a16207", marginTop: "2px" }}>
-                      Member is Active with Floating / Unassigned seat status.
-                    </div>
-                  </div>
+              {/* Right Column */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+                {/* Desktop Tab Selector */}
+                <div style={{ display: "flex", background: darkMode ? "#1e293b" : "#f1f5f9", borderRadius: "12px", padding: "4px", gap: "4px", border: `1px solid ${borderColor}` }}>
                   <button
                     type="button"
-                    onClick={() => openEditForm("assignment")}
+                    onClick={() => setProfileTab("payment")}
                     style={{
-                      padding: "7px 14px",
-                      borderRadius: "8px",
-                      border: "none",
-                      background: "#d97706",
-                      color: "#ffffff",
-                      fontSize: "12px",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      whiteSpace: "nowrap",
+                      flex: 1, padding: "10px", borderRadius: "8px", border: "none",
+                      background: profileTab === "payment" ? "#3b82f6" : "transparent",
+                      color: profileTab === "payment" ? "#ffffff" : textSecondary,
+                      fontWeight: "600", fontSize: "14px", cursor: "pointer", transition: "all 0.2s",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
                     }}
                   >
-                    Allocate Seat
+                    <FaCreditCard /> Payment History
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProfileTab("attendance")}
+                    style={{
+                      flex: 1, padding: "10px", borderRadius: "8px", border: "none",
+                      background: profileTab === "attendance" ? "#3b82f6" : "transparent",
+                      color: profileTab === "attendance" ? "#ffffff" : textSecondary,
+                      fontWeight: "600", fontSize: "14px", cursor: "pointer", transition: "all 0.2s",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
+                    }}
+                  >
+                    <FaCalendarAlt /> Attendance History
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProfileTab("chat")}
+                    style={{
+                      flex: 1, padding: "10px", borderRadius: "8px", border: "none",
+                      background: profileTab === "chat" ? "#3b82f6" : "transparent",
+                      color: profileTab === "chat" ? "#ffffff" : textSecondary,
+                      fontWeight: "600", fontSize: "14px", cursor: "pointer", transition: "all 0.2s",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
+                    }}
+                  >
+                    <FaWhatsapp style={{ color: "#25D660" }} /> WhatsApp
                   </button>
                 </div>
-              )}
 
-              {/* Shift & Seat info */}
-              {profileData.shift_assignments && profileData.shift_assignments.length > 0 && (() => {
-                const sortedAssignments = [...profileData.shift_assignments].sort((a, b) =>
-                  (a.start_time || "").localeCompare(b.start_time || "")
-                );
-
-                return (
-                  <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
-                    <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "16px", fontWeight: "700", display: "flex", alignItems: "center", gap: "8px" }}>
-                      <FaClock /> Shift &amp; Seat Information
-                    </h3>
-                    {sortedAssignments.map((sa, idx) => (
-                      <div
-                        key={idx}
-                        className="responsive-grid-1-1"
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: "16px",
-                          marginBottom: idx < sortedAssignments.length - 1 ? "16px" : 0,
-                          paddingBottom: idx < sortedAssignments.length - 1 ? "16px" : 0,
-                          borderBottom: idx < sortedAssignments.length - 1 ? `1px solid ${borderColor}` : "none",
-                        }}
-                      >
-                        <div className="profile-info-group">
-                          <div className="profile-info-label">Shift {idx + 1}</div>
-                          <div className="profile-info-value" style={{ color: textPrimary }}>{sa.shift_name}</div>
-                        </div>
-                        <div className="profile-info-group">
-                          <div className="profile-info-label">Timing</div>
-                          <div className="profile-info-value" style={{ color: textPrimary }}>
-                            {formatTime(sa.start_time, "12hr")} - {formatTime(sa.end_time, "12hr")}
-                          </div>
-                        </div>
-                        <div className="profile-info-group" style={{ gridColumn: "span 2" }}>
-                          <div className="profile-info-label">Seat Assignment</div>
-                          <div className="profile-info-value" style={{ color: !sa.seat_number && profileData.validity?.access_type === "RESERVED" && profileData.account_status === "ACTIVE" ? "#d97706" : textPrimary }}>
-                            {sa.seat_number 
-                              ? `Seat ${sa.seat_number} (Floor ${sa.floor || 'N/A'}, Room ${sa.room || 'N/A'})` 
-                              : (profileData.validity?.access_type === "RESERVED"
-                                  ? (profileData.account_status === "ACTIVE" ? "Floating / Unassigned (Allocate a new seat)" : "Unassigned / Released")
-                                  : "Unreserved")}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-
-              {/* Action Buttons */}
-              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
-                <button
-                  className="secondary-btn"
-                  style={{
-                    background: "#eff6ff",
-                    color: "#2563eb",
-                    borderColor: "#dbeafe",
-                    fontWeight: 600,
-                    padding: "10px 16px",
-                    borderRadius: "10px",
-                    whiteSpace: "nowrap",
-                  }}
-                  onClick={openEditForm}
-                >
-                  <FaEdit style={{ marginRight: "6px" }} /> Edit Profile
-                </button>
-                {isOwner && (() => {
-                  const showActivate = canManuallyActivateMember(profileData);
-                  return (
+                {/* Desktop Tab Content */}
+                {profileTab === "attendance" && renderAttendanceContent()}
+                {profileTab === "payment" && (
                   <>
-                    <button
-                      className="secondary-btn"
-                      style={{
-                        background: showActivate ? "#f0fdf4" : "#fffbeb",
-                        color: showActivate ? "#16a34a" : "#d97706",
-                        borderColor: showActivate ? "#dcfce7" : "#fef3c7",
-                        fontWeight: 600,
-                        padding: "10px 16px",
-                        borderRadius: "10px",
-                        whiteSpace: "nowrap",
-                      }}
-                      title={
-                        showActivate
-                          ? "Activate member"
-                          : profileData.account_status === "SUSPENDED" || profileData.account_status === "INACTIVE"
-                          ? "Suspended/Inactive members become Active only after clearing fees in Collect Fee. Click to disable member."
-                          : "Disable member"
-                      }
-                      disabled={studentActionBusy}
-                      onClick={handleToggleStatus}
-                    >
-                      {showActivate ? "Activate Member" : "Disable Member"}
-                    </button>
-                    <button
-                      className="secondary-btn"
-                      style={{
-                        background: "#fef2f2",
-                        color: "#dc2626",
-                        borderColor: "#fca5a5",
-                        fontWeight: 600,
-                        padding: "10px 16px",
-                        borderRadius: "10px",
-                        whiteSpace: "nowrap",
-                      }}
-                      disabled={studentActionBusy}
-                      onClick={handleDeleteAdmission}
-                    >
-                      <FaTrash style={{ marginRight: "6px" }} /> Delete Admission
-                    </button>
+                    {renderPaymentContent(false)}
+                    {renderValidityInfo()}
                   </>
-                  );
-                })()}
+                )}
+                {profileTab === "chat" && renderWhatsAppContent()}
               </div>
             </div>
 
-            {/* Right Column: Attendance, Payment & Chat */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-              {/* Tab Selector */}
-              <div style={{ display: "flex", background: darkMode ? "#1e293b" : "#f1f5f9", borderRadius: "12px", padding: "4px", gap: "4px", border: `1px solid ${borderColor}` }}>
+            {/* Mobile View (<= 768px): Dedicated Mobile Screen Layout */}
+            <div className="student-profile-mobile">
+              {renderProfileCard(true)}
+
+              {/* Upper 3 Options: Personal Details (Default active) | Validity | Shift / Seat */}
+              <div
+                className="student-profile-tabs"
+                style={{
+                  display: "flex",
+                  background: darkMode ? "#1e293b" : "#f1f5f9",
+                  borderRadius: "12px",
+                  padding: "4px",
+                  gap: "4px",
+                  border: `1px solid ${borderColor}`,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setProfileDetailTab("personal")}
+                  className="student-profile-tab"
+                  style={{
+                    flex: 1, padding: "10px 4px", borderRadius: "8px", border: "none",
+                    background: profileDetailTab === "personal" ? "#3b82f6" : "transparent",
+                    color: profileDetailTab === "personal" ? "#ffffff" : textSecondary,
+                    fontWeight: "600", fontSize: "12.5px", cursor: "pointer", transition: "all 0.2s",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: "4px"
+                  }}
+                >
+                  <FaUser /> Personal Details
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProfileDetailTab("validity")}
+                  className="student-profile-tab"
+                  style={{
+                    flex: 1, padding: "10px 4px", borderRadius: "8px", border: "none",
+                    background: profileDetailTab === "validity" ? "#3b82f6" : "transparent",
+                    color: profileDetailTab === "validity" ? "#ffffff" : textSecondary,
+                    fontWeight: "600", fontSize: "12.5px", cursor: "pointer", transition: "all 0.2s",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: "4px"
+                  }}
+                >
+                  <FaCalendarAlt /> Validity
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProfileDetailTab("shifts")}
+                  className="student-profile-tab"
+                  style={{
+                    flex: 1, padding: "10px 4px", borderRadius: "8px", border: "none",
+                    background: profileDetailTab === "shifts" ? "#3b82f6" : "transparent",
+                    color: profileDetailTab === "shifts" ? "#ffffff" : textSecondary,
+                    fontWeight: "600", fontSize: "12.5px", cursor: "pointer", transition: "all 0.2s",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: "4px"
+                  }}
+                >
+                  <FaClock /> Shift / Seat
+                </button>
+              </div>
+
+              {/* Upper Active Tab Content */}
+              {profileDetailTab === "personal" && renderPersonalDetails()}
+              {profileDetailTab === "validity" && renderValidityInfo()}
+              {profileDetailTab === "shifts" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                  {renderSeatReassignmentAlert()}
+                  {renderShiftSeatInfo()}
+                </div>
+              )}
+
+              {/* Action Buttons: Edit / Reset / Delete */}
+              {renderMobileActionButtons()}
+
+              {/* Lower 3 Options: Payment | Attendance | WhatsApp */}
+              <div
+                className="student-profile-subtabs"
+                style={{
+                  display: "flex",
+                  background: darkMode ? "#1e293b" : "#f1f5f9",
+                  borderRadius: "12px",
+                  padding: "4px",
+                  gap: "4px",
+                  border: `1px solid ${borderColor}`,
+                  marginTop: "4px",
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => setProfileTab("payment")}
+                  className="student-profile-tab"
                   style={{
-                    flex: 1,
-                    padding: "10px",
-                    borderRadius: "8px",
-                    border: "none",
+                    flex: 1, padding: "10px 4px", borderRadius: "8px", border: "none",
                     background: profileTab === "payment" ? "#3b82f6" : "transparent",
                     color: profileTab === "payment" ? "#ffffff" : textSecondary,
-                    fontWeight: "600",
-                    fontSize: "14px",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px"
+                    fontWeight: "600", fontSize: "12.5px", cursor: "pointer", transition: "all 0.2s",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: "4px"
                   }}
                 >
-                  <FaCreditCard /> Payment History
+                  <FaCreditCard /> Payment
                 </button>
                 <button
                   type="button"
                   onClick={() => setProfileTab("attendance")}
+                  className="student-profile-tab"
                   style={{
-                    flex: 1,
-                    padding: "10px",
-                    borderRadius: "8px",
-                    border: "none",
+                    flex: 1, padding: "10px 4px", borderRadius: "8px", border: "none",
                     background: profileTab === "attendance" ? "#3b82f6" : "transparent",
                     color: profileTab === "attendance" ? "#ffffff" : textSecondary,
-                    fontWeight: "600",
-                    fontSize: "14px",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px"
+                    fontWeight: "600", fontSize: "12.5px", cursor: "pointer", transition: "all 0.2s",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: "4px"
                   }}
                 >
-                  <FaCalendarAlt /> Attendance History
+                  <FaCalendarAlt /> Attendance
                 </button>
                 <button
                   type="button"
                   onClick={() => setProfileTab("chat")}
+                  className="student-profile-tab"
                   style={{
-                    flex: 1,
-                    padding: "10px",
-                    borderRadius: "8px",
-                    border: "none",
+                    flex: 1, padding: "10px 4px", borderRadius: "8px", border: "none",
                     background: profileTab === "chat" ? "#3b82f6" : "transparent",
                     color: profileTab === "chat" ? "#ffffff" : textSecondary,
-                    fontWeight: "600",
-                    fontSize: "14px",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px"
+                    fontWeight: "600", fontSize: "12.5px", cursor: "pointer", transition: "all 0.2s",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: "4px"
                   }}
                 >
-                  <FaWhatsapp style={{ color: "#25D660" }} /> WhatsApp
+                  <FaWhatsapp style={{ color: profileTab === "chat" ? "#ffffff" : "#25D660" }} /> WhatsApp
                 </button>
               </div>
 
-              {/* Show selected tab content */}
-              {profileTab === "attendance" && (
-                <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
-                  <style>{`
-                    .attendance-calendar-grid {
-                      display: grid;
-                      grid-template-columns: repeat(7, 1fr);
-                      gap: 8px;
-                    }
-                    .calendar-day-header {
-                      text-align: center;
-                      font-weight: bold;
-                      font-size: 12px;
-                      color: #64748b;
-                      padding: 6px 0;
-                    }
-                    .calendar-cell {
-                      aspect-ratio: 1;
-                      display: flex;
-                      align-items: center;
-                      justify-content: center;
-                      border-radius: 8px;
-                      font-size: 13px;
-                      font-weight: 600;
-                      position: relative;
-                      cursor: pointer;
-                      transition: all 0.2s;
-                    }
-                    .calendar-cell.padding {
-                      color: #cbd5e1;
-                      cursor: not-allowed;
-                      background: transparent;
-                    }
-                    body.dark .calendar-cell.padding {
-                      color: #475569;
-                    }
-                    .calendar-cell.no-record {
-                      background: #f1f5f9;
-                      color: #64748b;
-                    }
-                    body.dark .calendar-cell.no-record {
-                      background: #1e293b;
-                      color: #94a3b8;
-                    }
-                    .calendar-cell.present {
-                      background: #22c55e !important;
-                      color: #ffffff !important;
-                      box-shadow: 0 4px 6px -1px rgba(34, 197, 94, 0.3);
-                    }
-                    .calendar-cell.absent {
-                      background: #ef4444 !important;
-                      color: #ffffff !important;
-                      box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.3);
-                    }
-                    .calendar-tooltip {
-                      visibility: hidden;
-                      width: 140px;
-                      background-color: #1e293b;
-                      color: #fff;
-                      text-align: center;
-                      border-radius: 8px;
-                      padding: 8px 12px;
-                      position: absolute;
-                      z-index: 100;
-                      bottom: 125%;
-                      left: 50%;
-                      transform: translateX(-50%);
-                      opacity: 0;
-                      transition: opacity 0.2s, visibility 0.2s;
-                      font-size: 11px;
-                      line-height: 1.4;
-                      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
-                      pointer-events: none;
-                      border: 1px solid #334155;
-                    }
-                    .calendar-cell:hover .calendar-tooltip {
-                      visibility: visible;
-                      opacity: 1;
-                    }
-                  `}</style>
-
-                  <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
-                    <FaCalendarAlt /> Attendance History Calendar
-                  </h3>
-
-                  <div style={{
-                    fontSize: "12px",
-                    color: darkMode ? "#93c5fd" : "#1e40af",
-                    background: darkMode ? "rgba(59, 130, 246, 0.1)" : "#eff6ff",
-                    border: `1px solid ${darkMode ? "rgba(59, 130, 246, 0.2)" : "#bfdbfe"}`,
-                    padding: "6px 12px",
-                    borderRadius: "6px",
-                    marginBottom: "14px"
-                  }}>
-                    <strong>Note:</strong> Attendance logs are saved for <strong>30 days</strong>.
-                  </div>
-
-                  {/* Month switcher */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (currentViewMonth === 0) {
-                          setCurrentViewMonth(11);
-                          setCurrentViewYear((prev) => prev - 1);
-                        } else {
-                          setCurrentViewMonth((prev) => prev - 1);
-                        }
-                      }}
-                      style={{
-                        background: "none",
-                        border: `1px solid ${borderColor}`,
-                        padding: "4px 10px",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                        color: textPrimary,
-                        fontSize: "14px",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      &lt;
-                    </button>
-                    <span style={{ fontWeight: "bold", fontSize: "15px", color: textPrimary }}>
-                      {MONTHS[currentViewMonth]} {currentViewYear}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (currentViewMonth === 11) {
-                          setCurrentViewMonth(0);
-                          setCurrentViewYear((prev) => prev + 1);
-                        } else {
-                          setCurrentViewMonth((prev) => prev + 1);
-                        }
-                      }}
-                      style={{
-                        background: "none",
-                        border: `1px solid ${borderColor}`,
-                        padding: "4px 10px",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                        color: textPrimary,
-                        fontSize: "14px",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      &gt;
-                    </button>
-                  </div>
-
-                  <div className="attendance-calendar-grid">
-                    {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => (
-                      <div key={day} className="calendar-day-header">
-                        {day}
-                      </div>
-                    ))}
-
-                    {(() => {
-                      const firstDayIdx = new Date(currentViewYear, currentViewMonth, 1).getDay();
-                      const totalDays = new Date(currentViewYear, currentViewMonth + 1, 0).getDate();
-                      const prevTotalDays = new Date(currentViewYear, currentViewMonth, 0).getDate();
-
-                      const cells = [];
-                      for (let i = firstDayIdx - 1; i >= 0; i--) {
-                        cells.push({ day: prevTotalDays - i, isCurrentMonth: false });
-                      }
-                      for (let d = 1; d <= totalDays; d++) {
-                        cells.push({ day: d, isCurrentMonth: true });
-                      }
-
-                      return cells.map((cell, idx) => {
-                        if (!cell.isCurrentMonth) {
-                          return (
-                            <div key={`prev-${idx}`} className="calendar-cell padding">
-                              {cell.day}
-                            </div>
-                          );
-                        }
-
-                        const monthStr = String(currentViewMonth + 1).padStart(2, "0");
-                        const dayStr = String(cell.day).padStart(2, "0");
-                        const dateKey = `${currentViewYear}-${monthStr}-${dayStr}`;
-
-                        const record = profileData.attendance?.find((att) => {
-                          const recDate = att.attendance_date?.split("T")[0];
-                          return recDate === dateKey;
-                        });
-
-                        let cellClass = "calendar-cell no-record";
-                        let tooltipContent = (
-                          <div className="calendar-tooltip">
-                            <strong>{dateKey}</strong>
-                            <br />
-                            No Record
-                          </div>
-                        );
-
-                        if (record) {
-                          if (record.status === "PRESENT") {
-                            cellClass = "calendar-cell present";
-                            tooltipContent = (
-                              <div className="calendar-tooltip" style={{ background: "#15803d", borderColor: "#166534" }}>
-                                <strong>{dateKey}</strong>
-                                <br />
-                                <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}><FaCheckCircle /> Present</span>
-                                <br />
-                                In: {record.check_in_time ? formatTime(record.check_in_time, "12hr") : "—"}
-                                <br />
-                                Out: {record.check_out_time ? formatTime(record.check_out_time, "12hr") : "—"}
-                              </div>
-                            );
-                          } else if (record.status === "ABSENT") {
-                            cellClass = "calendar-cell absent";
-                            tooltipContent = (
-                              <div className="calendar-tooltip" style={{ background: "#b91c1c", borderColor: "#991b1b" }}>
-                                <strong>{dateKey}</strong>
-                                <br />
-                                <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}><FaTimesCircle /> Absent</span>
-                              </div>
-                            );
-                          }
-                        }
-
-                        return (
-                          <div key={`curr-${cell.day}`} className={cellClass}>
-                            {cell.day}
-                            {tooltipContent}
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-              )}
-
-              {profileTab === "payment" && (
-                <>
-                  <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
-                    <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "16px", fontWeight: "700" }}>Payment History</h3>
-                    {profileData.payments && profileData.payments.length > 0 ? (
-                      <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "250px" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-                          <thead>
-                            <tr style={{ borderBottom: `1px solid ${borderColor}`, color: textSecondary, fontSize: "12px" }}>
-                              <th style={{ padding: "10px 12px", textAlign: "left" }}>Invoice No</th>
-                              <th style={{ padding: "10px 12px", textAlign: "right" }}>Amount</th>
-                              <th style={{ padding: "10px 12px", textAlign: "left" }}>Mode</th>
-                              <th style={{ padding: "10px 12px", textAlign: "left" }}>Reference / Remark</th>
-                              <th style={{ padding: "10px 12px", textAlign: "left" }}>Payment Date</th>
-                              <th style={{ padding: "10px 12px", textAlign: "center" }}>Receipt / Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {profileData.payments.map((p) => (
-                              <tr key={p.id} style={{ borderBottom: `1px solid ${borderColor}`, color: textPrimary }}>
-                                <td style={{ padding: "12px 10px" }}>{p.invoice_no || "N/A"}</td>
-                                <td style={{ padding: "12px 10px", textAlign: "right", fontWeight: 700, color: "#16a34a" }}>
-                                  ₹{Number(p.amount_received || 0).toLocaleString()}
-                                </td>
-                                <td style={{ padding: "12px 10px" }}>
-                                  <span className="status-badge" style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>
-                                    {p.mode_name}
-                                  </span>
-                                </td>
-                                <td style={{ padding: "12px 10px" }}>
-                                  <span style={{ fontWeight: 600, color: p.remarks?.includes("Admission") ? "#2563eb" : "#16a34a", fontSize: "13px" }}>
-                                    {p.remarks || "(Fee Renewal)"}
-                                  </span>
-                                </td>
-                                <td style={{ padding: "12px 10px", color: textSecondary, fontSize: "13px" }}>
-                                  <div style={{ fontWeight: 600, color: textPrimary }}>
-                                    {p.payment_date ? p.payment_date.split(" ")[0] : ""}
-                                  </div>
-                                  <div style={{ fontSize: "11px", color: textSecondary, marginTop: "2px" }}>
-                                    {formatTime(p.payment_date ? p.payment_date.split(" ").slice(1).join(" ") : "", "12hr")}
-                                  </div>
-                                </td>
-                                <td style={{ padding: "12px 10px", textAlign: "center" }}>
-                                  <div style={{ display: "flex", gap: "6px", justifyContent: "center", alignItems: "center", flexWrap: "nowrap" }}>
-                                    <button
-                                      type="button"
-                                      onClick={() => generateStudentInvoicePdf({
-                                        ...p,
-                                        full_name: profileData.full_name,
-                                        student_code: profileData.student_code,
-                                        mobile: profileData.mobile,
-                                        email: profileData.email,
-                                        plan_name: profileData.validity?.plan_name || null,
-                                        start_date: profileData.validity?.start_date || null,
-                                        end_date: profileData.validity?.end_date || null,
-                                      }, loggedInUser)}
-                                      title="Download PDF Invoice"
-                                      aria-label="Download PDF Invoice"
-                                      style={{
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        padding: "5px 8px",
-                                        borderRadius: "6px",
-                                        border: "1px solid #3b82f6",
-                                        background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
-                                        color: "#2563eb",
-                                        fontSize: "12px",
-                                        fontWeight: "600",
-                                        cursor: "pointer",
-                                        whiteSpace: "nowrap",
-                                        transition: "all 0.15s",
-                                      }}
-                                      onMouseOver={(e) => {
-                                        e.currentTarget.style.background = "#2563eb";
-                                        e.currentTarget.style.color = "#ffffff";
-                                      }}
-                                      onMouseOut={(e) => {
-                                        e.currentTarget.style.background = darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff";
-                                        e.currentTarget.style.color = "#2563eb";
-                                      }}
-                                    >
-                                      <FaDownload style={{ fontSize: "12px" }} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => sendInvoiceOnWhatsApp({
-                                        ...p,
-                                        full_name: profileData.full_name,
-                                        student_code: profileData.student_code,
-                                        mobile: profileData.mobile,
-                                        email: profileData.email,
-                                        plan_name: profileData.validity?.plan_name || null,
-                                        start_date: profileData.validity?.start_date || null,
-                                        end_date: profileData.validity?.end_date || null,
-                                      }, profileData.mobile, loggedInUser)}
-                                      title="Send Invoice on WhatsApp"
-                                      aria-label="Send Invoice on WhatsApp"
-                                      style={{
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        padding: "5px 8px",
-                                        borderRadius: "6px",
-                                        border: "1px solid #16a34a",
-                                        background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
-                                        color: "#16a34a",
-                                        fontSize: "13px",
-                                        fontWeight: "600",
-                                        cursor: "pointer",
-                                        whiteSpace: "nowrap",
-                                        transition: "all 0.15s",
-                                      }}
-                                      onMouseOver={(e) => {
-                                        e.currentTarget.style.background = "#16a34a";
-                                        e.currentTarget.style.color = "#ffffff";
-                                      }}
-                                      onMouseOut={(e) => {
-                                        e.currentTarget.style.background = darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4";
-                                        e.currentTarget.style.color = "#16a34a";
-                                      }}
-                                    >
-                                      <FaWhatsapp style={{ fontSize: "13px" }} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => sendInvoiceOnGmail({
-                                        ...p,
-                                        full_name: profileData.full_name,
-                                        student_code: profileData.student_code,
-                                        mobile: profileData.mobile,
-                                        email: profileData.email,
-                                        plan_name: profileData.validity?.plan_name || null,
-                                        start_date: profileData.validity?.start_date || null,
-                                        end_date: profileData.validity?.end_date || null,
-                                      }, profileData.email, loggedInUser)}
-                                      title="Send Invoice via Gmail"
-                                      aria-label="Send Invoice via Gmail"
-                                      style={{
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        padding: "5px 8px",
-                                        borderRadius: "6px",
-                                        border: "1px solid #ea4335",
-                                        background: darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2",
-                                        color: "#ea4335",
-                                        fontSize: "12px",
-                                        fontWeight: "600",
-                                        cursor: "pointer",
-                                        whiteSpace: "nowrap",
-                                        transition: "all 0.15s",
-                                      }}
-                                      onMouseOver={(e) => {
-                                        e.currentTarget.style.background = "#ea4335";
-                                        e.currentTarget.style.color = "#ffffff";
-                                      }}
-                                      onMouseOut={(e) => {
-                                        e.currentTarget.style.background = darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2";
-                                        e.currentTarget.style.color = "#ea4335";
-                                      }}
-                                    >
-                                      <SiGmail style={{ fontSize: "12px" }} />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <p style={{ color: textSecondary, textAlign: "center", padding: "20px" }}>No payments recorded</p>
-                    )}
-                  </div>
-
-                  {/* Validity Info */}
-                  {profileData.validity && (
-                    <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
-                      <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "16px", fontWeight: "700", display: "flex", alignItems: "center", gap: "8px" }}>
-                        <FaCalendarAlt /> Validity Information
-                      </h3>
-                      <div className="responsive-grid-1-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                        <div className="profile-info-group">
-                          <div className="profile-info-label">Plan</div>
-                          <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.validity.plan_name || "N/A"}</div>
-                        </div>
-                        <div className="profile-info-group">
-                          <div className="profile-info-label">Duration</div>
-                          <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.validity.duration_days || "N/A"} days</div>
-                        </div>
-                        <div className="profile-info-group">
-                          <div className="profile-info-label">Start Date</div>
-                          <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.validity.start_date}</div>
-                        </div>
-                        <div className="profile-info-group">
-                          <div className="profile-info-label">End Date</div>
-                          <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.validity.end_date}</div>
-                        </div>
-                        <div className="profile-info-group">
-                          <div className="profile-info-label">Access Type</div>
-                          <div className="profile-info-value" style={{ color: textPrimary }}>{profileData.validity.access_type}</div>
-                        </div>
-                        <div className="profile-info-group">
-                          <div className="profile-info-label">Total Amount</div>
-                          <div className="profile-info-value" style={{ color: textPrimary }}>₹{profileData.validity.total_amount}</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {profileTab === "chat" && (
-                <div className="table-card" style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: "16px", padding: "24px" }}>
-                  <h3 style={{ fontSize: "16px", color: textPrimary, marginBottom: "16px", fontWeight: "700", display: "flex", alignItems: "center", gap: "8px" }}>
-                    <FaWhatsapp style={{ color: "#25D660" }} /> Send WhatsApp Message
-                  </h3>
-
-                  {/* Template Selector */}
-                  <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
-                    {[
-                      { key: "expiry_reminder", label: "Expiry Reminder", color: "#f59e0b" },
-                      { key: "expired", label: "Expired", color: "#ef4444" },
-                      { key: "custom", label: "Custom Message", color: "#3b82f6" },
-                    ].map((t) => (
-                      <button
-                        key={t.key}
-                        onClick={() => setChatTemplate(t.key)}
-                        style={{
-                          padding: "8px 16px", borderRadius: "20px", fontSize: "13px", fontWeight: 600,
-                          cursor: "pointer", border: `2px solid ${chatTemplate === t.key ? t.color : borderColor}`,
-                          background: chatTemplate === t.key ? `${t.color}15` : "transparent",
-                          color: chatTemplate === t.key ? t.color : textSecondary,
-                          transition: "all 0.15s",
-                        }}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Student Info */}
-                  <div style={{
-                    background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "12px", padding: "14px 18px",
-                    border: `1px solid ${borderColor}`, marginBottom: "16px",
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                  }}>
-                    <div>
-                      <div style={{ fontSize: "14px", fontWeight: 700, color: textPrimary }}>{profileData?.full_name}</div>
-                      <div style={{ fontSize: "12px", color: textSecondary }}>{profileData?.student_code} · {profileData?.mobile || "No mobile"}</div>
-                    </div>
-                    <div style={{ fontSize: "12px", color: textSecondary }}>
-                      {profileData?.validity?.plan_name} · Expires: {profileData?.validity?.end_date || "N/A"}
-                    </div>
-                  </div>
-
-                  {/* Message Preview */}
-                  <div style={{
-                    background: darkMode ? "#1e293b" : "#ffffff",
-                    border: `1px solid ${borderColor}`, borderRadius: "12px", padding: "16px",
-                    marginBottom: "16px", minHeight: "100px",
-                  }}>
-                    <div style={{ fontSize: "11px", fontWeight: 700, color: textSecondary, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      Message Preview
-                    </div>
-                    {chatTemplate === "custom" ? (
-                      <textarea
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        placeholder="Type your custom message here..."
-                        rows={5}
-                        style={{
-                          width: "100%", resize: "vertical", padding: "12px", borderRadius: "8px",
-                          border: `1px solid ${borderColor}`, background: darkMode ? "#0f172a" : "#f8fafc",
-                          color: textPrimary, fontSize: "14px", lineHeight: "1.5", boxSizing: "border-box",
-                          fontFamily: "inherit",
-                        }}
-                      />
-                    ) : (
-                      <div style={{ fontSize: "14px", lineHeight: "1.6", color: textPrimary, whiteSpace: "pre-wrap" }}>
-                        {getWhatsAppMessage()}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Send Button */}
-                  <button
-                    onClick={handleSendWhatsApp}
-                    style={{
-                      width: "100%", padding: "14px 24px", borderRadius: "12px", border: "none",
-                      background: "#25D660", color: "#fff", fontWeight: 700, fontSize: "15px",
-                      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
-                      transition: "all 0.2s",
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = "#20bd5a"}
-                    onMouseLeave={(e) => e.currentTarget.style.background = "#25D660"}
-                  >
-                    <FaWhatsapp style={{ fontSize: "20px" }} /> Send on WhatsApp
-                  </button>
-                </div>
-              )}
+              {/* Lower Active Tab Content */}
+              {profileTab === "payment" && renderPaymentContent(true)}
+              {profileTab === "attendance" && renderAttendanceContent()}
+              {profileTab === "chat" && renderWhatsAppContent()}
             </div>
-          </div>
+          </>
         ) : (
           <div style={{ padding: '40px', textAlign: 'center', color: textSecondary }}>
             Failed to load profile
@@ -2079,9 +2386,15 @@ const Students = () => {
         .status-filter-pills-bar::-webkit-scrollbar {
           display: none;
         }
+        .mobile-only-expiry {
+          display: none;
+        }
         @media (max-width: 768px) {
           .desktop-col {
             display: none !important;
+          }
+          .mobile-only-expiry {
+            display: block !important;
           }
           .students-table th, .students-table td {
             padding: 10px 6px !important;
@@ -2214,6 +2527,23 @@ const Students = () => {
                           </div>
                         </>
                       )}
+                      {/* Mobile Only: Fee Expiry Info */}
+                      <div className="mobile-only-expiry" style={{ marginTop: '3px', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                        {student.end_date ? (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            color: expiryInfo?.isExpired ? '#ef4444' : expiryInfo?.isWarning ? '#f59e0b' : '#16a34a',
+                            fontWeight: 600,
+                          }}>
+                            <span>Fee: {formatReadableDate(student.end_date)}</span>
+                            {expiryInfo?.text && <span style={{ opacity: 0.85 }}>({expiryInfo.text})</span>}
+                          </span>
+                        ) : (
+                          <span style={{ color: textSecondary, fontStyle: 'italic' }}>Fee: No plan</span>
+                        )}
+                      </div>
                     </td>
 
                     {/* PLAN */}

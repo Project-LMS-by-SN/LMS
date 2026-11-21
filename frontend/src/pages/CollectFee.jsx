@@ -455,7 +455,7 @@ const CollectFee = () => {
   const inputBg = darkMode ? "#0f172a" : "#ffffff";
 
   return (
-    <div className="page" style={{ background: pageBg, minHeight: "100vh", paddingBottom: "40px" }}>
+    <div className="page" style={{ background: pageBg, minHeight: "100vh", paddingBottom: "120px" }}>
       {/* Toast Notification */}
       {toast && (
         <div
@@ -990,7 +990,7 @@ const CollectFee = () => {
         </div>
 
         {/* Right Section: Last 5 Payments */}
-        <div style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "14px", padding: "24px" }}>
+        <div style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "14px", padding: "24px", marginBottom: "24px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <h3 style={{ fontSize: "16px", fontWeight: 700, color: textPrimary, display: "flex", alignItems: "center", gap: "8px" }}>
               <FaHistory style={{ color: "#3b82f6" }} /> Last 5 Recent Payments
@@ -1015,18 +1015,19 @@ const CollectFee = () => {
                     borderRadius: "10px",
                     padding: "12px 14px",
                     display: "flex",
-                    justify: "space-between",
+                    justifyContent: "space-between",
                     alignItems: "center",
+                    gap: "12px",
                     transition: "all 0.15s",
                   }}
                 >
-                  <div>
-                    <div style={{ fontWeight: 700, color: textPrimary, fontSize: "14px", display: "flex", alignItems: "center", gap: "6px" }}>
-                      {p.full_name || "Member"}
-                      <span style={{ fontSize: "11px", color: textMuted, fontWeight: 500 }}>({p.student_code || "N/A"})</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, color: textPrimary, fontSize: "14px", display: "flex", alignItems: "center", gap: "6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{p.full_name || "Member"}</span>
+                      <span style={{ fontSize: "11px", color: textMuted, fontWeight: 500, flexShrink: 0 }}>({p.student_code || "N/A"})</span>
                     </div>
                     <div style={{ fontSize: "12px", color: textMuted, marginTop: "2px", display: "flex", flexDirection: "column", gap: "2px" }}>
-                      <span><FaHashtag style={{ fontSize: "10px" }} /> {p.invoice_no}</span>
+                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><FaHashtag style={{ fontSize: "10px" }} /> {p.invoice_no}</span>
                       <span>
                         <FaClock style={{ fontSize: "10px", marginRight: "4px" }} />
                         {p.payment_date ? p.payment_date.split(" ")[0] : ""}
@@ -1037,11 +1038,18 @@ const CollectFee = () => {
                     </div>
                   </div>
 
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: "15px", fontWeight: 800, color: "#16a34a" }}>
+                  <div style={{
+                    flexShrink: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-end",
+                    justifyContent: "center",
+                    gap: "6px",
+                  }}>
+                    <div style={{ fontSize: "15px", fontWeight: 800, color: "#16a34a", lineHeight: 1 }}>
                       +₹{p.amount_received}
                     </div>
-                    <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-end", marginTop: "4px" }}>
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-end" }}>
                       <span style={{
                         fontSize: "10px", fontWeight: 700, textTransform: "uppercase",
                         background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",

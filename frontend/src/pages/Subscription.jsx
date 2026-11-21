@@ -127,7 +127,7 @@ const Subscription = () => {
   };
 
   const getDaysRemaining = () => {
-    if (!subscriptionExpiry) return null;
+    if (currentTier === "FREE" || !subscriptionExpiry) return null;
     const expiry = new Date(subscriptionExpiry);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -135,7 +135,7 @@ const Subscription = () => {
     return Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
   };
   const daysLeft = getDaysRemaining();
-  const isExpired = daysLeft !== null && daysLeft <= 0;
+  const isExpired = currentTier !== "FREE" && daysLeft !== null && daysLeft <= 0;
 
   const formatDate = (dateStr) => {
     if (!dateStr) return "N/A";
@@ -308,19 +308,20 @@ const Subscription = () => {
       admissionProcess: "QR / Manual",
       feeManagement: "Basic",
       supportLevel: "Community Support",
-      planPriceLabel: "Null",
-      description: "Essential library management for small reading rooms",
+      planPriceLabel: "₹0 Forever",
+      description: "Essential library management for reading rooms - Forever Free",
       features: [
         "Up to 50 active students",
+        "Forever Free (No Expiry / Lifetime)",
         "0 Staff accounts (Owner only)",
         "1 Device login limit",
         "Basic Manual Attendance",
-        "QR / Manual Admission",
+        "QR & Manual Admission",
         "Basic Fee Management",
         "Community Support",
       ],
       popular: false,
-      badge: "",
+      badge: "Forever Free",
       isActive: true,
     },
     {
@@ -571,19 +572,32 @@ const Subscription = () => {
           </div>
           <div>
             <h3 style={{ fontSize: '17px', fontWeight: 700, color: textPrimary, margin: 0 }}>
-              {currentTier === "FREE" ? "No Active Plan" : `${currentTier === "PRO" ? "Pro" : currentTier === "BASIC" ? "Basic" : currentTier.replace("_", " ")} Plan`}
+              {currentTier === "FREE" ? "Free Plan" : `${currentTier === "PRO" ? "Pro" : currentTier === "BASIC" ? "Basic" : currentTier.replace("_", " ")} Plan`}
             </h3>
             <p style={{ fontSize: '13px', color: textMuted, margin: '4px 0 0 0', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <FaCalendarAlt /> Expires: {formatDate(subscriptionExpiry)}
-              </span>
-              {daysLeft !== null && (
-                <span style={{
-                  fontWeight: 700,
-                  color: isExpired ? '#dc2626' : daysLeft <= 7 ? '#d97706' : (darkMode ? '#4ade80' : '#16a34a')
-                }}>
-                  {isExpired ? 'Expired' : `${daysLeft} day${daysLeft > 1 ? 's' : ''} left`}
-                </span>
+              {currentTier === "FREE" ? (
+                <>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <FaCalendarAlt /> Validity: <strong>Lifetime / Never Expires</strong>
+                  </span>
+                  <span style={{ fontWeight: 700, color: '#16a34a', background: 'rgba(22,163,74,0.1)', padding: '2px 8px', borderRadius: '10px' }}>
+                    Forever Free
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <FaCalendarAlt /> Expires: {formatDate(subscriptionExpiry)}
+                  </span>
+                  {daysLeft !== null && (
+                    <span style={{
+                      fontWeight: 700,
+                      color: isExpired ? '#dc2626' : daysLeft <= 7 ? '#d97706' : (darkMode ? '#4ade80' : '#16a34a')
+                    }}>
+                      {isExpired ? 'Expired' : `${daysLeft} day${daysLeft > 1 ? 's' : ''} left`}
+                    </span>
+                  )}
+                </>
               )}
             </p>
           </div>

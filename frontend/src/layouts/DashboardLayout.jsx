@@ -371,7 +371,7 @@ const DashboardLayout = () => {
             <button className="mobile-toggle" onClick={() => setIsSidebarOpen(true)} title="Open Menu" aria-label="Open Menu">
               <FaBars />
             </button>
-            <div className="topbar-title-wrap" style={{ minWidth: 0, overflow: "hidden" }}>
+            <div className="topbar-title-wrap topbar-desktop-only" style={{ minWidth: 0, overflow: "hidden" }}>
               <span className="topbar-mobile-brand">
                 {user.library_name || "Library"}
               </span>
@@ -408,12 +408,19 @@ const DashboardLayout = () => {
             ) : (
               <div className="topbar-subscription-chip" style={{
                 display: "flex", alignItems: "center", gap: "6px",
-                background: darkMode ? "rgba(255,255,255,0.06)" : "#f8fafc",
-                border: darkMode ? "1px solid rgba(255,255,255,0.1)" : "1px solid #e2e8f0",
+                background: darkMode ? "rgba(16,185,129,0.12)" : "#f0fdf4",
+                border: darkMode ? "1px solid rgba(16,185,129,0.3)" : "1px solid #bbf7d0",
                 padding: "6px 14px", borderRadius: "20px", fontSize: "12px", fontWeight: 600,
-                color: darkMode ? "#cbd5e1" : "#64748b"
+                color: darkMode ? "#4ade80" : "#16a34a"
               }}>
-                <span>{getTierName(user.subscriptionTier)} Plan</span>
+                <span><strong>Free Plan</strong></span>
+                <span className="topbar-chip-dot">•</span>
+                <span style={{
+                  background: "#10b981",
+                  color: "#fff", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 700
+                }}>
+                  Forever Free
+                </span>
               </div>
             )}
 
@@ -651,15 +658,21 @@ const DashboardLayout = () => {
             <span>Attendance</span>
           </NavLink>
         )}
-        <button
-          type="button"
-          className="mobile-bottom-nav-item mobile-bottom-more-btn"
-          onClick={() => setIsSidebarOpen(true)}
-          aria-label="More Navigation Menu"
-        >
-          <FaBars className="bottom-nav-icon" />
-          <span>More</span>
-        </button>
+        {isExpired ? (
+          <span className="mobile-bottom-nav-item disabled" style={{ opacity: 0.4, cursor: "not-allowed", pointerEvents: "none" }} title="Subscription Expired">
+            <FaMoneyCheckAlt className="bottom-nav-icon" />
+            <span>Collect Fee</span>
+          </span>
+        ) : (
+          <NavLink
+            to={`${prefix}/collect-fee`}
+            className={({ isActive }) => `mobile-bottom-nav-item ${isActive ? "active" : ""}`}
+            title="Collect Fee"
+          >
+            <FaMoneyCheckAlt className="bottom-nav-icon" />
+            <span>Collect Fee</span>
+          </NavLink>
+        )}
       </nav>
     </div>
   );

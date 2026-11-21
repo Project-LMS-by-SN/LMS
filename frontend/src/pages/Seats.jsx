@@ -48,6 +48,40 @@ const Seats = () => {
   const [filterFloor, setFilterFloor] = useState("1");
   const [filterRoom, setFilterRoom] = useState("A1");
 
+  const longPressTimerRef = useRef(null);
+  const isLongPressActiveRef = useRef(false);
+
+  const startLongPress = (seat) => {
+    isLongPressActiveRef.current = false;
+    if (deleteMode) return;
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressActiveRef.current = true;
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+      handleToggleActive(seat);
+    }, 550);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleSeatClick = (seat) => {
+    if (isLongPressActiveRef.current) {
+      isLongPressActiveRef.current = false;
+      return;
+    }
+    if (deleteMode) {
+      toggleSeatSelect(seat.id);
+    } else {
+      setSelectedSeat(prev => prev?.id === seat.id ? null : seat);
+    }
+  };
+
   const [genPrefix, setGenPrefix] = useState("A");
   const [genStart, setGenStart] = useState("1");
   const [genCount, setGenCount] = useState("50");
@@ -552,7 +586,7 @@ const Seats = () => {
   };
 
   return (
-    <div className="page" style={{ background: pageBg, minHeight: "100vh" }}>
+    <div className="page" style={{ background: pageBg, minHeight: "100vh", paddingBottom: "120px" }}>
       {toast && (
         <div style={{
           position: "fixed", top: "20px", right: "20px", zIndex: 9999,
@@ -709,41 +743,44 @@ const Seats = () => {
         )}
       </div>
 
-      <div style={{ display: "flex", gap: "12px", marginBottom: "14px", alignItems: "flex-end" }}>
-        <div style={{ flex: 1 }}>
-          <label style={{ display: "block", fontSize: "12px", color: textMuted, marginBottom: "4px", fontWeight: "600" }}>Floor</label>
-          <select data-seat-filter="true" value={filterFloor} onChange={e => {
-            const newFloor = e.target.value;
-            setFilterFloor(newFloor);
-            const roomsForNewFloor = [...new Set(seats.filter(s => {
-              const sf = String(s.floor || "").trim().toLowerCase();
-              const tf = String(newFloor).trim().toLowerCase();
-              return sf === tf || sf === `floor ${tf}` || `floor ${sf}` === tf;
-            }).map(s => s.room).filter(Boolean))].sort();
-            setFilterRoom(roomsForNewFloor[0] || "A1");
-          }} style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1px solid ${border}`, background: inputBg, color: textPrimary, fontSize: "14px", fontWeight: "600", outline: "none", boxSizing: "border-box", cursor: "pointer" }}>
-            {uniqueFloors.map(f => (
-              <option key={f} value={f}>{f.toLowerCase().includes("floor") ? f : `Floor ${f}`}</option>
-            ))}
-          </select>
+      {/* Floor, Room & Search Bar */}
+      <div className="seats-filters-container">
+        <div className="seats-filters-floor-room">
+          <div style={{ flex: 1 }}>
+            <label style={{ display: "block", fontSize: "12px", color: textMuted, marginBottom: "4px", fontWeight: "600" }}>Floor</label>
+            <select data-seat-filter="true" value={filterFloor} onChange={e => {
+              const newFloor = e.target.value;
+              setFilterFloor(newFloor);
+              const roomsForNewFloor = [...new Set(seats.filter(s => {
+                const sf = String(s.floor || "").trim().toLowerCase();
+                const tf = String(newFloor).trim().toLowerCase();
+                return sf === tf || sf === `floor ${tf}` || `floor ${sf}` === tf;
+              }).map(s => s.room).filter(Boolean))].sort();
+              setFilterRoom(roomsForNewFloor[0] || "A1");
+            }} style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1px solid ${border}`, background: inputBg, color: textPrimary, fontSize: "14px", fontWeight: "600", outline: "none", boxSizing: "border-box", cursor: "pointer" }}>
+              {uniqueFloors.map(f => (
+                <option key={f} value={f}>{f.toLowerCase().includes("floor") ? f : `Floor ${f}`}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: "block", fontSize: "12px", color: textMuted, marginBottom: "4px", fontWeight: "600" }}>Room</label>
+            <select data-seat-filter="true" value={filterRoom} onChange={e => setFilterRoom(e.target.value)} style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1px solid ${border}`, background: inputBg, color: textPrimary, fontSize: "14px", fontWeight: "600", outline: "none", boxSizing: "border-box", cursor: "pointer" }}>
+              {uniqueRooms.map(r => (
+                <option key={r} value={r}>{r.toLowerCase().includes("room") ? r : `Room ${r}`}</option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div style={{ flex: 1 }}>
-          <label style={{ display: "block", fontSize: "12px", color: textMuted, marginBottom: "4px", fontWeight: "600" }}>Room</label>
-          <select data-seat-filter="true" value={filterRoom} onChange={e => setFilterRoom(e.target.value)} style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1px solid ${border}`, background: inputBg, color: textPrimary, fontSize: "14px", fontWeight: "600", outline: "none", boxSizing: "border-box", cursor: "pointer" }}>
-            {uniqueRooms.map(r => (
-              <option key={r} value={r}>{r.toLowerCase().includes("room") ? r : `Room ${r}`}</option>
-            ))}
-          </select>
-        </div>
-        <div data-seat-filter="true" style={{
+        <div className="seats-filters-search" data-seat-filter="true" style={{
           display: "flex", alignItems: "center", gap: "8px",
           background: card, border: `1px solid ${border}`, borderRadius: "10px",
-          padding: "7px 14px", flex: 1, maxWidth: "260px",
+          padding: "7px 14px",
         }}>
           <FaSearch style={{ color: textMuted, fontSize: "13px" }} />
           <input
             value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search seat number..."
+            placeholder="Search seat number (e.g. A1, B12)..."
             style={{ border: "none", outline: "none", background: "transparent", fontSize: "14px", color: textPrimary, width: "100%" }}
           />
           {search && (
@@ -757,8 +794,26 @@ const Seats = () => {
             </button>
           )}
         </div>
-        <span style={{ fontSize: "13px", color: textMuted, marginLeft: "auto" }}>
-          Showing {filteredSeats.length} of {totalCount} seats
+        <span className="seats-showing-count" style={{ fontSize: "13px", color: textMuted, marginLeft: "auto", fontWeight: 500 }}>
+          Showing <strong>{filteredSeats.length}</strong> of <strong>{totalCount}</strong> seats
+        </span>
+      </div>
+
+      {/* Simple Note in English (Mobile only) */}
+      <div className="seats-mobile-note" style={{
+        alignItems: "center",
+        gap: "10px",
+        padding: "10px 14px",
+        borderRadius: "10px",
+        background: darkMode ? "rgba(59, 130, 246, 0.1)" : "#eff6ff",
+        border: `1px solid ${darkMode ? "rgba(59, 130, 246, 0.2)" : "#bfdbfe"}`,
+        color: darkMode ? "#93c5fd" : "#1e40af",
+        fontSize: "13px",
+        marginBottom: "16px",
+      }}>
+        <FaInfoCircle style={{ color: "#3b82f6", flexShrink: 0, fontSize: "15px" }} />
+        <span>
+          <strong>Note:</strong> Tap a seat to view allocated student details. Long press (press & hold) to disable or enable a seat.
         </span>
       </div>
 
@@ -821,13 +876,16 @@ const Seats = () => {
                                   <div
                                     key={seat.id}
                                     data-seat-item="true"
-                                    onClick={() => {
-                                      if (deleteMode) { toggleSeatSelect(seat.id); }
-                                      else { setSelectedSeat(isSelected ? null : seat); }
-                                    }}
+                                    onClick={() => handleSeatClick(seat)}
+                                    onMouseDown={() => startLongPress(seat)}
+                                    onMouseUp={cancelLongPress}
+                                    onMouseLeave={() => { cancelLongPress(); setHoveredSeat(null); }}
+                                    onTouchStart={() => startLongPress(seat)}
+                                    onTouchEnd={cancelLongPress}
+                                    onTouchMove={cancelLongPress}
+                                    onContextMenu={(e) => e.preventDefault()}
                                     onMouseEnter={e => { setHoveredSeat(seat); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
                                     onMouseMove={e => setTooltipPos({ x: e.clientX, y: e.clientY })}
-                                    onMouseLeave={() => setHoveredSeat(null)}
                                     style={{
                                       height: "56px", borderRadius: "8px", display: "flex", flexDirection: "column",
                                       alignItems: "center", justifyContent: "center", gap: "2px", position: "relative",
@@ -838,6 +896,10 @@ const Seats = () => {
                                       opacity: isLoading ? 0.5 : 1,
                                       transform: isSelected ? "scale(1.08)" : "scale(1)",
                                       boxShadow: isSelected ? "0 4px 12px rgba(37,99,235,0.4)" : deleteMode && isMultiSelected ? "0 2px 8px rgba(239,68,68,0.3)" : "none",
+                                      userSelect: "none",
+                                      WebkitUserSelect: "none",
+                                      WebkitTouchCallout: "none",
+                                      touchAction: "manipulation",
                                     }}
                                   >
                                     {deleteMode && (
@@ -882,13 +944,16 @@ const Seats = () => {
                         <div
                           key={seat.id}
                           data-seat-item="true"
-                          onClick={() => {
-                            if (deleteMode) { toggleSeatSelect(seat.id); }
-                            else { setSelectedSeat(isSelected ? null : seat); }
-                          }}
+                          onClick={() => handleSeatClick(seat)}
+                          onMouseDown={() => startLongPress(seat)}
+                          onMouseUp={cancelLongPress}
+                          onMouseLeave={() => { cancelLongPress(); setHoveredSeat(null); }}
+                          onTouchStart={() => startLongPress(seat)}
+                          onTouchEnd={cancelLongPress}
+                          onTouchMove={cancelLongPress}
+                          onContextMenu={(e) => e.preventDefault()}
                           onMouseEnter={e => { setHoveredSeat(seat); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
                           onMouseMove={e => setTooltipPos({ x: e.clientX, y: e.clientY })}
-                          onMouseLeave={() => setHoveredSeat(null)}
                           style={{
                             height: "56px", borderRadius: "8px", display: "flex", flexDirection: "column",
                             alignItems: "center", justifyContent: "center", gap: "2px", position: "relative",
@@ -899,6 +964,10 @@ const Seats = () => {
                             opacity: isLoading ? 0.5 : 1,
                             transform: isSelected ? "scale(1.08)" : "scale(1)",
                             boxShadow: isSelected ? "0 4px 12px rgba(37,99,235,0.4)" : deleteMode && isMultiSelected ? "0 2px 8px rgba(239,68,68,0.3)" : "none",
+                            userSelect: "none",
+                            WebkitUserSelect: "none",
+                            WebkitTouchCallout: "none",
+                            touchAction: "manipulation",
                           }}
                         >
                           {deleteMode && (
@@ -927,83 +996,198 @@ const Seats = () => {
         )}
       </div>
 
+
       {selectedSeat && !deleteMode && (
         <div
           data-seat-bar="true"
           className="seats-floating-bar"
           style={{
-            position: "fixed", left: "50%", transform: "translateX(-50%)",
+            position: "fixed",
+            bottom: "80px",
+            left: "50%",
+            transform: "translateX(-50%)",
             background: darkMode ? "#1e293b" : "#fff",
             border: `1px solid ${border}`,
-            borderRadius: "16px", padding: "18px 24px",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
-            display: "flex", alignItems: "center", gap: "20px",
-            maxWidth: "95vw", minWidth: 0, flexWrap: "wrap",
+            borderRadius: "16px",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+            zIndex: 9999,
           }}
         >
-          <div>
-            <div style={{ fontSize: "18px", fontWeight: 800, color: textPrimary }}>Seat {selectedSeat.seat_number}</div>
-            <div style={{ fontSize: "13px", color: textMuted }}>
-              {selectedSeat.is_occupied
-                ? `Occupied · ${selectedSeat.occupied_by?.map(o => o.student_name).join(", ") || selectedSeat.occupied_shifts?.map(o => o.student_name).join(", ")}`
-                : selectedSeat.is_active === false ? "Inactive" : "Available"}
+          {/* Desktop Floating Bar */}
+          <div className="seats-bar-desktop" style={{
+            display: "flex", alignItems: "center", gap: "20px",
+            padding: "18px 24px", maxWidth: "95vw", minWidth: 0, flexWrap: "wrap",
+          }}>
+            <div>
+              <div style={{ fontSize: "18px", fontWeight: 800, color: textPrimary }}>Seat {selectedSeat.seat_number}</div>
+              <div style={{ fontSize: "13px", color: textMuted }}>
+                {selectedSeat.is_occupied
+                  ? `Occupied · ${selectedSeat.occupied_by?.map(o => o.student_name).join(", ") || selectedSeat.occupied_shifts?.map(o => o.student_name).join(", ")}`
+                  : selectedSeat.is_active === false ? "Inactive" : "Available"}
+              </div>
+              <div style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
+                {selectedSeat.floor && <span style={{ fontSize: "11px", background: darkMode ? "#334155" : "#f1f5f9", color: textMuted, padding: "2px 8px", borderRadius: "4px" }}>{selectedSeat.floor}</span>}
+                {selectedSeat.room && <span style={{ fontSize: "11px", background: darkMode ? "#334155" : "#f1f5f9", color: textMuted, padding: "2px 8px", borderRadius: "4px" }}>Room {selectedSeat.room}</span>}
+                {selectedSeat.section && <span style={{ fontSize: "11px", background: darkMode ? "#334155" : "#f1f5f9", color: textMuted, padding: "2px 8px", borderRadius: "4px" }}>Sec {selectedSeat.section}</span>}
+              </div>
             </div>
-            <div style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
-              {selectedSeat.floor && <span style={{ fontSize: "11px", background: darkMode ? "#334155" : "#f1f5f9", color: textMuted, padding: "2px 8px", borderRadius: "4px" }}>{selectedSeat.floor}</span>}
-              {selectedSeat.room && <span style={{ fontSize: "11px", background: darkMode ? "#334155" : "#f1f5f9", color: textMuted, padding: "2px 8px", borderRadius: "4px" }}>Room {selectedSeat.room}</span>}
-              {selectedSeat.section && <span style={{ fontSize: "11px", background: darkMode ? "#334155" : "#f1f5f9", color: textMuted, padding: "2px 8px", borderRadius: "4px" }}>Sec {selectedSeat.section}</span>}
+            <div style={{ display: "flex", gap: "10px", marginLeft: "auto", flexWrap: "wrap" }}>
+              {selectedSeat.is_occupied || (selectedSeat.occupied_shifts && selectedSeat.occupied_shifts.length > 0) ? (
+                <button
+                  disabled={true}
+                  title="Allocated seat cannot be disabled while assigned to a student"
+                  style={{
+                    padding: "9px 18px", borderRadius: "9px", border: "none",
+                    cursor: "not-allowed",
+                    background: darkMode ? "#334155" : "#cbd5e1",
+                    color: darkMode ? "#94a3b8" : "#64748b",
+                    fontWeight: 700, fontSize: "13px",
+                    display: "flex", alignItems: "center", gap: "7px",
+                    opacity: 0.7,
+                  }}
+                >
+                  <FaToggleOff /> Disable (Allocated)
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleToggleActive(selectedSeat)}
+                  disabled={actionLoading === selectedSeat.id}
+                  style={{
+                    padding: "9px 18px", borderRadius: "9px", border: "none", cursor: "pointer",
+                    background: selectedSeat.is_active === false ? "#22c55e" : "#f59e0b",
+                    color: "#fff", fontWeight: 700, fontSize: "13px",
+                    display: "flex", alignItems: "center", gap: "7px",
+                  }}
+                >
+                  {selectedSeat.is_active === false ? <><FaToggleOn /> Enable</> : <><FaToggleOff /> Disable</>}
+                </button>
+              )}
+              {!selectedSeat.is_occupied && (
+                <button
+                  onClick={() => handleDelete(selectedSeat)}
+                  disabled={actionLoading === selectedSeat.id}
+                  style={{
+                    padding: "9px 18px", borderRadius: "9px", border: "none", cursor: "pointer",
+                    background: "#ef4444", color: "#fff", fontWeight: 700, fontSize: "13px",
+                    display: "flex", alignItems: "center", gap: "7px",
+                  }}
+                >
+                  <FaTrash style={{ fontSize: "11px" }} /> Delete
+                </button>
+              )}
+              <button onClick={() => setSelectedSeat(null)} style={{
+                padding: "9px 12px", borderRadius: "9px", cursor: "pointer",
+                background: "transparent", border: `1px solid ${border}`, color: textMuted,
+              }}>
+                <FaTimes />
+              </button>
             </div>
           </div>
-          <div style={{ display: "flex", gap: "10px", marginLeft: "auto", flexWrap: "wrap" }}>
-            {selectedSeat.is_occupied || (selectedSeat.occupied_shifts && selectedSeat.occupied_shifts.length > 0) ? (
+
+          {/* Mobile Floating Card */}
+          <div className="seats-bar-mobile" style={{
+            display: "none", flexDirection: "column", gap: "10px",
+            padding: "16px 20px", maxWidth: "92vw", width: "420px", boxSizing: "border-box",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${border}`, paddingBottom: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <FaChair style={{ color: "#3b82f6", fontSize: "16px" }} />
+                <span style={{ fontSize: "16px", fontWeight: 800, color: textPrimary }}>Seat {selectedSeat.seat_number}</span>
+                {selectedSeat.floor && <span style={{ fontSize: "11px", background: darkMode ? "#334155" : "#f1f5f9", color: textMuted, padding: "2px 8px", borderRadius: "4px" }}>Floor {selectedSeat.floor}</span>}
+                {selectedSeat.room && <span style={{ fontSize: "11px", background: darkMode ? "#334155" : "#f1f5f9", color: textMuted, padding: "2px 8px", borderRadius: "4px" }}>Room {selectedSeat.room}</span>}
+                {selectedSeat.is_active === false && <span style={{ fontSize: "10px", background: darkMode ? "#475569" : "#e2e8f0", color: textMuted, padding: "2px 6px", borderRadius: "4px", fontWeight: 700 }}>INACTIVE</span>}
+              </div>
               <button
-                disabled={true}
-                title="Allocated seat cannot be disabled while assigned to a student"
+                onClick={() => setSelectedSeat(null)}
                 style={{
-                  padding: "9px 18px", borderRadius: "9px", border: "none",
-                  cursor: "not-allowed",
-                  background: darkMode ? "#334155" : "#cbd5e1",
-                  color: darkMode ? "#94a3b8" : "#64748b",
-                  fontWeight: 700, fontSize: "13px",
-                  display: "flex", alignItems: "center", gap: "7px",
-                  opacity: 0.7,
+                  border: "none", background: "transparent", color: textMuted, cursor: "pointer", fontSize: "16px", padding: "4px"
                 }}
+                title="Close"
               >
-                <FaToggleOff /> Disable (Allocated)
+                <FaTimes />
               </button>
+            </div>
+
+            {/* Allocated Student Details */}
+            {selectedSeat.occupied_shifts && selectedSeat.occupied_shifts.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "240px", overflowY: "auto" }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: textMuted, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Allocated Student Details
+                </div>
+                {selectedSeat.occupied_shifts.map((o, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      background: darkMode ? "#0f172a" : "#f8fafc",
+                      border: `1px solid ${border}`,
+                      borderRadius: "10px",
+                      padding: "10px 14px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, color: textPrimary, fontSize: "14px" }}>
+                        {o.student_name}
+                        <span style={{ fontSize: "12px", color: textMuted, fontWeight: 500, marginLeft: "6px" }}>({o.student_code})</span>
+                      </div>
+                      {o.mobile && (
+                        <div style={{ fontSize: "12px", color: textMuted, marginTop: "2px" }}>
+                          Mobile: <strong style={{ color: textPrimary }}>{o.mobile}</strong>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div style={{
+                        fontSize: "11px", fontWeight: 700,
+                        background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
+                        color: "#2563eb", padding: "3px 8px", borderRadius: "6px", display: "inline-block"
+                      }}>
+                        {o.shift_name}
+                      </div>
+                      <div style={{ fontSize: "11px", color: textMuted, marginTop: "3px" }}>
+                        {formatTime(o.start_time, "12hr")} - {formatTime(o.end_time, "12hr")}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : selectedSeat.occupied_by && selectedSeat.occupied_by.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: textMuted, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Allocated Student Details
+                </div>
+                {selectedSeat.occupied_by.map((o, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      background: darkMode ? "#0f172a" : "#f8fafc",
+                      border: `1px solid ${border}`,
+                      borderRadius: "10px",
+                      padding: "10px 14px",
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, color: textPrimary, fontSize: "14px" }}>
+                      {o.student_name}
+                      {o.student_code && <span style={{ fontSize: "12px", color: textMuted, marginLeft: "6px" }}>({o.student_code})</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
-              <button
-                onClick={() => handleToggleActive(selectedSeat)}
-                disabled={actionLoading === selectedSeat.id}
-                style={{
-                  padding: "9px 18px", borderRadius: "9px", border: "none", cursor: "pointer",
-                  background: selectedSeat.is_active === false ? "#22c55e" : "#f59e0b",
-                  color: "#fff", fontWeight: 700, fontSize: "13px",
-                  display: "flex", alignItems: "center", gap: "7px",
-                }}
-              >
-                {selectedSeat.is_active === false ? <><FaToggleOn /> Enable</> : <><FaToggleOff /> Disable</>}
-              </button>
+              <div style={{
+                textAlign: "center", padding: "16px",
+                background: darkMode ? "#0f172a" : "#f8fafc",
+                border: `1px solid ${border}`, borderRadius: "10px",
+                color: textMuted, fontSize: "13px",
+              }}>
+                {selectedSeat.is_active === false
+                  ? "This seat is currently Inactive (Disabled). Long press to enable."
+                  : "Vacant / Available (No student allocated to this seat)."}
+              </div>
             )}
-            {!selectedSeat.is_occupied && (
-              <button
-                onClick={() => handleDelete(selectedSeat)}
-                disabled={actionLoading === selectedSeat.id}
-                style={{
-                  padding: "9px 18px", borderRadius: "9px", border: "none", cursor: "pointer",
-                  background: "#ef4444", color: "#fff", fontWeight: 700, fontSize: "13px",
-                  display: "flex", alignItems: "center", gap: "7px",
-                }}
-              >
-                <FaTrash style={{ fontSize: "11px" }} /> Delete
-              </button>
-            )}
-            <button onClick={() => setSelectedSeat(null)} style={{
-              padding: "9px 12px", borderRadius: "9px", cursor: "pointer",
-              background: "transparent", border: `1px solid ${border}`, color: textMuted,
-            }}>
-              <FaTimes />
-            </button>
           </div>
         </div>
       )}
@@ -1314,6 +1498,11 @@ const Seats = () => {
           z-index: 1001;
         }
         @media (max-width: 768px) {
+          .mobile-bottom-spacer {
+            display: block !important;
+            height: 140px !important;
+            width: 100% !important;
+          }
           .seats-floating-bar {
             bottom: 72px;
             width: calc(100vw - 24px);

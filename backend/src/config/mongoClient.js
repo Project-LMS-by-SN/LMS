@@ -584,7 +584,7 @@ const createDelegate = (modelName, Model) => {
           if (typeof doc.markModified === "function") doc.markModified(k);
         }
       }
-      await doc.save();
+      await doc.save({ validateModifiedOnly: true });
       return applySelectAndInclude(modelName, doc, args.select, args.include);
     },
 

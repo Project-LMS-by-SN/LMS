@@ -76,6 +76,7 @@ const sendEmail = async ({ to, subject, html, text, from }) => {
 
   // 1. Try Gmail / SMTP via Nodemailer
   const transporter = getTransporter();
+  let smtpError = null;
   if (transporter) {
     try {
       const info = await transporter.sendMail({
@@ -87,6 +88,7 @@ const sendEmail = async ({ to, subject, html, text, from }) => {
       });
       return { success: true, messageId: info.messageId };
     } catch (smtpErr) {
+      smtpError = smtpErr;
       console.error("Nodemailer SMTP delivery failed:", smtpErr.message);
       // Fall through to try Resend if configured
     }
@@ -111,6 +113,10 @@ const sendEmail = async ({ to, subject, html, text, from }) => {
       console.error("Resend delivery failed:", resendErr.message);
       throw resendErr;
     }
+  }
+
+  if (smtpError) {
+    throw new Error(`Email delivery failed: ${smtpError.message}`);
   }
 
   if (!transporter && !resendClient) {

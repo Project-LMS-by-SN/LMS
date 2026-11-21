@@ -19,6 +19,7 @@ import {
   FaExternalLinkAlt,
   FaUserGraduate,
   FaUserCheck,
+  FaEdit,
 } from "react-icons/fa";
 import QRCodeLib from "qrcode";
 import { downloadQrPoster } from "../utils/qrPoster";
@@ -55,6 +56,13 @@ const Settings = () => {
   const [staffNewPw, setStaffNewPw] = useState("");
   const [staffPwLoading, setStaffPwLoading] = useState(false);
   const [staffPwMsg, setStaffPwMsg] = useState(null);
+
+  // Staff edit details states
+  const [editingStaff, setEditingStaff] = useState(null); // staff object being edited
+  const [editStaffName, setEditStaffName] = useState("");
+  const [editStaffEmail, setEditStaffEmail] = useState("");
+  const [editStaffLoading, setEditStaffLoading] = useState(false);
+  const [editStaffMsg, setEditStaffMsg] = useState(null);
 
   // QR Code states
   const [qrInfo, setQrInfo] = useState(null);
@@ -281,14 +289,14 @@ const Settings = () => {
   };
 
   const getDaysLeft = () => {
-    if (!subscriptionExpiry) return null;
+    if (currentTier === "FREE" || !subscriptionExpiry) return null;
     const exp = new Date(subscriptionExpiry);
     const now = new Date();
     return Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
   };
 
   const daysLeft = getDaysLeft();
-  const isExpired = daysLeft !== null && daysLeft <= 0;
+  const isExpired = currentTier !== "FREE" && daysLeft !== null && daysLeft <= 0;
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
@@ -424,6 +432,39 @@ const Settings = () => {
       setStaffPwMsg({ type: "error", text: err.response?.data?.message || "Failed to change password." });
     } finally {
       setStaffPwLoading(false);
+    }
+  };
+
+  const openEditStaff = (member) => {
+    setEditingStaff(member);
+    setEditStaffName(member.name || "");
+    setEditStaffEmail(member.email || "");
+    setEditStaffMsg(null);
+    setChangePwStaff(null);
+  };
+
+  const handleUpdateStaff = async (e) => {
+    e.preventDefault();
+    if (!editStaffName.trim() || !editStaffEmail.trim()) {
+      setEditStaffMsg({ type: "error", text: "Name and email are required" });
+      return;
+    }
+    setEditStaffLoading(true);
+    setEditStaffMsg(null);
+    try {
+      const res = await api.put(`/users/staff/${editingStaff.id}`, {
+        name: editStaffName.trim(),
+        email: editStaffEmail.trim(),
+      });
+      if (res.data.success) {
+        setStaff(prev => prev.map(s => s.id === editingStaff.id ? { ...s, name: editStaffName.trim(), email: editStaffEmail.trim() } : s));
+        setStaffMsg({ type: "success", text: "Staff updated successfully." });
+        setEditingStaff(null);
+      }
+    } catch (err) {
+      setEditStaffMsg({ type: "error", text: err.response?.data?.message || "Failed to update staff" });
+    } finally {
+      setEditStaffLoading(false);
     }
   };
 
@@ -598,16 +639,34 @@ const Settings = () => {
               </div>
               {profile?.role === "OWNER" && (
                 <a href="/subscription" style={{
-                  background: currentTier === "FREE" || isExpired ? "#f59e0b" : "#3b82f6",
+                  background: currentTier === "FREE" ? "#2563eb" : isExpired ? "#dc2626" : "#3b82f6",
                   color: "#fff", textDecoration: "none", padding: "8px 16px",
                   borderRadius: "10px", fontWeight: 600, fontSize: "13px", transition: "all 0.2s"
                 }}>
-                  {currentTier === "FREE" ? "Choose Plan" : isExpired ? "Renew Now" : "Renew / Upgrade"}
+                  {currentTier === "FREE" ? "Upgrade Plan" : isExpired ? "Renew Now" : "Renew / Upgrade"}
                 </a>
               )}
             </div>
 
-            {subscriptionExpiry && (
+            {currentTier === "FREE" ? (
+              <div style={{
+                display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap",
+                padding: "12px 16px", borderRadius: "10px", marginBottom: "16px",
+                background: "rgba(16,185,129,0.08)",
+                border: "1px solid rgba(16,185,129,0.2)",
+              }}>
+                <FaCalendarAlt style={{ color: "#16a34a", fontSize: "16px" }} />
+                <div style={{ fontSize: "13px", color: textSecondary }}>
+                  <span style={{ fontWeight: 600, color: textPrimary }}>Validity:</span> Lifetime (Never Expires)
+                </div>
+                <span style={{
+                  fontSize: "12px", fontWeight: 700, padding: "3px 10px", borderRadius: "20px",
+                  background: "rgba(16,185,129,0.12)", color: "#16a34a",
+                }}>
+                  Forever Free
+                </span>
+              </div>
+            ) : subscriptionExpiry && (
               <div style={{
                 display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap",
                 padding: "12px 16px", borderRadius: "10px", marginBottom: "16px",
@@ -1143,86 +1202,266 @@ const Settings = () => {
               No staff members registered. {staffLimit === 0 ? "Upgrade your plan to invite staff." : "Click 'Add Staff' above to invite your first staff member."}
             </div>
           ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-                <thead>
-                  <tr style={{ borderBottom: `2px solid ${cardBorder}`, textAlign: "left" }}>
-                    <th style={{ padding: "10px", color: textPrimary }}>Name</th>
-                    <th style={{ padding: "10px", color: textPrimary }}>Email</th>
-                    <th style={{ padding: "10px", color: textPrimary }}>Subscription Expiry</th>
-                    <th style={{ padding: "10px", color: textPrimary }}>Last Login</th>
-                    <th style={{ padding: "10px", color: textPrimary, textAlign: "right" }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {staff.map(member => {
-                    const staffExpDate = member.subscriptionExpiry ? formatDate(member.subscriptionExpiry) : "N/A";
-                    const staffDaysLeft = member.subscriptionExpiry ? Math.ceil((new Date(member.subscriptionExpiry) - new Date()) / (1000 * 60 * 60 * 24)) : null;
-                    return (
-                    <React.Fragment key={member.id}>
-                      <tr style={{ borderBottom: changePwStaff?.id === member.id ? "none" : `1px solid ${cardBorder}` }}>
-                        <td style={{ padding: "10px", color: textPrimary, fontWeight: 500 }}>{member.name}</td>
-                        <td style={{ padding: "10px", color: textSecondary }}>{member.email}</td>
-                        <td style={{ padding: "10px" }}>
-                          <div style={{ fontSize: "13px", fontWeight: 600, color: textPrimary }}>{staffExpDate}</div>
-                          {staffDaysLeft !== null && (
-                            <span style={{
-                              fontSize: "11px", fontWeight: 700,
-                              color: staffDaysLeft <= 0 ? "#dc2626" : staffDaysLeft <= 7 ? "#d97706" : "#16a34a"
-                            }}>
-                              {staffDaysLeft <= 0 ? "Expired" : `${staffDaysLeft}d left`}
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ padding: "10px", color: textSecondary }}>{member.lastLogin ? new Date(member.lastLogin).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }) : "Never"}</td>
-                        <td style={{ padding: "10px", textAlign: "right", display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-                          <button
-                            type="button"
-                            onClick={() => { setChangePwStaff(changePwStaff?.id === member.id ? null : member); setStaffNewPw(""); setStaffPwMsg(null); }}
-                            style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontSize: "14px", padding: "4px" }}
-                            title="Change Password"
-                          >
-                            <FaLock />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteStaff(member.id)}
-                            style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontSize: "14px", padding: "4px" }}
-                            title="Delete Staff"
-                          >
-                            <FaTrash />
-                          </button>
-                        </td>
-                      </tr>
-                      {changePwStaff?.id === member.id && (
-                        <tr style={{ borderBottom: `1px solid ${cardBorder}`, background: darkMode ? "rgba(37,99,235,0.07)" : "#eff6ff" }}>
-                          <td colSpan={5} style={{ padding: "14px 10px" }}>
-                            <form onSubmit={handleChangeStaffPassword} style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-                              <span style={{ color: textSecondary, fontSize: "13px", fontWeight: 600 }}>New password for {member.name}:</span>
-                              <input
-                                type="password"
-                                value={staffNewPw}
-                                onChange={e => setStaffNewPw(e.target.value)}
-                                placeholder="Min 8 chars & 1 number"
-                                required
-                                minLength={8}
-                                style={{ padding: "6px 10px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: darkMode ? "#1e293b" : "#fff", color: textPrimary, fontSize: "13px", width: "190px" }}
-                              />
-                              <button type="submit" className="primary-btn" disabled={staffPwLoading} style={{ padding: "6px 14px", fontSize: "13px" }}>
-                                {staffPwLoading ? "Saving..." : "Set Password"}
-                              </button>
-                              <button type="button" className="secondary-btn" onClick={() => { setChangePwStaff(null); setStaffPwMsg(null); }} style={{ padding: "6px 14px", fontSize: "13px" }}>Cancel</button>
-                              {staffPwMsg && <span style={{ fontSize: "13px", color: staffPwMsg.type === "success" ? "#16a34a" : "#dc2626", fontWeight: 500 }}>{staffPwMsg.text}</span>}
-                            </form>
+            <>
+              {/* Desktop Table View */}
+              <div className="staff-desktop-table" style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${cardBorder}`, textAlign: "left" }}>
+                      <th style={{ padding: "10px", color: textPrimary }}>Name</th>
+                      <th style={{ padding: "10px", color: textPrimary }}>Email</th>
+                      <th style={{ padding: "10px", color: textPrimary }}>Subscription Expiry</th>
+                      <th style={{ padding: "10px", color: textPrimary }}>Last Login</th>
+                      <th style={{ padding: "10px", color: textPrimary, textAlign: "right" }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staff.map(member => {
+                      const staffExpDate = member.subscriptionExpiry ? formatDate(member.subscriptionExpiry) : "N/A";
+                      const staffDaysLeft = member.subscriptionExpiry ? Math.ceil((new Date(member.subscriptionExpiry) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+                      return (
+                      <React.Fragment key={member.id}>
+                        <tr style={{ borderBottom: (changePwStaff?.id === member.id || editingStaff?.id === member.id) ? "none" : `1px solid ${cardBorder}` }}>
+                          <td style={{ padding: "10px", color: textPrimary, fontWeight: 500 }}>{member.name}</td>
+                          <td style={{ padding: "10px", color: textSecondary }}>{member.email}</td>
+                          <td style={{ padding: "10px" }}>
+                            <div style={{ fontSize: "13px", fontWeight: 600, color: textPrimary }}>{staffExpDate}</div>
+                            {staffDaysLeft !== null && (
+                              <span style={{
+                                fontSize: "11px", fontWeight: 700,
+                                color: staffDaysLeft <= 0 ? "#dc2626" : staffDaysLeft <= 7 ? "#d97706" : "#16a34a"
+                              }}>
+                                {staffDaysLeft <= 0 ? "Expired" : `${staffDaysLeft}d left`}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: "10px", color: textSecondary }}>{member.lastLogin ? new Date(member.lastLogin).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }) : "Never"}</td>
+                          <td style={{ padding: "10px", textAlign: "right", display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                            <button
+                              type="button"
+                              onClick={() => openEditStaff(editingStaff?.id === member.id ? null : member)}
+                              style={{ background: "none", border: "none", color: "#3b82f6", cursor: "pointer", fontSize: "14px", padding: "4px" }}
+                              title="Edit Staff Details"
+                            >
+                              <FaEdit />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setChangePwStaff(changePwStaff?.id === member.id ? null : member); setStaffNewPw(""); setStaffPwMsg(null); }}
+                              style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontSize: "14px", padding: "4px" }}
+                              title="Change Password"
+                            >
+                              <FaLock />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteStaff(member.id)}
+                              style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontSize: "14px", padding: "4px" }}
+                              title="Delete Staff"
+                            >
+                              <FaTrash />
+                            </button>
                           </td>
                         </tr>
+                        {editingStaff?.id === member.id && (
+                          <tr style={{ borderBottom: `1px solid ${cardBorder}`, background: darkMode ? "rgba(37,99,235,0.07)" : "#eff6ff" }}>
+                            <td colSpan={5} style={{ padding: "14px 10px" }}>
+                              <form onSubmit={handleUpdateStaff} style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                                <span style={{ color: textSecondary, fontSize: "13px", fontWeight: 600 }}>Edit details:</span>
+                                <input
+                                  type="text"
+                                  value={editStaffName}
+                                  onChange={e => setEditStaffName(e.target.value)}
+                                  placeholder="Staff Name"
+                                  required
+                                  style={{ padding: "6px 10px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: darkMode ? "#1e293b" : "#fff", color: textPrimary, fontSize: "13px", width: "160px" }}
+                                />
+                                <input
+                                  type="email"
+                                  value={editStaffEmail}
+                                  onChange={e => setEditStaffEmail(e.target.value)}
+                                  placeholder="Staff Email"
+                                  required
+                                  style={{ padding: "6px 10px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: darkMode ? "#1e293b" : "#fff", color: textPrimary, fontSize: "13px", width: "190px" }}
+                                />
+                                <button type="submit" className="primary-btn" disabled={editStaffLoading} style={{ padding: "6px 14px", fontSize: "13px" }}>
+                                  {editStaffLoading ? "Saving..." : "Save Changes"}
+                                </button>
+                                <button type="button" className="secondary-btn" onClick={() => setEditingStaff(null)} style={{ padding: "6px 14px", fontSize: "13px" }}>Cancel</button>
+                                {editStaffMsg && <span style={{ fontSize: "13px", color: editStaffMsg.type === "success" ? "#16a34a" : "#dc2626", fontWeight: 500 }}>{editStaffMsg.text}</span>}
+                              </form>
+                            </td>
+                          </tr>
+                        )}
+                        {changePwStaff?.id === member.id && (
+                          <tr style={{ borderBottom: `1px solid ${cardBorder}`, background: darkMode ? "rgba(37,99,235,0.07)" : "#eff6ff" }}>
+                            <td colSpan={5} style={{ padding: "14px 10px" }}>
+                              <form onSubmit={handleChangeStaffPassword} style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                                <span style={{ color: textSecondary, fontSize: "13px", fontWeight: 600 }}>New password for {member.name}:</span>
+                                <input
+                                  type="password"
+                                  value={staffNewPw}
+                                  onChange={e => setStaffNewPw(e.target.value)}
+                                  placeholder="Min 8 chars & 1 number"
+                                  required
+                                  minLength={8}
+                                  style={{ padding: "6px 10px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: darkMode ? "#1e293b" : "#fff", color: textPrimary, fontSize: "13px", width: "190px" }}
+                                />
+                                <button type="submit" className="primary-btn" disabled={staffPwLoading} style={{ padding: "6px 14px", fontSize: "13px" }}>
+                                  {staffPwLoading ? "Saving..." : "Set Password"}
+                                </button>
+                                <button type="button" className="secondary-btn" onClick={() => { setChangePwStaff(null); setStaffPwMsg(null); }} style={{ padding: "6px 14px", fontSize: "13px" }}>Cancel</button>
+                                {staffPwMsg && <span style={{ fontSize: "13px", color: staffPwMsg.type === "success" ? "#16a34a" : "#dc2626", fontWeight: 500 }}>{staffPwMsg.text}</span>}
+                              </form>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile View: Staff Cards */}
+              <div className="staff-mobile-cards">
+                {staff.map((member) => {
+                  const staffExpDate = member.subscriptionExpiry ? formatDate(member.subscriptionExpiry) : "N/A";
+                  const staffDaysLeft = member.subscriptionExpiry ? Math.ceil((new Date(member.subscriptionExpiry) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+                  const isEditingThis = editingStaff?.id === member.id;
+                  const isChangingPwThis = changePwStaff?.id === member.id;
+
+                  return (
+                    <div key={member.id} className="staff-card-item">
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <div style={{
+                            width: "38px", height: "38px", borderRadius: "10px",
+                            background: darkMode ? "rgba(59, 130, 246, 0.15)" : "#eff6ff",
+                            color: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: "15px", fontWeight: 700, flexShrink: 0
+                          }}>
+                            {member.name ? member.name.charAt(0).toUpperCase() : "S"}
+                          </div>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: textPrimary }}>
+                              {member.name}
+                            </h4>
+                            <span style={{ fontSize: "12px", color: textSecondary }}>
+                              {member.email}
+                            </span>
+                          </div>
+                        </div>
+
+                        {staffDaysLeft !== null && (
+                          <span style={{
+                            fontSize: "10.5px", fontWeight: 700, padding: "2px 8px", borderRadius: "999px",
+                            background: staffDaysLeft <= 0 ? "rgba(239, 68, 68, 0.12)" : (staffDaysLeft <= 7 ? "rgba(245, 158, 11, 0.12)" : "rgba(34, 197, 94, 0.12)"),
+                            color: staffDaysLeft <= 0 ? "#dc2626" : (staffDaysLeft <= 7 ? "#d97706" : "#16a34a"),
+                            border: `1px solid ${staffDaysLeft <= 0 ? "rgba(239, 68, 68, 0.3)" : (staffDaysLeft <= 7 ? "rgba(245, 158, 11, 0.3)" : "rgba(34, 197, 94, 0.3)")}`
+                          }}>
+                            {staffDaysLeft <= 0 ? "Expired" : `${staffDaysLeft}d left`}
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{
+                        background: darkMode ? "#0f172a" : "#f8fafc",
+                        border: `1px solid ${cardBorder}`,
+                        borderRadius: "10px",
+                        padding: "8px 12px",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        fontSize: "12px",
+                        color: textSecondary
+                      }}>
+                        <span>Expiry: <strong style={{ color: textPrimary }}>{staffExpDate}</strong></span>
+                        <span>Last Login: <strong style={{ color: textPrimary }}>{member.lastLogin ? new Date(member.lastLogin).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Never"}</strong></span>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="staff-card-actions">
+                        <button
+                          type="button"
+                          className="edit-btn"
+                          onClick={() => openEditStaff(isEditingThis ? null : member)}
+                        >
+                          <FaEdit /> {isEditingThis ? "Close" : "Edit"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          onClick={() => { setChangePwStaff(isChangingPwThis ? null : member); setStaffNewPw(""); setStaffPwMsg(null); }}
+                        >
+                          <FaLock /> {isChangingPwThis ? "Close" : "Password"}
+                        </button>
+                        <button
+                          type="button"
+                          className="delete-btn"
+                          onClick={() => handleDeleteStaff(member.id)}
+                        >
+                          <FaTrash /> Delete
+                        </button>
+                      </div>
+
+                      {/* Mobile Inline Edit Form */}
+                      {isEditingThis && (
+                        <form onSubmit={handleUpdateStaff} style={{ marginTop: "10px", padding: "12px", borderRadius: "10px", background: darkMode ? "rgba(37,99,235,0.08)" : "#eff6ff", border: `1px solid ${cardBorder}`, display: "flex", flexDirection: "column", gap: "10px" }}>
+                          <h5 style={{ margin: 0, fontSize: "13px", fontWeight: 700, color: textPrimary }}>Edit Staff Details</h5>
+                          <input
+                            type="text"
+                            value={editStaffName}
+                            onChange={e => setEditStaffName(e.target.value)}
+                            placeholder="Staff Name"
+                            required
+                            style={{ padding: "8px 10px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: darkMode ? "#1e293b" : "#fff", color: textPrimary, fontSize: "14px" }}
+                          />
+                          <input
+                            type="email"
+                            value={editStaffEmail}
+                            onChange={e => setEditStaffEmail(e.target.value)}
+                            placeholder="Staff Email"
+                            required
+                            style={{ padding: "8px 10px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: darkMode ? "#1e293b" : "#fff", color: textPrimary, fontSize: "14px" }}
+                          />
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button type="submit" className="primary-btn" disabled={editStaffLoading} style={{ flex: 1, padding: "8px 12px", fontSize: "13px" }}>
+                              {editStaffLoading ? "Saving..." : "Save Changes"}
+                            </button>
+                            <button type="button" className="secondary-btn" onClick={() => setEditingStaff(null)} style={{ padding: "8px 12px", fontSize: "13px" }}>Cancel</button>
+                          </div>
+                          {editStaffMsg && <span style={{ fontSize: "12.5px", color: editStaffMsg.type === "success" ? "#16a34a" : "#dc2626", fontWeight: 600 }}>{editStaffMsg.text}</span>}
+                        </form>
                       )}
-                    </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+
+                      {/* Mobile Inline Password Form */}
+                      {isChangingPwThis && (
+                        <form onSubmit={handleChangeStaffPassword} style={{ marginTop: "10px", padding: "12px", borderRadius: "10px", background: darkMode ? "rgba(37,99,235,0.08)" : "#eff6ff", border: `1px solid ${cardBorder}`, display: "flex", flexDirection: "column", gap: "10px" }}>
+                          <h5 style={{ margin: 0, fontSize: "13px", fontWeight: 700, color: textPrimary }}>Set New Password</h5>
+                          <input
+                            type="password"
+                            value={staffNewPw}
+                            onChange={e => setStaffNewPw(e.target.value)}
+                            placeholder="Min 8 chars & 1 number"
+                            required
+                            minLength={8}
+                            style={{ padding: "8px 10px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: darkMode ? "#1e293b" : "#fff", color: textPrimary, fontSize: "14px" }}
+                          />
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button type="submit" className="primary-btn" disabled={staffPwLoading} style={{ flex: 1, padding: "8px 12px", fontSize: "13px" }}>
+                              {staffPwLoading ? "Saving..." : "Set Password"}
+                            </button>
+                            <button type="button" className="secondary-btn" onClick={() => { setChangePwStaff(null); setStaffPwMsg(null); }} style={{ padding: "8px 12px", fontSize: "13px" }}>Cancel</button>
+                          </div>
+                          {staffPwMsg && <span style={{ fontSize: "12.5px", color: staffPwMsg.type === "success" ? "#16a34a" : "#dc2626", fontWeight: 600 }}>{staffPwMsg.text}</span>}
+                        </form>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}

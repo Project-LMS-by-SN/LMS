@@ -1026,6 +1026,7 @@ const Admission = () => {
         </div>
       </form>
 
+
       {/* Online QR Applications Modal */}
       {showRequestsModal && (
         <div style={{

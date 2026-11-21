@@ -55,7 +55,7 @@ const Dashboard = () => {
   };
 
   const getDaysRemaining = () => {
-    if (!user.subscriptionExpiry) return null;
+    if (user.subscriptionTier === "FREE" || !user.subscriptionExpiry) return null;
     const expiry = new Date(user.subscriptionExpiry);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -65,8 +65,8 @@ const Dashboard = () => {
   };
 
   const daysLeft = getDaysRemaining();
-  const isExpired = daysLeft !== null && daysLeft <= 0;
-  const isExpiringSoon = daysLeft !== null && daysLeft > 0 && daysLeft <= 7 && !user.pendingTier;
+  const isExpired = user.subscriptionTier !== "FREE" && daysLeft !== null && daysLeft <= 0;
+  const isExpiringSoon = user.subscriptionTier !== "FREE" && daysLeft !== null && daysLeft > 0 && daysLeft <= 7 && !user.pendingTier;
 
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
   const [selectedShift, setSelectedShift] = useState(null);
@@ -203,7 +203,7 @@ const Dashboard = () => {
             );
           })()}
         </div>
-        <div className="welcome-right welcome-actions" style={{ display: 'flex', gap: '10px' }}>
+        <div className="welcome-right welcome-actions">
           {isExpired ? (
             <>
               <button
@@ -367,7 +367,7 @@ const Dashboard = () => {
         <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <FaThLarge style={{ color: '#3b82f6', fontSize: '16px' }} /> Quick Actions
         </h3>
-        <div className="responsive-grid-4 quick-actions-grid" style={{ display: 'grid', gap: '16px' }}>
+        <div className="quick-actions-grid">
           {isOwner && (
             <Link to={`${prefix}/students`} style={{ textDecoration: 'none' }}>
               <div className="quick-action-card" style={{ background: darkMode ? '#1e293b' : '#f8fafc', border: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : '#e2e8f0'}`, borderRadius: '12px', padding: '20px', cursor: 'pointer', transition: 'all 0.15s' }}>
@@ -385,7 +385,7 @@ const Dashboard = () => {
                 <FaUserPlus />
               </div>
               <h4 style={{ fontSize: '14px', fontWeight: 600, color: darkMode ? '#f8fafc' : '#1e293b', margin: '0 0 4px 0' }}>Add Student</h4>
-              <p style={{ fontSize: '12px', color: darkMode ? '#94a3b8' : '#64748b', margin: 0 }}>Register a new member</p>
+              <p style={{ fontSize: '12px', color: darkMode ? '#94a3b8' : '#64748b', margin: 0 }}>Register new member</p>
             </div>
           </Link>
           {isOwner && (
@@ -395,7 +395,7 @@ const Dashboard = () => {
                   <FaChair />
                 </div>
                 <h4 style={{ fontSize: '14px', fontWeight: 600, color: darkMode ? '#f8fafc' : '#1e293b', margin: '0 0 4px 0' }}>Seat Layout</h4>
-                <p style={{ fontSize: '12px', color: darkMode ? '#94a3b8' : '#64748b', margin: 0 }}>Allocate & customize layout</p>
+                <p style={{ fontSize: '12px', color: darkMode ? '#94a3b8' : '#64748b', margin: 0 }}>Allocate & manage</p>
               </div>
             </Link>
           )}
@@ -405,7 +405,7 @@ const Dashboard = () => {
                 <FaUserCheck />
               </div>
               <h4 style={{ fontSize: '14px', fontWeight: 600, color: darkMode ? '#f8fafc' : '#1e293b', margin: '0 0 4px 0' }}>Collect Fees</h4>
-              <p style={{ fontSize: '12px', color: darkMode ? '#94a3b8' : '#64748b', margin: 0 }}>Make payment</p>
+              <p style={{ fontSize: '12px', color: darkMode ? '#94a3b8' : '#64748b', margin: 0 }}>Record fee payment</p>
             </div>
           </Link>
         </div>
