@@ -455,7 +455,7 @@ const CollectFee = () => {
   const inputBg = darkMode ? "#0f172a" : "#ffffff";
 
   return (
-    <div className="page" style={{ background: pageBg, minHeight: "100vh", paddingBottom: "120px" }}>
+    <div className="page collect-fee-page" style={{ background: pageBg, minHeight: "100vh" }}>
       {/* Toast Notification */}
       {toast && (
         <div
@@ -486,6 +486,7 @@ const CollectFee = () => {
       {/* Seat Reassignment Prompt Banner */}
       {seatAlert && (
         <div
+          className="collect-seat-alert-banner"
           style={{
             background: darkMode ? "rgba(245, 158, 11, 0.14)" : "#fffbeb",
             border: "1px solid #f59e0b",
@@ -549,7 +550,7 @@ const CollectFee = () => {
 
       <div className="collect-fee-layout" style={{ display: "grid", gap: "20px", alignItems: "start" }}>
         {/* Left Section: Collect Payment Form */}
-        <div style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "14px", padding: "24px" }}>
+        <div className="collect-fee-card collect-fee-form-card" style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "14px", padding: "24px" }}>
           <h3 style={{ fontSize: "16px", fontWeight: 700, color: textPrimary, marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
             <FaMoneyBillWave style={{ color: "#22c55e" }} /> Fee Collection Section
           </h3>
@@ -648,11 +649,14 @@ const CollectFee = () => {
                   ? { bg: "#fee2e2", text: "#b91c1c" }
                   : { bg: "#f1f5f9", text: "#475569" };
               return (
-                <div style={{
-                  background: darkMode ? "rgba(59, 130, 246, 0.1)" : "#eff6ff",
-                  border: `1px solid ${darkMode ? "rgba(59, 130, 246, 0.2)" : "#bfdbfe"}`,
-                  borderRadius: "12px", padding: "14px 18px", marginBottom: "20px",
-                }}>
+                <div
+                  className="collect-student-summary-card"
+                  style={{
+                    background: darkMode ? "rgba(59, 130, 246, 0.1)" : "#eff6ff",
+                    border: `1px solid ${darkMode ? "rgba(59, 130, 246, 0.2)" : "#bfdbfe"}`,
+                    borderRadius: "12px", padding: "14px 18px", marginBottom: "20px",
+                  }}
+                >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", gap: "8px", flexWrap: "wrap" }}>
                     <div style={{ fontSize: "15px", fontWeight: 700, color: textPrimary, display: "flex", alignItems: "center", gap: "6px" }}>
                       <FaUserCheck style={{ color: "#3b82f6" }} /> {selectedStudent.full_name}
@@ -667,7 +671,7 @@ const CollectFee = () => {
                     </div>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", fontSize: "12px", color: textMuted }}>
+                  <div className="collect-student-summary-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", fontSize: "12px", color: textMuted }}>
                     <div>
                       <span style={{ fontWeight: 600 }}>Mobile:</span> {selectedStudent.mobile}
                     </div>
@@ -689,7 +693,7 @@ const CollectFee = () => {
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px", paddingTop: "8px", borderTop: `1px solid ${border}` }}>
+                  <div className="collect-student-summary-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px", paddingTop: "8px", borderTop: `1px solid ${border}` }}>
                     <span style={{ fontSize: "12px", color: textMuted }}>
                       Plan End Date: <strong style={{ color: textPrimary }}>{endDateStr || "N/A"}</strong>
                       {endDateStr && (() => {
@@ -714,12 +718,12 @@ const CollectFee = () => {
 
             {/* Payment Type & Fee Plan Selector */}
             {selectedStudent && (
-              <div style={{ display: "grid", gridTemplateColumns: studentValidity ? "1fr" : "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
+              <div className={studentValidity ? "" : "responsive-grid-1-1"} style={{ display: "grid", gridTemplateColumns: studentValidity ? "1fr" : "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
                 <div>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: textMuted, marginBottom: "6px" }}>
                     Payment For <span style={{ color: "#ef4444" }}>*</span>
                   </label>
-                  <div style={{ display: "flex", gap: "10px" }}>
+                  <div className="collect-fee-type-btn-group" style={{ display: "flex", gap: "10px" }}>
                     <button
                       type="button"
                       onClick={() => handleCollectTypeChange("fee")}
@@ -815,7 +819,7 @@ const CollectFee = () => {
                     return (
                       <div style={{ marginTop: "6px" }}>
                         {renewalPlanFee > 0 && studentValidity && (
-                          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "4px" }}>
+                          <div className="collect-due-quick-btns" style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "4px" }}>
                             <button
                               type="button"
                               onClick={() => {
@@ -976,6 +980,7 @@ const CollectFee = () => {
 
             <button
               type="submit"
+              className="collect-fee-submit-btn"
               disabled={submitting || validityLoading}
               style={{
                 width: "100%", padding: "12px", borderRadius: "10px", fontSize: "15px", fontWeight: 700,
@@ -990,7 +995,7 @@ const CollectFee = () => {
         </div>
 
         {/* Right Section: Last 5 Payments */}
-        <div style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "14px", padding: "24px", marginBottom: "24px" }}>
+        <div className="collect-fee-card collect-fee-history-card" style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "14px", padding: "24px", marginBottom: "24px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <h3 style={{ fontSize: "16px", fontWeight: 700, color: textPrimary, display: "flex", alignItems: "center", gap: "8px" }}>
               <FaHistory style={{ color: "#3b82f6" }} /> Last 5 Recent Payments
@@ -1009,6 +1014,7 @@ const CollectFee = () => {
               {recentPayments.map((p) => (
                 <div
                   key={p.id}
+                  className="collect-recent-payment-card"
                   style={{
                     background: darkMode ? "#0f172a" : "#f8fafc",
                     border: `1px solid ${border}`,

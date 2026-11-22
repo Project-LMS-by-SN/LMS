@@ -3515,11 +3515,77 @@ body.dark .time-24-subtext {
     font-size: 22px !important;
   }
 
-  /* Collect Fee Layout */
+  /* Collect Fee Layout & Mobile Responsive System */
   .collect-fee-layout {
     grid-template-columns: 1fr !important;
     gap: 16px !important;
-    padding-bottom: 30px !important;
+    padding-bottom: 24px !important;
+  }
+
+  .collect-fee-card {
+    padding: 16px 14px !important;
+    border-radius: 12px !important;
+  }
+
+  .collect-student-summary-card {
+    padding: 12px 14px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .collect-student-summary-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px 12px !important;
+  }
+
+  .collect-student-summary-footer {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+
+  .collect-fee-type-btn-group {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .collect-due-quick-btns {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+
+  .collect-due-quick-btns button {
+    width: 100% !important;
+    text-align: center !important;
+    padding: 7px 10px !important;
+  }
+
+  .collect-fee-submit-btn {
+    padding: 14px 16px !important;
+    font-size: 15px !important;
+    min-height: 48px !important;
+    border-radius: 10px !important;
+  }
+
+  .collect-seat-alert-banner {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 12px 14px !important;
+  }
+
+  .collect-seat-alert-banner > div:last-child {
+    width: 100% !important;
+    justify-content: space-between !important;
+    margin-top: 8px !important;
+  }
+
+  .collect-seat-alert-banner a {
+    flex: 1 !important;
+    text-align: center !important;
+  }
+
+  .collect-recent-payment-card {
+    padding: 10px 12px !important;
+    gap: 8px !important;
   }
 
   /* Payments Page Mobile Views & Cards */

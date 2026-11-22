@@ -98,6 +98,13 @@ const Subscription = () => {
   const pendingTier = activeUser.pendingTier;
   const pendingExpiryDays = activeUser.pendingExpiryDays;
 
+  const prefix = (() => {
+    if (!user || !user.role) return "";
+    const roleSegment = user.role.toLowerCase();
+    const nameSegment = (user.name || "user").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    return `/${roleSegment}/${nameSegment}`;
+  })();
+
   const [actLoading, setActLoading] = useState(false);
   const [showActivateConfirmModal, setShowActivateConfirmModal] = useState(false);
 
@@ -991,7 +998,7 @@ const Subscription = () => {
                   onClick={() => {
                     if (disabled) return;
                     if (isEnterprise) {
-                      setShowContactModal(true);
+                      navigate(prefix ? `${prefix}/support` : "/support");
                     } else if (isFree) {
                       // Already on free or cannot downgrade via online payment
                     } else {
