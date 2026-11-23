@@ -36,6 +36,7 @@ const DashboardLayout = () => {
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const profileRef = useRef(null);
+  const mainContentRef = useRef(null);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -122,6 +123,13 @@ const DashboardLayout = () => {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Ensure every route opens from top (0, 0)
+  useEffect(() => {
+    if (mainContentRef.current) {
+      mainContentRef.current.scrollTop = 0;
+    }
+  }, [location.pathname, location.search]);
 
   const handleLogout = async () => {
     try {
@@ -365,7 +373,7 @@ const DashboardLayout = () => {
         </nav>
       </aside>
 
-      <main className="main-content">
+      <main className="main-content" ref={mainContentRef}>
         <header className="topbar">
           <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
             <button className="mobile-toggle" onClick={() => setIsSidebarOpen(true)} title="Open Menu" aria-label="Open Menu">

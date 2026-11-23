@@ -24,6 +24,7 @@ import Expenses from "./pages/Expenses";
 import CollectFee from "./pages/CollectFee";
 import PublicAttendance from "./pages/PublicAttendance";
 import Support from "./pages/Support";
+import ScrollToTop from "./components/ScrollToTop";
 
 const isAuthenticated = () => !!localStorage.getItem("lms_token");
 
@@ -62,6 +63,7 @@ const RoleRedirect = () => {
 const App = () => {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <Routes>
         <Route path="/login" element={
           isAuthenticated() ? (
