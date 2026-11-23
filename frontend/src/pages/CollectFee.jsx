@@ -718,7 +718,7 @@ const CollectFee = () => {
 
             {/* Payment Type & Fee Plan Selector */}
             {selectedStudent && (
-              <div className={studentValidity ? "" : "responsive-grid-1-1"} style={{ display: "grid", gridTemplateColumns: studentValidity ? "1fr" : "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
+              <div className={`collect-payment-plan-row ${studentValidity ? "" : "responsive-grid-1-1"}`} style={{ display: "grid", gridTemplateColumns: studentValidity ? "1fr" : "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
                 <div>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: textMuted, marginBottom: "6px" }}>
                     Payment For <span style={{ color: "#ef4444" }}>*</span>
@@ -1028,7 +1028,7 @@ const CollectFee = () => {
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, color: textPrimary, fontSize: "14px", display: "flex", alignItems: "center", gap: "6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <div className="collect-payment-member-title" style={{ fontWeight: 700, color: textPrimary, fontSize: "14px", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{p.full_name || "Member"}</span>
                       <span style={{ fontSize: "11px", color: textMuted, fontWeight: 500, flexShrink: 0 }}>({p.student_code || "N/A"})</span>
                     </div>
@@ -1044,7 +1044,7 @@ const CollectFee = () => {
                     </div>
                   </div>
 
-                  <div style={{
+                  <div className="collect-payment-card-actions" style={{
                     flexShrink: 0,
                     display: "flex",
                     flexDirection: "column",
@@ -1056,7 +1056,7 @@ const CollectFee = () => {
                       +₹{p.amount_received}
                     </div>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-end" }}>
-                      <span style={{
+                      <span className="collect-payment-mode-badge" style={{
                         fontSize: "10px", fontWeight: 700, textTransform: "uppercase",
                         background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
                         color: "#2563eb", padding: "2px 6px", borderRadius: "4px", display: "inline-block",
@@ -1067,6 +1067,7 @@ const CollectFee = () => {
                         type="button"
                         onClick={() => generateStudentInvoicePdf(p, currentUser)}
                         title="Download PDF Invoice"
+                        className="collect-action-btn"
                         style={{
                           background: darkMode ? "rgba(59,130,246,0.15)" : "#eff6ff",
                           border: "1px solid #3b82f6",
@@ -1086,6 +1087,7 @@ const CollectFee = () => {
                         onClick={() => sendInvoiceOnWhatsApp(p, p.mobile, currentUser)}
                         title="Send on WhatsApp"
                         aria-label="Send on WhatsApp"
+                        className="collect-action-btn"
                         style={{
                           background: darkMode ? "rgba(22,163,74,0.15)" : "#f0fdf4",
                           border: "1px solid #16a34a",
@@ -1105,6 +1107,7 @@ const CollectFee = () => {
                         onClick={() => sendInvoiceOnGmail(p, p.email, currentUser)}
                         title="Send via Gmail"
                         aria-label="Send via Gmail"
+                        className="collect-action-btn"
                         style={{
                           background: darkMode ? "rgba(234,67,53,0.15)" : "#fef2f2",
                           border: "1px solid #ea4335",
