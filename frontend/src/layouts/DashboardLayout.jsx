@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { NavLink, Outlet, useLocation, Link } from "react-router-dom";
 import api from "../api/axios";
+import { performFastLogout } from "../utils/logout";
 
 import NotificationBell from "../components/NotificationBell";
 import ExpiryModal from "../components/ExpiryModal";
@@ -92,8 +93,10 @@ const DashboardLayout = () => {
   };
   const prefix = getRolePrefix();
 
+  const isFreePlan = (user.subscriptionTier || "FREE").toUpperCase() === "FREE";
+
   const getDaysRemaining = () => {
-    if (!user.subscriptionExpiry) return null;
+    if (isFreePlan || !user.subscriptionExpiry) return null;
     const expiry = new Date(user.subscriptionExpiry);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -101,7 +104,7 @@ const DashboardLayout = () => {
     return Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
   };
   const daysLeft = getDaysRemaining();
-  const isExpired = user.subscriptionTier !== "FREE" && daysLeft !== null && daysLeft <= 0;
+  const isExpired = !isFreePlan && daysLeft !== null && daysLeft <= 0;
 
   const location = useLocation();
   const operationalPaths = [
@@ -131,15 +134,8 @@ const DashboardLayout = () => {
     }
   }, [location.pathname, location.search]);
 
-  const handleLogout = async () => {
-    try {
-      await api.post("/users/logout");
-    } catch (err) {
-      console.error("Logout API error:", err);
-    }
-    localStorage.removeItem("lms_token");
-    localStorage.removeItem("lms_user");
-    window.location.href = "/login";
+  const handleLogout = () => {
+    performFastLogout();
   };
 
 
@@ -477,12 +473,25 @@ const DashboardLayout = () => {
                             </span>
                           )}
                         </div>
-                        <div style={{ color: "#475569", marginTop: "2px" }}>
-                          Expires: <strong>{formattedExpiry}</strong>
-                        </div>
-                        <div style={{ color: isExpired ? "#dc2626" : "#16a34a", fontWeight: 600, marginTop: "2px" }}>
-                          Remaining: {isExpired ? "Expired" : `${daysLeft} days left`}
-                        </div>
+                        {isFreePlan ? (
+                          <>
+                            <div style={{ color: "#475569", marginTop: "2px" }}>
+                              Plan: <strong>Free Plan</strong>
+                            </div>
+                            <div style={{ color: "#16a34a", fontWeight: 600, marginTop: "2px" }}>
+                              Validity: Forever Free (Lifetime)
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ color: "#475569", marginTop: "2px" }}>
+                              Expires: <strong>{formattedExpiry}</strong>
+                            </div>
+                            <div style={{ color: isExpired ? "#dc2626" : "#16a34a", fontWeight: 600, marginTop: "2px" }}>
+                              Remaining: {isExpired ? "Expired" : `${daysLeft} days left`}
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>

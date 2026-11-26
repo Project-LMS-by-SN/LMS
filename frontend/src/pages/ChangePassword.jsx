@@ -1,5 +1,6 @@
 import { useState } from "react";
 import api from "../api/axios";
+import { performFastLogout } from "../utils/logout";
 import { FaLock, FaSignOutAlt, FaShieldAlt, FaEye, FaEyeSlash } from "react-icons/fa";
 
 const ChangePassword = () => {
@@ -61,15 +62,8 @@ const ChangePassword = () => {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await api.post("/users/logout");
-    } catch (err) {
-      console.error("Logout API error:", err);
-    }
-    localStorage.removeItem("lms_token");
-    localStorage.removeItem("lms_user");
-    window.location.href = "/login";
+  const handleLogout = () => {
+    performFastLogout();
   };
 
   return (

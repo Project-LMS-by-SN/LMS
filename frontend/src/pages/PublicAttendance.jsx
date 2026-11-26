@@ -9,8 +9,7 @@ import {
   FaSpinner,
   FaBuilding,
   FaCamera,
-  FaTimes,
-  FaRedo
+  FaTimes
 } from "react-icons/fa";
 import { Html5Qrcode } from "html5-qrcode";
 import api from "../api/axios";
@@ -21,7 +20,8 @@ const PublicAttendance = () => {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(10);
+  const [pageClosed, setPageClosed] = useState(false);
 
   const [branchInfo, setBranchInfo] = useState(null);
   const [branchLoading, setBranchLoading] = useState(true);
@@ -84,25 +84,35 @@ const PublicAttendance = () => {
     fetchInfo();
   }, []);
 
-  // 5-second countdown & auto-reset when result is displayed
+  const attemptClosePage = () => {
+    try {
+      window.close();
+    } catch {}
+    try {
+      window.open("", "_self");
+      window.close();
+    } catch {}
+    setPageClosed(true);
+  };
+
+  // 10-second countdown & auto-close when IN/OUT result is displayed
   useEffect(() => {
     let timer;
-    if (result) {
-      setCountdown(5);
+    if (result && !pageClosed) {
+      setCountdown(10);
       timer = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
             clearInterval(timer);
-            setResult(null);
-            setStudentCodeOrMobile("");
-            return 5;
+            attemptClosePage();
+            return 0;
           }
           return prev - 1;
         });
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [result]);
+  }, [result, pageClosed]);
 
   // Clean up camera scanner on unmount
   useEffect(() => {
@@ -165,7 +175,7 @@ const PublicAttendance = () => {
   };
 
   const executeCheckIn = async (codeToMark) => {
-    if (submitLockRef.current) return;
+    if (submitLockRef.current || result || pageClosed) return;
     const term = (codeToMark || studentCodeOrMobile || "").trim();
     if (!term) {
       setErrorMsg("Please enter or scan your Student Code or Mobile Number.");
@@ -217,13 +227,6 @@ const PublicAttendance = () => {
   const handleMarkAttendance = async (e) => {
     if (e) e.preventDefault();
     executeCheckIn(studentCodeOrMobile);
-  };
-
-  const handleResetForNext = () => {
-    setResult(null);
-    setErrorMsg("");
-    setStudentCodeOrMobile("");
-    setCountdown(5);
   };
 
   const formattedTime = currentTime.toLocaleTimeString("en-US", {
@@ -341,6 +344,69 @@ const PublicAttendance = () => {
               }}
             >
               <FaBuilding style={{ color: "#38bdf8" }} /> Please scan the official QR code at your library entrance
+            </div>
+          </div>
+        ) : pageClosed ? (
+          <div style={{ padding: "24px 10px" }}>
+            <div
+              style={{
+                width: "72px",
+                height: "72px",
+                borderRadius: "50%",
+                background: result?.action === "CHECK_OUT" ? "rgba(245, 158, 11, 0.18)" : "rgba(16, 185, 129, 0.18)",
+                border: `2px solid ${result?.action === "CHECK_OUT" ? "#f59e0b" : "#10b981"}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 18px",
+                color: result?.action === "CHECK_OUT" ? "#f59e0b" : "#10b981",
+                fontSize: "34px",
+              }}
+            >
+              {result?.action === "CHECK_OUT" ? <FaSignOutAlt /> : <FaCheckCircle />}
+            </div>
+            <h3 style={{ fontSize: "21px", fontWeight: 800, margin: "0 0 8px 0", color: "#fff" }}>
+              {result?.message || "Attendance Marked!"}
+            </h3>
+            {result?.subMessage && (
+              <p style={{ color: "#cbd5e1", fontSize: "14px", lineHeight: "1.5", margin: "0 0 16px 0" }}>
+                {result.subMessage}
+              </p>
+            )}
+            <div
+              style={{
+                background: "rgba(15, 23, 42, 0.65)",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                borderRadius: "14px",
+                padding: "14px 16px",
+                marginBottom: "22px",
+                fontSize: "13px",
+                color: "#94a3b8",
+                lineHeight: "1.5",
+              }}
+            >
+              This attendance session is closed. You can now safely close this tab.
+            </div>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "center", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={attemptClosePage}
+                style={{
+                  padding: "11px 22px",
+                  borderRadius: "12px",
+                  border: "none",
+                  background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                  color: "#fff",
+                  fontSize: "14px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaTimes /> Close Tab
+              </button>
             </div>
           </div>
         ) : (
@@ -481,18 +547,19 @@ const PublicAttendance = () => {
                   {result.subMessage}
                 </p>
 
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" }}>
-                  <span style={{ fontSize: "12px", color: "#94a3b8", background: "rgba(0,0,0,0.3)", padding: "5px 12px", borderRadius: "20px", display: "inline-flex", alignItems: "center", gap: "5px" }}>
-                    <FaClock /> Resetting in {countdown}s...
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "12px", color: "#94a3b8", background: "rgba(0,0,0,0.3)", padding: "6px 12px", borderRadius: "20px", display: "inline-flex", alignItems: "center", gap: "5px" }}>
+                    <FaClock /> Closing in {countdown}s...
                   </span>
                   <button
-                    onClick={handleResetForNext}
+                    type="button"
+                    onClick={attemptClosePage}
                     style={{
-                      background: "rgba(255, 255, 255, 0.15)",
-                      border: "none",
-                      color: "#fff",
+                      background: "rgba(239, 68, 68, 0.2)",
+                      border: "1px solid rgba(239, 68, 68, 0.4)",
+                      color: "#fca5a5",
                       borderRadius: "20px",
-                      padding: "5px 14px",
+                      padding: "6px 14px",
                       fontSize: "12px",
                       fontWeight: 600,
                       cursor: "pointer",
@@ -501,7 +568,7 @@ const PublicAttendance = () => {
                       gap: "5px",
                     }}
                   >
-                    <FaRedo /> Next Student
+                    <FaTimes /> Close Now
                   </button>
                 </div>
               </div>
@@ -528,76 +595,78 @@ const PublicAttendance = () => {
               </div>
             )}
 
-            {/* Input Form & Camera Trigger */}
-            <form onSubmit={handleMarkAttendance}>
-              <div style={{ marginBottom: "14px" }}>
-                <input
-                  type="text"
-                  className="att-input"
-                  placeholder="Student Code / Mobile Number"
-                  value={studentCodeOrMobile}
-                  onChange={(e) => setStudentCodeOrMobile(e.target.value)}
-                  disabled={submitting}
-                  autoFocus
-                />
-              </div>
+            {/* Input Form & Camera Trigger (hidden after 1 submission until page is reopened) */}
+            {!result && (
+              <form onSubmit={handleMarkAttendance}>
+                <div style={{ marginBottom: "14px" }}>
+                  <input
+                    type="text"
+                    className="att-input"
+                    placeholder="Student Code / Mobile Number"
+                    value={studentCodeOrMobile}
+                    onChange={(e) => setStudentCodeOrMobile(e.target.value)}
+                    disabled={submitting}
+                    autoFocus
+                  />
+                </div>
 
-              <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  style={{
-                    flex: 1,
-                    padding: "16px",
-                    borderRadius: "16px",
-                    border: "none",
-                    background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                    color: "#fff",
-                    fontSize: "16px",
-                    fontWeight: 800,
-                    cursor: submitting ? "not-allowed" : "pointer",
-                    boxShadow: "0 10px 24px rgba(16, 185, 129, 0.35)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  {submitting ? (
-                    <>
-                      <FaSpinner style={{ animation: "spin 1s linear infinite" }} /> Processing...
-                    </>
-                  ) : (
-                    <>
-                      <FaCheckCircle /> Mark Attendance
-                    </>
-                  )}
-                </button>
-
-                {!scannerOpen && (
+                <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
                   <button
-                    type="button"
-                    onClick={handleStartScanner}
-                    title="Open Camera QR Scanner"
+                    type="submit"
+                    disabled={submitting}
                     style={{
-                      padding: "16px 20px",
+                      flex: 1,
+                      padding: "16px",
                       borderRadius: "16px",
-                      border: "1px solid rgba(59, 130, 246, 0.5)",
-                      background: "rgba(59, 130, 246, 0.15)",
-                      color: "#60a5fa",
-                      cursor: "pointer",
-                      fontSize: "18px",
+                      border: "none",
+                      background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                      color: "#fff",
+                      fontSize: "16px",
+                      fontWeight: 800,
+                      cursor: submitting ? "not-allowed" : "pointer",
+                      boxShadow: "0 10px 24px rgba(16, 185, 129, 0.35)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
+                      gap: "8px",
+                      transition: "all 0.2s",
                     }}
                   >
-                    <FaCamera />
+                    {submitting ? (
+                      <>
+                        <FaSpinner style={{ animation: "spin 1s linear infinite" }} /> Processing...
+                      </>
+                    ) : (
+                      <>
+                        <FaCheckCircle /> Mark Attendance
+                      </>
+                    )}
                   </button>
-                )}
-              </div>
-            </form>
+
+                  {!scannerOpen && (
+                    <button
+                      type="button"
+                      onClick={handleStartScanner}
+                      title="Open Camera QR Scanner"
+                      style={{
+                        padding: "16px 20px",
+                        borderRadius: "16px",
+                        border: "1px solid rgba(59, 130, 246, 0.5)",
+                        background: "rgba(59, 130, 246, 0.15)",
+                        color: "#60a5fa",
+                        cursor: "pointer",
+                        fontSize: "18px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <FaCamera />
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
           </>
         )}
       </div>

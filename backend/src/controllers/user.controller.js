@@ -385,16 +385,44 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Retrieve active sessions for the user (ordered by oldest lastActive first)
+    // Retrieve active sessions, device limit, branch info, and (if needed) physical sessions in parallel
     const dbDeviceId = `${reqDeviceId}_${user.id}`;
-    const activeSessions = await mongoClient.userSession.findMany({
-      where: { userId: user.id, isActive: true },
-      orderBy: { lastActive: "asc" }
-    });
+    const isPremiumOwner = user.role === "OWNER" && (
+      cleanEmail === "admin@admin.com" ||
+      user.subscriptionTier === "PRO" ||
+      user.subscriptionTier === "ENTERPRISE" ||
+      user.subscriptionTier === "PRO_200"
+    );
+    const shouldCheckPhysical = user.role === "OWNER" && !isPremiumOwner;
+
+    const [activeSessions, limit, branch, physicalSessions] = await Promise.all([
+      mongoClient.userSession.findMany({
+        where: { userId: user.id, isActive: true },
+        orderBy: { lastActive: "asc" },
+      }),
+      user.role === "STAFF"
+        ? Promise.resolve(1)
+        : subscriptionPlanService.getDeviceLimitForTier(owner.subscriptionTier),
+      user.branchId
+        ? mongoClient.branch.findUnique({ where: { id: user.branchId } })
+        : Promise.resolve(null),
+      shouldCheckPhysical
+        ? mongoClient.userSession.findMany({
+            where: {
+              isActive: true,
+              OR: [
+                { deviceId: reqDeviceId },
+                { deviceId: { startsWith: `${reqDeviceId}_` } },
+              ],
+            },
+            include: { user: true },
+          })
+        : Promise.resolve([]),
+    ]);
 
     const isCurrentDeviceActive = activeSessions.some(s => s.deviceId === dbDeviceId);
-    // Staff are always limited to 1 active device; owners use their tier-based limit
-    const limit = user.role === "STAFF" ? 1 : await subscriptionPlanService.getDeviceLimitForTier(owner.subscriptionTier);
+
+    const backgroundSideWrites = [];
 
     if (cleanEmail !== "admin@admin.com" && !isCurrentDeviceActive && activeSessions.length >= limit) {
       if (!forceLogin) {
@@ -404,77 +432,44 @@ exports.login = async (req, res) => {
           message: `This account has reached its session limit (${limit} active device(s)). Do you want to proceed and log out the oldest active session?`,
         });
       } else {
-        // Deactivate the oldest session
+        // Deactivate the oldest session & log warning in parallel with login writes
         const oldestSession = activeSessions[0];
-        await mongoClient.userSession.update({
-          where: { id: oldestSession.id },
-          data: { isActive: false },
-        });
-
-        // Create FORCE_LOGIN_LOGOUT security event to warn the admin/staff
-        await mongoClient.securityEvent.create({
-          data: {
-            eventType: "FORCE_LOGIN_LOGOUT",
-            email: user.email,
-            ipAddress: oldestSession.ipAddress || reqIp,
-            userAgent: `${oldestSession.os || "Unknown OS"} / ${oldestSession.browser || "Unknown Browser"}`,
-            userId: user.id,
-          },
-        });
+        backgroundSideWrites.push(
+          mongoClient.userSession.update({
+            where: { id: oldestSession.id },
+            data: { isActive: false },
+          }),
+          mongoClient.securityEvent.create({
+            data: {
+              eventType: "FORCE_LOGIN_LOGOUT",
+              email: user.email,
+              ipAddress: oldestSession.ipAddress || reqIp,
+              userAgent: `${oldestSession.os || "Unknown OS"} / ${oldestSession.browser || "Unknown Browser"}`,
+              userId: user.id,
+            },
+          })
+        );
       }
     }
 
-    // Co-existence logic: Check active sessions on the same physical device/browser
-    const physicalSessions = await mongoClient.userSession.findMany({
-      where: {
-        isActive: true,
-        OR: [
-          { deviceId: reqDeviceId },
-          { deviceId: { startsWith: `${reqDeviceId}_` } }
-        ]
-      },
-      include: {
-        user: true
-      }
-    });
-
-    const activeStaff = physicalSessions.filter(s => s.user?.role === "STAFF");
-
-    if (user.role === "OWNER") {
-      // If owner logs in, and there is a staff active on this physical device:
-      // "if i'm login as staff and then try to login as owner that should not happen it can happen in preium 200 ok not in starter one"
-      const isPremium = cleanEmail === "admin@admin.com" || user.subscriptionTier === "PRO" || user.subscriptionTier === "ENTERPRISE" || user.subscriptionTier === "PRO_200";
-      if (!isPremium && activeStaff.length > 0) {
-        for (const s of activeStaff) {
-          await mongoClient.userSession.update({
+    if (shouldCheckPhysical && physicalSessions.length > 0) {
+      const activeStaff = physicalSessions.filter(s => s.user?.role === "STAFF");
+      for (const s of activeStaff) {
+        backgroundSideWrites.push(
+          mongoClient.userSession.update({
             where: { id: s.id },
-            data: { isActive: false }
-          });
-        }
+            data: { isActive: false },
+          })
+        );
       }
     }
 
-    // Upsert the session for the current device
-    await mongoClient.userSession.upsert({
-      where: { deviceId: dbDeviceId },
-      update: {
-        userId: user.id,
-        isActive: true,
-        lastActive: new Date(),
-        ipAddress: reqIp,
-        os,
-        browser
-      },
-      create: {
-        userId: user.id,
-        deviceId: dbDeviceId,
-        isActive: true,
-        lastActive: new Date(),
-        ipAddress: reqIp,
-        os,
-        browser
-      }
-    });
+    const token = authUtil.signToken({ id: user.id, email: user.email, role: user.role, deviceId: dbDeviceId });
+    const branchName = branch ? branch.name : null;
+    const branchCode = branch ? branch.code : null;
+
+    let effTier = user.subscriptionTier;
+    let effExpiry = user.subscriptionExpiry;
 
     // Reset failed login attempts & update user lastLogin
     const updateData = {
@@ -490,33 +485,6 @@ exports.login = async (req, res) => {
     if (!user.firstLoginAt) {
       updateData.firstLoginAt = new Date();
     }
-    await mongoClient.user.update({
-      where: { id: user.id },
-      data: updateData,
-    });
-
-    await mongoClient.securityEvent.create({
-      data: {
-        eventType: "LOGIN_SUCCESS",
-        email: cleanEmail,
-        userId: user.id,
-        ipAddress: reqIp,
-        userAgent: userAgentStr,
-      },
-    });
-
-    const token = authUtil.signToken({ id: user.id, email: user.email, role: user.role, deviceId: dbDeviceId });
-
-    let branchName = null;
-    let branchCode = null;
-    if (user.branchId) {
-      const branch = await mongoClient.branch.findUnique({ where: { id: user.branchId } });
-      branchName = branch ? branch.name : null;
-      branchCode = branch ? branch.code : null;
-    }
-
-    let effTier = user.subscriptionTier;
-    let effExpiry = user.subscriptionExpiry;
 
     if (user.role === "STAFF" && owner) {
       const isExpired = owner.subscriptionTier !== "FREE" && (!owner.subscriptionExpiry || new Date(owner.subscriptionExpiry) <= new Date());
@@ -525,16 +493,18 @@ exports.login = async (req, res) => {
         const newExpiry = new Date();
         newExpiry.setDate(newExpiry.getDate() + days);
 
-        await mongoClient.user.update({
-          where: { id: owner.id },
-          data: {
-            subscriptionTier: owner.pendingTier,
-            subscriptionExpiry: newExpiry,
-            pendingTier: null,
-            pendingExpiryDays: null,
-            updatedAt: new Date()
-          }
-        });
+        backgroundSideWrites.push(
+          mongoClient.user.update({
+            where: { id: owner.id },
+            data: {
+              subscriptionTier: owner.pendingTier,
+              subscriptionExpiry: newExpiry,
+              pendingTier: null,
+              pendingExpiryDays: null,
+              updatedAt: new Date(),
+            },
+          })
+        );
         owner.subscriptionTier = owner.pendingTier;
         owner.subscriptionExpiry = newExpiry;
         owner.pendingTier = null;
@@ -549,16 +519,12 @@ exports.login = async (req, res) => {
         const newExpiry = new Date();
         newExpiry.setDate(newExpiry.getDate() + days);
 
-        await mongoClient.user.update({
-          where: { id: user.id },
-          data: {
-            subscriptionTier: user.pendingTier,
-            subscriptionExpiry: newExpiry,
-            pendingTier: null,
-            pendingExpiryDays: null,
-            updatedAt: new Date()
-          }
-        });
+        updateData.subscriptionTier = user.pendingTier;
+        updateData.subscriptionExpiry = newExpiry;
+        updateData.pendingTier = null;
+        updateData.pendingExpiryDays = null;
+        updateData.updatedAt = new Date();
+
         effTier = user.pendingTier;
         effExpiry = newExpiry;
         user.pendingTier = null;
@@ -566,15 +532,52 @@ exports.login = async (req, res) => {
       }
     }
 
-    if (!effExpiry && effTier !== "FREE") {
+    if (effTier === "FREE") {
+      effExpiry = null;
+    } else if (!effExpiry) {
       const d = new Date();
       d.setMonth(d.getMonth() + 3);
       effExpiry = d;
-      await mongoClient.user.update({
-        where: { id: user.id },
-        data: { subscriptionExpiry: effExpiry }
-      });
+      updateData.subscriptionExpiry = effExpiry;
     }
+
+    // Execute session upsert, user update, security event, and any side updates in parallel
+    await Promise.all([
+      mongoClient.userSession.upsert({
+        where: { deviceId: dbDeviceId },
+        update: {
+          userId: user.id,
+          isActive: true,
+          lastActive: new Date(),
+          ipAddress: reqIp,
+          os,
+          browser,
+        },
+        create: {
+          userId: user.id,
+          deviceId: dbDeviceId,
+          isActive: true,
+          lastActive: new Date(),
+          ipAddress: reqIp,
+          os,
+          browser,
+        },
+      }),
+      mongoClient.user.update({
+        where: { id: user.id },
+        data: updateData,
+      }),
+      mongoClient.securityEvent.create({
+        data: {
+          eventType: "LOGIN_SUCCESS",
+          email: cleanEmail,
+          userId: user.id,
+          ipAddress: reqIp,
+          userAgent: userAgentStr,
+        },
+      }).catch(() => {}),
+      ...backgroundSideWrites,
+    ]);
 
     return res.json({
       success: true,
@@ -794,7 +797,7 @@ exports.getProfile = async (req, res) => {
       role: user.role,
       isActive: user.isActive,
       subscriptionTier: effTier,
-      subscriptionExpiry: effExpiry,
+      subscriptionExpiry: effTier === "FREE" ? null : effExpiry,
       pendingTier: user.role === "STAFF" ? (staffOwner?.pendingTier || null) : user.pendingTier,
       pendingExpiryDays: user.role === "STAFF" ? (staffOwner?.pendingExpiryDays || null) : user.pendingExpiryDays,
       createdAt: user.createdAt,
@@ -1054,22 +1057,35 @@ exports.changePassword = async (req, res) => {
   }
 };
 
-// DELETE /api/users/account
+// DELETE /api/users/account - Disabled direct deletion; owners must submit a deletion request with reason
 exports.deleteAccount = async (req, res) => {
+  return res.status(403).json({
+    success: false,
+    message: "Direct account deletion is disabled. Please submit an account deletion request with your reason from Settings.",
+  });
+};
+
+// POST /api/users/delete-request - Submit an account deletion request with reason
+exports.requestAccountDeletion = async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
-
-    const password = req.body?.password || req.headers["x-account-password"] || req.query?.password;
-    if (!password) {
-      return res.status(400).json({ success: false, message: "Password is required to delete account" });
+    if (req.user.role !== "OWNER") {
+      return res.status(403).json({ success: false, message: "Only library owners can request account deletion." });
     }
 
-    const user = await mongoClient.user.findUnique({
-      where: { id: req.user.id },
-    });
+    const reason = (req.body?.reason || "").trim();
+    const password = req.body?.password || "";
 
+    if (!reason || reason.length < 5) {
+      return res.status(400).json({ success: false, message: "Please provide a valid reason (at least 5 characters) for account deletion." });
+    }
+    if (!password) {
+      return res.status(400).json({ success: false, message: "Password is required to submit a deletion request." });
+    }
+
+    const user = await mongoClient.user.findUnique({ where: { id: req.user.id } });
     if (!user || user.deletedAt) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
@@ -1079,35 +1095,61 @@ exports.deleteAccount = async (req, res) => {
       return res.status(401).json({ success: false, message: "Password is incorrect" });
     }
 
-    // Clean up active sessions
-    await mongoClient.userSession.deleteMany({
-      where: { userId: user.id }
-    }).catch(() => {});
+    const branch = user.branchId
+      ? await mongoClient.branch.findUnique({ where: { id: user.branchId } })
+      : null;
 
-    // Perform soft delete and archive email so it is immediately free for future re-registration
-    await mongoClient.user.update({
-      where: { id: user.id },
+    const ticket = await mongoClient.supportTicket.create({
       data: {
-        email: `deleted_${Date.now()}_${user.email}`,
-        deletedAt: new Date(),
-        isActive: false,
-        isLoggedIn: false
+        userId: user.id,
+        branchId: user.branchId || null,
+        name: branch?.name ? `${user.name} (${branch.name})` : user.name || "Library Owner",
+        phone: branch?.phone || user.email,
+        category: "Account Deletion Request",
+        subject: `Account Deletion Request — ${user.email}`,
+        message: `Reason: ${reason}\n\nAccount Email: ${user.email}\nBranch: ${branch?.name || "N/A"} (${branch?.code || "N/A"})`,
+        priority: "Urgent",
+        status: "OPEN",
       },
     });
 
-    // Log security event
     await mongoClient.securityEvent.create({
       data: {
-        eventType: "ACCOUNT_DELETED",
+        eventType: "ACCOUNT_DELETE_REQUESTED",
         email: user.email,
         userId: user.id,
+        ipAddress: getClientIp(req),
+        userAgent: req.headers["user-agent"] || "",
       },
-    });
+    }).catch(() => {});
 
-    return res.json({ success: true, message: "Account deleted successfully" });
+    // Notify support email in background (non-blocking)
+    const supportEmail = getEmailFrom();
+    if (supportEmail) {
+      emailService.sendEmail({
+        from: supportEmail,
+        to: supportEmail,
+        subject: `Account Deletion Request: ${user.email}`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 560px; margin: auto; padding: 20px; border: 1px solid #fecaca; border-radius: 12px;">
+            <h2 style="color: #dc2626; margin-top: 0;">Account Deletion Request</h2>
+            <p><strong>Owner:</strong> ${escapeHtml(user.name || "Owner")} (${escapeHtml(user.email)})</p>
+            <p><strong>Branch:</strong> ${escapeHtml(branch?.name || "N/A")} (${escapeHtml(branch?.code || "N/A")})</p>
+            <p><strong>Reason:</strong></p>
+            <div style="background: #fef2f2; padding: 12px; border-radius: 8px; color: #991b1b;">${escapeHtml(reason)}</div>
+          </div>
+        `,
+      }).catch(() => {});
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Your account deletion request has been submitted with your reason. Our support team will review it shortly.",
+      ticketId: ticket.id,
+    });
   } catch (error) {
-    console.error("Delete account error:", error);
-    return res.status(500).json({ success: false, message: "Internal server error" });
+    console.error("Request account deletion error:", error);
+    return res.status(500).json({ success: false, message: "Failed to submit deletion request." });
   }
 };
 

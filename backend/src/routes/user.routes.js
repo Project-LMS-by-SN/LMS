@@ -14,6 +14,7 @@ router.get("/qr-info", userController.getMyBranchQrInfo);
 router.put("/profile", userController.updateProfile);
 router.put("/change-password", userController.changePassword);
 router.delete("/account", userController.deleteAccount);
+router.post("/delete-request", userController.requestAccountDeletion);
 router.put("/subscription", userController.updateSubscription);
 router.post("/activate-pending-plan", userController.activatePendingPlan);
 

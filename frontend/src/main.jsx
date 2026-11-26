@@ -13,9 +13,12 @@ window.addEventListener('vite:preloadError', () => {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes: cache data so pages don't reload
-      gcTime: 1000 * 60 * 30, // 30 minutes in memory
-      refetchOnWindowFocus: false, // prevent reloading when switching browser tabs
+      staleTime: 1000 * 60 * 10, // 10 minutes: keep data fresh across page switches
+      gcTime: 1000 * 60 * 60, // 60 minutes in memory
+      refetchOnWindowFocus: false,
+      refetchOnMount: false, // Do not reload when revisiting an already-loaded page
+      refetchOnReconnect: false,
+      placeholderData: (previousData) => previousData,
       retry: 1,
     },
   },

@@ -38,6 +38,7 @@ const Settings = () => {
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteMsg, setDeleteMsg] = useState(null);
+  const [deleteReason, setDeleteReason] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [activeStudents, setActiveStudents] = useState(0);
   const [dbPlans, setDbPlans] = useState([]);
@@ -468,19 +469,33 @@ const Settings = () => {
     }
   };
 
-  const handleDeleteAccount = async (e) => {
+  const handleDeleteRequest = async (e) => {
     e.preventDefault();
     setDeleteMsg(null);
+    if (!deleteReason.trim() || deleteReason.trim().length < 5) {
+      setDeleteMsg({
+        type: "error",
+        text: "Please enter a valid reason (at least 5 characters) for account deletion.",
+      });
+      return;
+    }
     setDeleteLoading(true);
     try {
-      await api.delete("/users/account", { data: { password: deletePassword } });
-      localStorage.removeItem("lms_token");
-      localStorage.removeItem("lms_user");
-      window.location.href = "/login";
+      const res = await api.post("/users/delete-request", {
+        reason: deleteReason.trim(),
+        password: deletePassword,
+      });
+      setDeleteMsg({
+        type: "success",
+        text: res.data?.message || "Your account deletion request has been submitted to support.",
+      });
+      setDeleteReason("");
+      setDeletePassword("");
+      setShowDeleteConfirm(false);
     } catch (err) {
       setDeleteMsg({
         type: "error",
-        text: err.response?.data?.message || "Failed to delete account",
+        text: err.response?.data?.message || "Failed to submit deletion request",
       });
     } finally {
       setDeleteLoading(false);
@@ -1485,34 +1500,45 @@ const Settings = () => {
         </div>
       </div>
 
-      {/* Delete Account (Owners only) */}
+      {/* Request Account Deletion (Owners only - direct deletion disabled) */}
       {profile?.role !== "STAFF" && (
         <div className="form-card" style={{ borderColor: "#fecaca" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
             <div style={iconBox("linear-gradient(135deg,#ef4444,#dc2626)")}><FaTrash /></div>
             <div>
-              <div style={{ fontWeight: 600, fontSize: "16px", color: "#dc2626" }}>Delete Account</div>
-              <div style={{ fontSize: "13px", color: "#94a3b8" }}>Permanently delete this admin account — cannot be undone</div>
+              <div style={{ fontWeight: 600, fontSize: "16px", color: "#dc2626" }}>Request Account Deletion</div>
+              <div style={{ fontSize: "13px", color: "#94a3b8" }}>Submit an account deletion request with your reason to the Super Admin / Support team</div>
             </div>
           </div>
-          {deleteMsg && <div style={msgStyle("error")}>{deleteMsg.text}</div>}
+          {deleteMsg && <div style={msgStyle(deleteMsg.type)}>{deleteMsg.text}</div>}
           {!showDeleteConfirm ? (
-            <button className="secondary-btn" style={{ background: "#fef2f2", color: "#dc2626", borderColor: "#fecaca" }} onClick={() => setShowDeleteConfirm(true)}>
-              <FaTrash style={{ marginRight: "6px" }} /> Delete Account
+            <button className="secondary-btn" style={{ background: "#fef2f2", color: "#dc2626", borderColor: "#fecaca" }} onClick={() => { setShowDeleteConfirm(true); setDeleteMsg(null); }}>
+              <FaTrash style={{ marginRight: "6px" }} /> Request Account Deletion
             </button>
           ) : (
-            <form onSubmit={handleDeleteAccount}>
+            <form onSubmit={handleDeleteRequest}>
               <div className="student-form" style={{ gridTemplateColumns: "1fr" }}>
                 <div style={{ padding: "12px 16px", borderRadius: "8px", marginBottom: "8px", background: "#fff7ed", border: "1px solid #fdba74", color: "#c2410c", fontSize: "13px", display: "flex", alignItems: "center", gap: "8px" }}>
-                  <FaExclamationTriangle /> Enter your password to confirm permanent deletion.
+                  <FaExclamationTriangle /> Direct deletion is disabled. Please provide your reason and password to send a delete request.
                 </div>
                 <div className="form-group">
-                  <label style={{ color: textSecondary }}>Confirm Password</label>
-                  <input type="password" value={deletePassword} onChange={e => setDeletePassword(e.target.value)} placeholder="Enter your password" required autoFocus />
+                  <label style={{ color: textSecondary }}>Reason for Account Deletion <span style={{ color: "#ef4444" }}>*</span></label>
+                  <textarea
+                    rows={3}
+                    value={deleteReason}
+                    onChange={e => setDeleteReason(e.target.value)}
+                    placeholder="Please explain why you want to delete your library admin account..."
+                    required
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${cardBorder}`, background: darkMode ? "#0f172a" : "#ffffff", color: textPrimary, fontSize: "14px", resize: "vertical", boxSizing: "border-box" }}
+                  />
                 </div>
-                <div style={{ display: "flex", gap: "12px" }}>
-                  <button type="button" className="secondary-btn" onClick={() => { setShowDeleteConfirm(false); setDeletePassword(""); setDeleteMsg(null); }}>Cancel</button>
-                  <button type="submit" className="primary-btn" style={{ background: "linear-gradient(135deg,#ef4444,#dc2626)" }} disabled={deleteLoading}>{deleteLoading ? "Deleting..." : "Confirm Delete"}</button>
+                <div className="form-group">
+                  <label style={{ color: textSecondary }}>Confirm Password <span style={{ color: "#ef4444" }}>*</span></label>
+                  <input type="password" value={deletePassword} onChange={e => setDeletePassword(e.target.value)} placeholder="Enter your password" required />
+                </div>
+                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                  <button type="button" className="secondary-btn" onClick={() => { setShowDeleteConfirm(false); setDeleteReason(""); setDeletePassword(""); setDeleteMsg(null); }}>Cancel</button>
+                  <button type="submit" className="primary-btn" style={{ background: "linear-gradient(135deg,#ef4444,#dc2626)" }} disabled={deleteLoading}>{deleteLoading ? "Sending Request..." : "Submit Delete Request"}</button>
                 </div>
               </div>
             </form>

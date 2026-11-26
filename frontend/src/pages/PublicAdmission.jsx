@@ -190,6 +190,7 @@ const PublicAdmission = () => {
 
   return (
     <div
+      className="pub-adm-wrapper"
       style={{
         minHeight: "100vh",
         background: "linear-gradient(135deg, #090d16 0%, #0f172a 50%, #1e1b4b 100%)",
@@ -199,9 +200,97 @@ const PublicAdmission = () => {
         justifyContent: "center",
         fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
         color: "#f8fafc",
+        boxSizing: "border-box",
+        overflowX: "hidden",
       }}
     >
+      <style>{`
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        .pub-adm-input {
+          width: 100%;
+          padding: 12px 14px;
+          background: rgba(15, 23, 42, 0.7);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          border-radius: 12px;
+          color: #ffffff;
+          font-size: 14px;
+          outline: none;
+          box-sizing: border-box;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .pub-adm-input:focus {
+          border-color: #38bdf8;
+          box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+        }
+        @media (max-width: 640px) {
+          .pub-adm-wrapper {
+            padding: 14px 10px !important;
+            align-items: flex-start !important;
+          }
+          .pub-adm-card {
+            border-radius: 18px !important;
+          }
+          .pub-adm-header {
+            padding: 22px 16px !important;
+            border-top-left-radius: 17px !important;
+            border-top-right-radius: 17px !important;
+          }
+          .pub-adm-badge {
+            font-size: 11px !important;
+            padding: 5px 12px !important;
+          }
+          .pub-adm-title {
+            font-size: 22px !important;
+            line-height: 1.25 !important;
+          }
+          .pub-adm-body {
+            padding: 20px 16px !important;
+          }
+          .pub-adm-grid {
+            grid-template-columns: 1fr !important;
+            gap: 14px !important;
+          }
+          .pub-adm-input {
+            font-size: 16px !important;
+            min-height: 46px !important;
+          }
+          .pub-adm-photo-box {
+            padding: 12px 14px !important;
+            gap: 12px !important;
+          }
+          .pub-adm-success-box {
+            padding: 18px 8px !important;
+          }
+          .pub-adm-summary-card {
+            padding: 16px 14px !important;
+          }
+          .pub-adm-summary-row {
+            flex-wrap: wrap !important;
+            gap: 6px !important;
+          }
+          .pub-adm-submit-btn {
+            min-height: 50px !important;
+            font-size: 15px !important;
+            padding: 14px 18px !important;
+          }
+        }
+        @media (max-width: 380px) {
+          .pub-adm-wrapper {
+            padding: 10px 8px !important;
+          }
+          .pub-adm-header {
+            padding: 18px 12px !important;
+          }
+          .pub-adm-title {
+            font-size: 20px !important;
+          }
+          .pub-adm-body {
+            padding: 16px 12px !important;
+          }
+        }
+      `}</style>
       <div
+        className="pub-adm-card"
         style={{
           width: "100%",
           maxWidth: "680px",
@@ -210,10 +299,12 @@ const PublicAdmission = () => {
           border: "1px solid rgba(255, 255, 255, 0.12)",
           borderRadius: "24px",
           boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+          boxSizing: "border-box",
         }}
       >
         {/* Top Header Card */}
         <div
+          className="pub-adm-header"
           style={{
             background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
             padding: "28px 24px",
@@ -224,9 +315,12 @@ const PublicAdmission = () => {
           }}
         >
           <div
+            className="pub-adm-badge"
             style={{
               display: "inline-flex",
               alignItems: "center",
+              justifyContent: "center",
+              flexWrap: "wrap",
               gap: "8px",
               background: "rgba(255, 255, 255, 0.18)",
               padding: "6px 14px",
@@ -236,27 +330,28 @@ const PublicAdmission = () => {
               letterSpacing: "1px",
               textTransform: "uppercase",
               marginBottom: "12px",
+              maxWidth: "100%",
             }}
           >
             <FaBookOpen /> Student Online Admission Portal
           </div>
-          <h1 style={{ fontSize: "28px", fontWeight: 800, margin: "0 0 6px 0", color: "#ffffff" }}>
+          <h1 className="pub-adm-title" style={{ fontSize: "28px", fontWeight: 800, margin: "0 0 6px 0", color: "#ffffff", wordBreak: "break-word" }}>
             {branchData?.branch?.name || "Library Admission"}
           </h1>
           {branchData?.branch?.address && (
-            <p style={{ margin: "0 0 4px 0", fontSize: "14px", color: "rgba(255, 255, 255, 0.9)", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-              <FaMapMarkerAlt /> {branchData.branch.address}
+            <p style={{ margin: "0 0 4px 0", fontSize: "14px", color: "rgba(255, 255, 255, 0.9)", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", flexWrap: "wrap", wordBreak: "break-word" }}>
+              <FaMapMarkerAlt style={{ flexShrink: 0 }} /> <span>{branchData.branch.address}</span>
             </p>
           )}
           {branchData?.branch?.phone && (
-            <p style={{ margin: 0, fontSize: "13px", color: "rgba(255, 255, 255, 0.8)", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-              <FaPhone /> Helpline: {branchData.branch.phone}
+            <p style={{ margin: 0, fontSize: "13px", color: "rgba(255, 255, 255, 0.8)", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", flexWrap: "wrap" }}>
+              <FaPhone style={{ flexShrink: 0 }} /> Helpline: {branchData.branch.phone}
             </p>
           )}
         </div>
 
         {/* Content Body */}
-        <div style={{ padding: "32px 24px" }}>
+        <div className="pub-adm-body" style={{ padding: "32px 24px", boxSizing: "border-box" }}>
           {loading ? (
             <div style={{ textAlign: "center", padding: "60px 0" }}>
               <FaSpinner style={{ animation: "spin 1s linear infinite", fontSize: "36px", color: "#38bdf8" }} />
@@ -305,7 +400,7 @@ const PublicAdmission = () => {
             </div>
           ) : submitSuccess ? (
             /* Success Screen */
-            <div style={{ textAlign: "center", padding: "30px 16px" }}>
+            <div className="pub-adm-success-box" style={{ textAlign: "center", padding: "30px 16px" }}>
               <div
                 style={{
                   width: "80px",
@@ -328,6 +423,7 @@ const PublicAdmission = () => {
               </p>
 
               <div
+                className="pub-adm-summary-card"
                 style={{
                   background: "rgba(15, 23, 42, 0.7)",
                   border: "1px solid rgba(255, 255, 255, 0.1)",
@@ -336,17 +432,18 @@ const PublicAdmission = () => {
                   maxWidth: "420px",
                   margin: "0 auto 28px",
                   textAlign: "left",
+                  boxSizing: "border-box",
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "12px", paddingBottom: "12px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                <div className="pub-adm-summary-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "12px", paddingBottom: "12px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                   <span style={{ fontSize: "13px", color: "#94a3b8" }}>Application Reference</span>
-                  <span style={{ fontSize: "15px", fontWeight: 800, color: "#38bdf8" }}>{submitSuccess.referenceNumber}</span>
+                  <span style={{ fontSize: "15px", fontWeight: 800, color: "#38bdf8", wordBreak: "break-all" }}>{submitSuccess.referenceNumber}</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "12px", paddingBottom: "12px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                <div className="pub-adm-summary-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "12px", paddingBottom: "12px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                   <span style={{ fontSize: "13px", color: "#94a3b8" }}>Applicant Name</span>
-                  <span style={{ fontSize: "14px", fontWeight: 600, color: "#f8fafc" }}>{submitSuccess.fullName}</span>
+                  <span style={{ fontSize: "14px", fontWeight: 600, color: "#f8fafc", wordBreak: "break-word" }}>{submitSuccess.fullName}</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <div className="pub-adm-summary-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
                   <span style={{ fontSize: "13px", color: "#94a3b8" }}>Status</span>
                   <span style={{ fontSize: "12px", fontWeight: 700, padding: "2px 8px", borderRadius: "12px", background: "rgba(245, 158, 11, 0.2)", color: "#f59e0b" }}>
                     Pending Desk Verification
@@ -414,6 +511,7 @@ const PublicAdmission = () => {
                   Profile Photo (Optional)
                 </label>
                 <div
+                  className="pub-adm-photo-box"
                   onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                   onDragLeave={() => setIsDragging(false)}
                   onDrop={handleDrop}
@@ -509,7 +607,7 @@ const PublicAdmission = () => {
               </div>
 
               {/* Grid 2 Columns */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: "16px", marginBottom: "16px" }}>
+              <div className="pub-adm-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: "16px", marginBottom: "16px" }}>
                 {/* Full Name */}
                 <div>
                   <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#cbd5e1", marginBottom: "6px" }}>
@@ -518,21 +616,11 @@ const PublicAdmission = () => {
                   <input
                     type="text"
                     name="fullName"
+                    className="pub-adm-input"
                     value={formData.fullName}
                     onChange={handleChange}
                     placeholder="e.g. Rahul Sharma"
                     required
-                    style={{
-                      width: "100%",
-                      padding: "12px 14px",
-                      background: "rgba(15, 23, 42, 0.7)",
-                      border: "1px solid rgba(255, 255, 255, 0.15)",
-                      borderRadius: "12px",
-                      color: "#ffffff",
-                      fontSize: "14px",
-                      outline: "none",
-                      boxSizing: "border-box",
-                    }}
                   />
                 </div>
 
@@ -544,22 +632,12 @@ const PublicAdmission = () => {
                   <input
                     type="tel"
                     name="mobile"
+                    className="pub-adm-input"
                     value={formData.mobile}
                     onChange={handleChange}
                     placeholder="10-digit mobile number"
                     maxLength={10}
                     required
-                    style={{
-                      width: "100%",
-                      padding: "12px 14px",
-                      background: "rgba(15, 23, 42, 0.7)",
-                      border: "1px solid rgba(255, 255, 255, 0.15)",
-                      borderRadius: "12px",
-                      color: "#ffffff",
-                      fontSize: "14px",
-                      outline: "none",
-                      boxSizing: "border-box",
-                    }}
                   />
                 </div>
 
@@ -571,21 +649,11 @@ const PublicAdmission = () => {
                   <input
                     type="email"
                     name="email"
+                    className="pub-adm-input"
                     value={formData.email}
                     onChange={handleChange}
                     placeholder="email@example.com"
                     required
-                    style={{
-                      width: "100%",
-                      padding: "12px 14px",
-                      background: "rgba(15, 23, 42, 0.7)",
-                      border: "1px solid rgba(255, 255, 255, 0.15)",
-                      borderRadius: "12px",
-                      color: "#ffffff",
-                      fontSize: "14px",
-                      outline: "none",
-                      boxSizing: "border-box",
-                    }}
                   />
                 </div>
 
@@ -596,19 +664,9 @@ const PublicAdmission = () => {
                   </label>
                   <select
                     name="gender"
+                    className="pub-adm-input"
                     value={formData.gender}
                     onChange={handleChange}
-                    style={{
-                      width: "100%",
-                      padding: "12px 14px",
-                      background: "rgba(15, 23, 42, 0.7)",
-                      border: "1px solid rgba(255, 255, 255, 0.15)",
-                      borderRadius: "12px",
-                      color: "#ffffff",
-                      fontSize: "14px",
-                      outline: "none",
-                      boxSizing: "border-box",
-                    }}
                   >
                     <option value="MALE" style={{ background: "#1e293b", color: "#fff" }}>Male</option>
                     <option value="FEMALE" style={{ background: "#1e293b", color: "#fff" }}>Female</option>
@@ -649,20 +707,10 @@ const PublicAdmission = () => {
                   <input
                     type="text"
                     name="aadharNumber"
+                    className="pub-adm-input"
                     value={formData.aadharNumber}
                     onChange={handleChange}
                     placeholder="e.g. 12-digit Aadhar"
-                    style={{
-                      width: "100%",
-                      padding: "12px 14px",
-                      background: "rgba(15, 23, 42, 0.7)",
-                      border: "1px solid rgba(255, 255, 255, 0.15)",
-                      borderRadius: "12px",
-                      color: "#ffffff",
-                      fontSize: "14px",
-                      outline: "none",
-                      boxSizing: "border-box",
-                    }}
                   />
                 </div>
               </div>
@@ -674,22 +722,12 @@ const PublicAdmission = () => {
                 </label>
                 <textarea
                   name="address"
+                  className="pub-adm-input"
                   value={formData.address}
                   onChange={handleChange}
                   rows={2}
                   placeholder="Street address, city, pin code..."
-                  style={{
-                    width: "100%",
-                    padding: "12px 14px",
-                    background: "rgba(15, 23, 42, 0.7)",
-                    border: "1px solid rgba(255, 255, 255, 0.15)",
-                    borderRadius: "12px",
-                    color: "#ffffff",
-                    fontSize: "14px",
-                    outline: "none",
-                    resize: "vertical",
-                    boxSizing: "border-box",
-                  }}
+                  style={{ resize: "vertical" }}
                 />
               </div>
 
@@ -701,26 +739,17 @@ const PublicAdmission = () => {
                 <input
                   type="text"
                   name="remarks"
+                  className="pub-adm-input"
                   value={formData.remarks}
                   onChange={handleChange}
                   placeholder="Any specific requirement or target exams (e.g. UPSC, NEET, etc.)..."
-                  style={{
-                    width: "100%",
-                    padding: "12px 14px",
-                    background: "rgba(15, 23, 42, 0.7)",
-                    border: "1px solid rgba(255, 255, 255, 0.15)",
-                    borderRadius: "12px",
-                    color: "#ffffff",
-                    fontSize: "14px",
-                    outline: "none",
-                    boxSizing: "border-box",
-                  }}
                 />
               </div>
 
               {/* Submit Button */}
               <button
                 type="submit"
+                className="pub-adm-submit-btn"
                 disabled={submitting}
                 style={{
                   width: "100%",

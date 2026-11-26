@@ -280,24 +280,36 @@ const Support = () => {
 
   const faqs = [
     {
-      q: "How does the automated student suspension system work?",
-      a: "Students who have not paid or renewed their seat subscription for more than 15 days are automatically flagged as Inactive / Disabled. When this occurs, they are blocked from public attendance check-in until fee clearance is completed in the Collect Fee section.",
+      q: "Is the Free Plan really forever free without expiry?",
+      a: "Yes! The Free Plan is Forever Free (Lifetime) with no expiry date. Your dashboard and core features remain active permanently, and you can upgrade to Basic, Pro, or Enterprise anytime when your library grows.",
+    },
+    {
+      q: "What happens when a Basic, Pro, or Enterprise plan expires?",
+      a: "When a paid plan expires, all your student records, payments, and library data stay 100% safe. Operational modules (Students, Attendance, Collect Fee, Seats, Reports, etc.) are temporarily locked until you renew or upgrade in the Subscription page.",
     },
     {
       q: "How do I upgrade or renew my library software subscription?",
-      a: "Go to System > Subscription from the sidebar menu. You can select your desired tier (Free, Basic, Pro, Enterprise) and billing period (Monthly, Quarterly, Half Yearly, Yearly), and complete payment securely via Razorpay UPI, Netbanking, or Cards. Your plan is activated immediately upon successful payment.",
+      a: "Go to System > Subscription from the sidebar menu, choose your plan (Basic, Pro, or Enterprise) and billing cycle, and pay securely via Razorpay (UPI, Cards, Netbanking). If you already have an active plan, the new plan can be queued and activated from Settings or Subscription.",
+    },
+    {
+      q: "How do QR Admission and QR Attendance work?",
+      a: "From Settings, you can download your branch's Admission QR and Attendance QR codes. Prospective students scan the Admission QR to submit forms online for your approval. Existing members scan the Attendance QR (or enter their Student Code / Mobile) for instant Check-In / Check-Out — the page locks after one submission and auto-closes in 10 seconds.",
+    },
+    {
+      q: "How does the student fee expiry & suspension system work?",
+      a: "Students whose fee plan has expired or who have pending dues beyond the allowed period are automatically flagged as Inactive / Suspended and blocked from public QR attendance check-in until their fee is collected or renewed in the Collect Fee section.",
     },
     {
       q: "Can two students share the same seat in different shifts?",
-      a: "Yes! The seat allocation engine supports multi-shift assignment. A seat can be assigned to different students during Morning, Afternoon, Evening, or Night shifts without conflict.",
+      a: "Yes! The seat allocation engine supports multi-shift assignment. A single seat can be assigned to different students across Morning, Afternoon, Evening, or Night shifts without conflict.",
     },
     {
-      q: "How can students check-in using QR code attendance?",
-      a: "Each student has a unique student code and QR attendance pass. You can display your library's Public Attendance terminal or let students scan the QR code to record their in-and-out timings seamlessly.",
+      q: "How can an Admin request account deletion?",
+      a: "For security and data protection, direct one-click account deletion is disabled. Library Owners can go to Settings > Request Account Deletion, enter a reason and password, and submit a deletion request to our support team for verification.",
     },
     {
       q: "What should I do if I need urgent help outside business hours?",
-      a: "Our WhatsApp helpline (+91 9142025447) is monitored 24/7 for urgent technical emergencies. You can message directly for immediate resolution.",
+      a: "You can submit an Urgent Support Ticket right here, email contactsoftwarenative@gmail.com, or message our WhatsApp helpline (+91 9142025447) for quick assistance.",
     },
   ];
 

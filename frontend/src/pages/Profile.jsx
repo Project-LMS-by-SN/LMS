@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api/axios";
+import { performFastLogout } from "../utils/logout";
 import { FaUserShield, FaEnvelope, FaUser, FaClock, FaCheckCircle, FaEdit, FaSave, FaTimes, FaPhone, FaMapMarkerAlt, FaBuilding, FaLock, FaKey, FaEye, FaEyeSlash, FaCopy, FaCheck, FaIdCard, FaQuestionCircle } from "react-icons/fa";
 import { useTheme } from "../context/ThemeContext";
 
@@ -162,15 +163,8 @@ const Profile = () => {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await api.post("/users/logout");
-    } catch (err) {
-      console.error("Logout API error:", err);
-    }
-    localStorage.removeItem("lms_token");
-    localStorage.removeItem("lms_user");
-    window.location.href = "/login";
+  const handleLogout = () => {
+    performFastLogout();
   };
 
   if (loading) {

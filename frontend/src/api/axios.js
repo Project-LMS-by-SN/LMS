@@ -19,14 +19,97 @@ const getBaseURL = () => {
 
 const api = axios.create({
   baseURL: getBaseURL(),
+  timeout: 25000,
 });
 
-// Client-side fast memory cache for GET requests
+// Client-side fast memory + sessionStorage cache for GET requests
 const clientCache = new Map();
-const CACHE_TTL_MS = 25000; // 25 seconds client-side cache
+const CACHE_TTL_MS = 1000 * 60 * 5; // 5 minutes client-side cache
+const SESSION_CACHE_PREFIX = "lms_get_cache_v1:";
 
 // In-flight mutation deduplication map (prevents double-clicks from sending duplicate POST/PUT/PATCH/DELETE)
 const inFlightMutations = new Map();
+
+const getTokenScope = () => {
+  const token = localStorage.getItem("lms_token") || "";
+  return token ? token.slice(-16) : "anon";
+};
+
+const getSessionCache = (cacheKey) => {
+  try {
+    const raw = sessionStorage.getItem(`${SESSION_CACHE_PREFIX}${getTokenScope()}:${cacheKey}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && Date.now() - parsed.timestamp < CACHE_TTL_MS) {
+      return parsed;
+    }
+    sessionStorage.removeItem(`${SESSION_CACHE_PREFIX}${getTokenScope()}:${cacheKey}`);
+  } catch {
+    // Ignore storage read errors
+  }
+  return null;
+};
+
+const setSessionCache = (cacheKey, entry) => {
+  try {
+    sessionStorage.setItem(`${SESSION_CACHE_PREFIX}${getTokenScope()}:${cacheKey}`, JSON.stringify(entry));
+  } catch {
+    // Ignore quota exceeded errors
+  }
+};
+
+const invalidateCacheByPrefixes = (prefixes) => {
+  if (!prefixes || prefixes.length === 0) {
+    clientCache.clear();
+    try {
+      Object.keys(sessionStorage).forEach((k) => {
+        if (k.startsWith(SESSION_CACHE_PREFIX)) sessionStorage.removeItem(k);
+      });
+    } catch {}
+    return;
+  }
+
+  for (const key of Array.from(clientCache.keys())) {
+    if (prefixes.some((p) => key.includes(p))) {
+      clientCache.delete(key);
+    }
+  }
+  try {
+    Object.keys(sessionStorage).forEach((k) => {
+      if (k.startsWith(SESSION_CACHE_PREFIX) && prefixes.some((p) => k.includes(p))) {
+        sessionStorage.removeItem(k);
+      }
+    });
+  } catch {}
+};
+
+const getInvalidationPrefixes = (url = "") => {
+  if (url.includes("/students") || url.includes("/admission-requests")) {
+    return ["/students", "/admission-requests", "/dashboard", "/seats", "/reports"];
+  }
+  if (url.includes("/payments")) {
+    return ["/payments", "/dashboard", "/students", "/reports"];
+  }
+  if (url.includes("/attendance")) {
+    return ["/attendance", "/dashboard", "/reports"];
+  }
+  if (url.includes("/expenses")) {
+    return ["/expenses", "/dashboard", "/reports"];
+  }
+  if (url.includes("/seats")) {
+    return ["/seats", "/dashboard"];
+  }
+  if (url.includes("/shifts")) {
+    return ["/shifts", "/dashboard"];
+  }
+  if (url.includes("/fee-plans")) {
+    return ["/fee-plans", "/dashboard"];
+  }
+  if (url.includes("/support")) {
+    return ["/support"];
+  }
+  return null; // Full clear for user/auth/subscription mutations
+};
 
 const serializeMutationBody = (data) => {
   if (data === undefined || data === null) return "";
@@ -41,7 +124,7 @@ const serializeMutationBody = (data) => {
 
 // Expose cache clearing for explicit refresh
 api.clearCache = () => {
-  clientCache.clear();
+  invalidateCacheByPrefixes(null);
 };
 
 // Request interceptor: attach token & deviceId + deduplicate identical in-flight mutations + cache GETs
@@ -55,10 +138,10 @@ api.interceptors.request.use(
 
     const method = (config.method || "get").toLowerCase();
 
-    // Any mutation (POST, PUT, DELETE, PATCH) immediately invalidates GET cache
+    // Any mutation (POST, PUT, DELETE, PATCH) invalidates related GET cache entries
     // and deduplicates identical concurrent in-flight requests
     if (method !== "get") {
-      clientCache.clear();
+      invalidateCacheByPrefixes(getInvalidationPrefixes(config.url || ""));
 
       if (!config.allowDuplicate && ["post", "put", "patch", "delete"].includes(method)) {
         const bodyKey = serializeMutationBody(config.data);
@@ -90,18 +173,23 @@ api.interceptors.request.use(
       return config;
     }
 
-    // For GET requests, check if fresh cached data exists
+    // For GET requests, check memory cache first, then sessionStorage cache
     if (!config.noCache) {
-      const cacheKey = `${config.baseURL || ""}${config.url || ""}?${JSON.stringify(config.params || {})}`;
-      const cached = clientCache.get(cacheKey);
+      const cacheKey = `${getTokenScope()}:${config.baseURL || ""}${config.url || ""}?${JSON.stringify(config.params || {})}`;
+      let cached = clientCache.get(cacheKey);
+      if (!cached || Date.now() - cached.timestamp >= CACHE_TTL_MS) {
+        cached = getSessionCache(cacheKey);
+        if (cached) {
+          clientCache.set(cacheKey, cached);
+        }
+      }
       if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-        // Return instantly via custom adapter without network roundtrip
         config.adapter = () => {
           return Promise.resolve({
             data: JSON.parse(JSON.stringify(cached.data)),
             status: 200,
             statusText: "OK (Cached)",
-            headers: cached.headers,
+            headers: cached.headers || {},
             config,
             request: {},
           });
@@ -121,12 +209,14 @@ api.interceptors.response.use(
   (response) => {
     const method = (response.config.method || "get").toLowerCase();
     if (method === "get" && !response.config.noCache && response.status === 200) {
-      const cacheKey = `${response.config.baseURL || ""}${response.config.url || ""}?${JSON.stringify(response.config.params || {})}`;
-      clientCache.set(cacheKey, {
+      const cacheKey = `${getTokenScope()}:${response.config.baseURL || ""}${response.config.url || ""}?${JSON.stringify(response.config.params || {})}`;
+      const entry = {
         data: response.data,
         headers: response.headers,
         timestamp: Date.now(),
-      });
+      };
+      clientCache.set(cacheKey, entry);
+      setSessionCache(cacheKey, entry);
     }
     return response;
   },
@@ -145,7 +235,7 @@ api.interceptors.response.use(
       }
 
       const isDeviceLoggedOut = error.response.data?.code === "DEVICE_LOGGED_OUT";
-      clientCache.clear();
+      invalidateCacheByPrefixes(null);
       localStorage.removeItem("lms_token");
       localStorage.removeItem("lms_user");
       const publicPaths = ["/login", "/forgot-password", "/reset-password"];
